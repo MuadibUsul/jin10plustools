@@ -14,7 +14,7 @@ const TOKEN_KEY = 'plus.token';
 const REFRESH_MS = 30_000;
 
 const $ = (sel) => document.querySelector(sel);
-const state = { token: null, me: null, materials: [], picked: new Set(), expanded: new Set(), order: {}, dragId: null, editing: null };
+const state = { token: null, me: null, materials: [], picked: new Set(), expanded: new Set(), order: {}, dragId: null, editing: null, editingTitle: null };
 
 // ---------- 通用 ----------
 
@@ -338,6 +338,33 @@ function renderEditor(m) {
       el('button', { onclick: () => { state.editing = null; render(); } }, '取消')));
 }
 
+/** 标题原地编辑：回车 / 失焦保存，Esc 取消 */
+const canEdit = () => state.me?.user.role !== 'viewer';
+
+function renderTitleEditor(m) {
+  let done = false;
+  const finish = async (commit) => {
+    if (done) return;
+    done = true;
+    state.editingTitle = null;
+    const value = input.value.trim();
+    if (commit && value && value !== eff.title(m)) await saveEdits(m, { title: value === m.title ? null : value });
+    else render();
+  };
+  const input = el('input', {
+    class: 'title-input',
+    value: eff.title(m),
+    'aria-label': '标题',
+    onkeydown: (e) => {
+      if (e.key === 'Enter') finish(true).catch(alert);
+      else if (e.key === 'Escape') finish(false).catch(alert);
+    },
+    onblur: () => finish(true).catch(alert),
+  });
+  setTimeout(() => { input.focus(); input.select(); });
+  return input;
+}
+
 function renderDetail(m) {
   if (state.editing === m.id) return el('div', { class: 'item-detail' }, renderEditor(m), renderImages(m));
   const paragraphs = eff.paragraphs(m);
@@ -365,7 +392,7 @@ function renderItem(m) {
   const li = el('li', {
     class: `item${picked ? ' picked' : ''}`,
     // 编辑文字时不可拖动，避免选中文字时误触发拖拽
-    draggable: state.editing === m.id ? 'false' : 'true',
+    draggable: state.editing === m.id || state.editingTitle === m.id ? 'false' : 'true',
     title: '拖动可调整顺序，或拖到其他栏目',
     ondragstart: (e) => {
       state.dragId = m.id;
@@ -402,7 +429,11 @@ function renderItem(m) {
     },
   },
     el('input', { type: 'checkbox', checked: picked, onchange: () => togglePick(m.id), 'aria-label': '选入日报' }),
-    el('div', { class: 'item-title', onclick: () => { expanded ? state.expanded.delete(m.id) : state.expanded.add(m.id); render(); } }, eff.title(m)),
+    state.editingTitle === m.id
+      ? renderTitleEditor(m)
+      : el('div', { class: 'item-title' },
+          el('span', { onclick: () => { expanded ? state.expanded.delete(m.id) : state.expanded.add(m.id); render(); } }, eff.title(m)),
+          canEdit() ? el('button', { class: 'title-edit', title: '修改标题', 'aria-label': '修改标题', onclick: () => { state.editingTitle = m.id; render(); } }, '✎') : null),
     el('div', { class: 'item-meta' },
       m.level ? el('span', { class: `level ${m.level}` }, m.level) : null,
       m.ai_status === 'done' ? el('span', {}, `${m.final_score} 分`) : el('span', { class: 'chip warn' }, { pending: 'AI 分析中', analyzing: 'AI 分析中', failed: 'AI 分析失败' }[m.ai_status] ?? m.ai_status),
@@ -450,7 +481,7 @@ function render() {
   const picked = pickedBySection();
   const total = picked.reduce((n, s) => n + s.items.length, 0);
   $('#pick-summary').textContent = total ? `共 ${total} 条；目录固定 6 个栏目，未选素材的栏目生成空白页供补充` : '尚未选择素材';
-  $('#pick-list').replaceChildren(...picked.flatMap((s) => [el('li', { class: 'group' }, s.label), ...s.items.map((m) => el('li', {}, m.title))]));
+  $('#pick-list').replaceChildren(...picked.flatMap((s) => [el('li', { class: 'group' }, s.label), ...s.items.map((m) => el('li', {}, eff.title(m)))]));
   $('#generate').disabled = total === 0;
   $('#preview').disabled = total === 0;
 }
@@ -533,12 +564,12 @@ async function enterApp() {
   $('#whoami').textContent = `${state.me.team.name} · ${state.me.user.name}`;
   $('#login-view').hidden = true;
   $('#app-view').hidden = false;
-  const canEdit = state.me.user.role !== 'viewer';
-  $('#generate').title = canEdit ? '' : '只读账号不能生成日报';
+  const editable = canEdit();
+  $('#generate').title = editable ? '' : '只读账号不能生成日报';
   restorePicked();
   restoreOrder();
   await Promise.all([refresh(), loadHistory()]);
-  if (!canEdit) $('#generate').disabled = true;
+  if (!editable) $('#generate').disabled = true;
 }
 
 function wire() {
@@ -578,7 +609,7 @@ function wire() {
     if (id) deleteMaterial(id).catch(alert);
   });
   // 定时刷新，看到同事新采集的素材与 AI 分析结果
-  setInterval(() => { if (state.token && !document.hidden && !state.dragId && !state.editing) refresh().catch(() => {}); }, REFRESH_MS);
+  setInterval(() => { if (state.token && !document.hidden && !state.dragId && !state.editing && !state.editingTitle) refresh().catch(() => {}); }, REFRESH_MS);
 }
 
 wire();

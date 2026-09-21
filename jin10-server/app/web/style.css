@@ -57,7 +57,12 @@ main { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 16px; pa
 .item { border: 1px solid var(--line); border-radius: 10px; padding: 10px; display: grid; grid-template-columns: 22px 1fr; gap: 4px 8px; }
 .item.picked { border-color: var(--brand); background: #f3faff; }
 .item input[type=checkbox] { margin: 3px 0 0; width: 16px; height: 16px; accent-color: var(--brand); cursor: pointer; }
-.item-title { font-weight: 600; line-height: 1.45; cursor: pointer; }
+.item-title { font-weight: 600; line-height: 1.45; }
+.item-title > span { cursor: pointer; }
+.title-edit { border: 0; background: none; padding: 0 4px; margin-left: 2px; color: var(--muted, #94a3b8); cursor: pointer; font-size: 13px; opacity: .35; }
+.item:hover .title-edit, .title-edit:focus-visible { opacity: 1; }
+.title-edit:hover { color: var(--brand-dark); }
+.title-input { width: 100%; box-sizing: border-box; font: inherit; font-weight: 600; line-height: 1.45; padding: 2px 6px; border: 1px solid var(--brand, #0ea5e9); border-radius: 6px; }
 .item-meta { grid-column: 2; display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: center; font-size: 12px; color: var(--muted); }
 .chip { border-radius: 4px; padding: 1px 6px; background: #f1f5f9; }
 .chip.plus { background: #d8eeff; color: var(--brand-dark); }

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import base64
 import datetime as dt
+import re
 import uuid
 from typing import Any
 
@@ -83,8 +84,15 @@ def _apply_content(material: Material, item: MaterialIn) -> None:
     material.interpretation = _dump_interpretation(item)
 
 
+_THUMBNAIL_SUFFIX = re.compile(r"/(ncover|lite|flash)$")
+
+
 def _merge_images(existing: list[dict[str, Any]], incoming: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    by_url = {img["url"]: dict(img) for img in existing}
+    # 旧版插件存的缩略图链接（无本地文件）按原图 URL 归一，避免与新采集的原图重复
+    by_url: dict[str, dict[str, Any]] = {}
+    for img in existing:
+        url = img["url"] if img.get("asset_id") else _THUMBNAIL_SUFFIX.sub("", img["url"])
+        by_url[url] = {**img, "url": url}
     for img in incoming:
         prev = by_url.get(img["url"])
         if prev is None:
@@ -118,6 +126,13 @@ def _merge_into(material: Material, item: MaterialIn, user: User) -> set[str]:
         if modules != material.interpretation.get("modules"):
             material.interpretation = {**material.interpretation, "modules": modules}
             changes.add("images")
+
+    # 旧版插件没识别出快讯标题（退化为正文首句）时，用新解析到的标题补上
+    if not material.flash_title and item.flash_title:
+        material.flash_title = item.flash_title
+        if not material.plus_title:
+            material.title = item.title
+        changes.add("title")
 
     images = _merge_images(material.images, _dump_images(item.images))
     if images != material.images:
@@ -180,8 +195,8 @@ def _push_one(db: Session, user: User, item: MaterialIn) -> SyncResult:
         material = existing
         changes = _merge_into(material, item, user)
         if changes:
-            if "interpretation" in changes:
-                _queue_analysis(material)  # 解读补全后判断依据变了，重新分析
+            if changes & {"interpretation", "title"}:
+                _queue_analysis(material)  # 解读或标题补全后判断依据变了，重新分析
             elif "collectors" in changes:
                 team = db.get(Team, material.team_id)
                 refresh_final_score(material, ScoringConfig.from_team_settings(team.settings if team else None), now)

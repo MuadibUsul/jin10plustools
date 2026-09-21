@@ -30,7 +30,8 @@ export async function downloadImage(url: string, source: ImageSource): Promise<D
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
   try {
-    const res = await fetch(url, { signal: controller.signal, credentials: 'omit' });
+    // 页面 <img> 已加载过的图片，缓存里没有 CORS 头，直接 fetch 会被拦截；必须绕过缓存重新请求
+    const res = await fetch(url, { signal: controller.signal, credentials: 'omit', cache: 'reload' });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const blob = await res.blob();
     if (!blob.type.startsWith('image/')) throw new Error(`非图片类型 ${blob.type}`);

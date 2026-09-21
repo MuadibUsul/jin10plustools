@@ -4,6 +4,7 @@ import { SCHEMA_VERSION } from '@/shared/constants';
 import { materialFingerprint } from '@/shared/hash';
 import { newId } from '@/shared/id';
 import { nowIso } from '@/shared/time';
+import { toOriginalImageUrl } from '@/content/parser/selectors';
 import type { MaterialRepository } from './repository/MaterialRepository';
 
 export interface MaterialServiceDeps {
@@ -34,9 +35,17 @@ function attachInterpretationAssets(
   };
 }
 
-/** 合并图片列表：按 URL 去重，已有条目缺少 asset_id 时用新的补上 */
+/**
+ * 合并图片列表：按 URL 去重，已有条目缺少 asset_id 时用新的补上。
+ * 旧版本存的缩略图链接（如 /flash 后缀）按原图 URL 归一，避免重复。
+ */
 function mergeImages(existing: MaterialImage[], incoming: MaterialImage[]): MaterialImage[] {
-  const byUrl = new Map(existing.map((img) => [img.url, img]));
+  const byUrl = new Map(
+    existing.map((img) => {
+      const url = img.asset_id ? img.url : toOriginalImageUrl(img.url);
+      return [url, { ...img, url }];
+    }),
+  );
   for (const img of incoming) {
     const prev = byUrl.get(img.url);
     if (!prev) byUrl.set(img.url, img);
@@ -68,6 +77,13 @@ export function mergeMaterial(
   if (!hasFinalInterpretation && incoming.interpretation_status !== existing.interpretation_status) {
     next.interpretation_status = incoming.interpretation_status;
     next.interpretation = incoming.interpretation;
+    changed = true;
+  }
+
+  // 旧版本没识别出快讯标题（标题退化为正文首句）时，用本次解析到的标题补上
+  if (!existing.flash_title && incoming.flash_title) {
+    next.flash_title = incoming.flash_title;
+    if (!existing.plus_title) next.title = incoming.title;
     changed = true;
   }
 

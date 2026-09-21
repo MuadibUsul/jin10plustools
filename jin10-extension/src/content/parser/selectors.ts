@@ -8,6 +8,7 @@
  *     .item-right.is-common[.need-unlock]  ← 主体（need-unlock = VIP 未解锁）
  *       快讯：
  *         .right-common-title              ← 标题（约 1/3 快讯没有）
+ *         .right-vip .right-vip-title      ← PLUS 快讯（.flash.is-plus）的标题，前有 PLUS 徽章
  *         .flash-text                      ← 正文（可能内嵌 .jin-tag 标签）
  *         .flash-remark .plus-link-remark  ← PLUS 注解按钮（无 href，点击弹出 iframe）
  *           .plus-link-title               ← PLUS 标题
@@ -22,7 +23,7 @@ export const SELECTORS = {
   itemContainer: '.jin-flash-item-container[id^="flash"]',
   body: '.item-right',
   time: '.item-time span',
-  title: '.right-common-title',
+  title: '.right-common-title, .right-vip-title',
   content: '.flash-text',
   articleTitle: '.right-content_title',
   articleIntro: '.right-content_intro',
@@ -73,8 +74,8 @@ export const IGNORED_IMAGE_PATTERNS = [
   /\/assets\/img\/a2ui-components\//, // 注解卡片的装饰插画
 ];
 
-/** 金十图床的缩略图后缀（gimg 的 /ncover、img 的 /lite），去掉即为原图 */
-const THUMBNAIL_SUFFIX = /\/(ncover|lite)$/;
+/** 金十图床的缩略图后缀（gimg 的 /ncover、img 的 /lite、flash-scdn 的 /flash），去掉即为原图 */
+const THUMBNAIL_SUFFIX = /\/(ncover|lite|flash)$/;
 
 export function toOriginalImageUrl(url: string): string {
   return url.replace(THUMBNAIL_SUFFIX, '');

@@ -123,6 +123,20 @@ class TestSync:
         [res] = push(client, h, {**m, "images": [{"url": IMG_URL, "source": "flash", "asset_id": IMG_ID}]})
         assert res["material"]["images"] == [{"url": IMG_URL, "source": "flash", "asset_id": IMG_ID}]
 
+    def test_missing_title_and_thumbnail_fixed_by_recollect(self, client: TestClient) -> None:
+        # 旧版插件：PLUS 快讯标题没识别（退化为正文首句），配图存成 /flash 缩略图链接
+        h = login(client, "editor@plus.test")
+        thumb = "https://flash-scdn.jin10.com/x.jpg/flash"
+        old = material(title="核心判断", flash_title=None, plus_title=None, has_plus_link=False,
+                       images=[{"url": thumb, "source": "flash", "asset_id": None}])
+        push(client, h, old)
+        new_img = {"url": "https://flash-scdn.jin10.com/x.jpg", "source": "flash", "asset_id": IMG_ID}
+        [res] = push(client, h, {**old, "id": str(uuid.uuid4()), "title": "投行：美股风险", "flash_title": "投行：美股风险",
+                                 "images": [new_img]})
+        assert res["outcome"] == "merged"
+        assert res["material"]["title"] == "投行：美股风险"
+        assert res["material"]["images"] == [new_img]
+
     def test_server_fields_not_overwritten_by_client(
         self, client: TestClient, db_factory: sessionmaker[Session]
     ) -> None:

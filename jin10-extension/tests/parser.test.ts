@@ -136,3 +136,27 @@ describe('scanFlashItems', () => {
     expect(res.failures).toEqual([]);
   });
 });
+
+describe('PLUS 快讯（.flash.is-plus，线上实测结构）', () => {
+  const plusFlash = `
+<div class="jin-flash-item-container" id="flash20260921222928549800">
+  <div class="jin-flash-item flash is-plus">
+    <div class="flash-item-header"><div class="item-time has-title"><span>22:29:28</span></div></div>
+    <div class="item-right is-common">
+      <div class="right-top">
+        <div class="right-vip"><span class="jin-tag is-plus"><span data-text="PLUS">PLUS</span></span><b class="right-vip-title">投行：美股风险在“高油价+高利率”挤压消费</b></div>
+        <div class="right-content"><div class="flash-text">核心判断：美股基本面没有出现“盈利衰退”信号。<br>美联储加息更像“压速度”。</div></div>
+      </div>
+      <div class="right-pic img-intercept flash-pic"><div class="img-container loading"><img data-src="https://flash-scdn.jin10.com/e528734f.jpg/flash"></div></div>
+    </div>
+  </div>
+</div>`;
+
+  it('标题取 .right-vip-title，配图去掉 /flash 取原图', () => {
+    document.body.innerHTML = plusFlash;
+    const d = parseAt('.flash-text');
+    expect(d.title).toBe('投行：美股风险在“高油价+高利率”挤压消费');
+    expect(d.content.startsWith('核心判断')).toBe(true);
+    expect(d.images.map((i) => i.url)).toEqual(['https://flash-scdn.jin10.com/e528734f.jpg']);
+  });
+});

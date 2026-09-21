@@ -48,7 +48,10 @@ export function App() {
       <header className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <span className="rounded-full bg-plus-500 px-2.5 py-0.5 text-xs font-semibold text-white">PLUS</span>
-          <h1 className="text-base font-bold text-plus-900">PLUS Research</h1>
+          <h1 className="text-base font-bold text-plus-900">
+            PLUS Research
+            <span className="ml-1.5 text-xs font-normal text-slate-400">v{chrome.runtime.getManifest().version}</span>
+          </h1>
         </div>
         <button
           type="button"

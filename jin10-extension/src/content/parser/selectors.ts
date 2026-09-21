@@ -17,6 +17,7 @@
  *         .right-content_intro             ← 摘要
  *         .flash-remark a[href]            ← 详情页链接
  *       配图：.right-pic img[data-src]      ← 懒加载，URL 带 /ncover 缩略图后缀
+ *             .right-pic .miniprogram-remark ← 小程序卡片（封面 + 标题 + 扫码查看），不采集
  */
 export const SELECTORS = {
   flashItem: '.jin-flash-item',
@@ -29,6 +30,7 @@ export const SELECTORS = {
   articleIntro: '.right-content_intro',
   tag: '.jin-tag',
   remark: '.flash-remark',
+  miniprogram: '.miniprogram-remark',
   remarkLink: '.flash-remark a[href]',
   plusLink: '.plus-link-remark',
   plusTitle: '.plus-link-title',

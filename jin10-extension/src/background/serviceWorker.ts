@@ -1,6 +1,7 @@
 import { createMessageListener } from '@/shared/messaging';
 import { logger } from '@/shared/logger';
 import { handleMenuClick, registerContextMenus } from './contextMenu';
+import { injectIntoOpenJin10Tabs } from './injector';
 import { backgroundHandlers } from './messageRouter';
 import { restoreBadge } from './services';
 import { ensureSyncAlarm, SYNC_ALARM, syncSoon } from './sync';
@@ -21,6 +22,8 @@ chrome.runtime.onInstalled.addListener(({ reason }) => {
   void registerContextMenus();
   void restoreBadge();
   void ensureSyncAlarm();
+  // 安装 / 更新 / 重新加载后，已打开的金十页面无需刷新即可采集
+  void injectIntoOpenJin10Tabs().catch((err: unknown) => logger.warn('inject on install', err));
 });
 
 chrome.runtime.onStartup.addListener(() => {

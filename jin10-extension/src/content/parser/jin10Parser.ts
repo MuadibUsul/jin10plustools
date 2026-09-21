@@ -68,6 +68,7 @@ function extractImages(body: Element, pageUrl: string): MaterialImage[] {
   const images: MaterialImage[] = [];
   for (const img of Array.from(body.querySelectorAll('img'))) {
     if (img.closest(SELECTORS.remark)) continue; // PLUS 按钮里的会员图标
+    if (img.closest(SELECTORS.miniprogram)) continue; // 小程序卡片（「扫码查看」）的封面缩略图，不是快讯配图
     const url = resolveUrl(img.getAttribute('data-src') || img.getAttribute('src'), pageUrl);
     if (!url || IGNORED_IMAGE_PATTERNS.some((p) => p.test(url))) continue;
     const original = toOriginalImageUrl(url);

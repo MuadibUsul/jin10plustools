@@ -1,8 +1,8 @@
 import { JIN10_URL_PATTERN } from '@/shared/constants';
 import { logger } from '@/shared/logger';
-import { sendToTab } from '@/shared/messaging';
 import { getSession } from '@/services/settingsStore';
 import { flashBadge } from './badge';
+import { sendToTabWithInject } from './injector';
 import { restoreBadge } from './services';
 
 export const MENU_IDS = {
@@ -56,7 +56,7 @@ export async function handleMenuClick(
     return;
   }
 
-  const res = await sendToTab(tab.id, 'COLLECT_AT_CONTEXT', {
+  const res = await sendToTabWithInject(tab.id, 'COLLECT_AT_CONTEXT', {
     analyze: info.menuItemId === MENU_IDS.collectAnalyze,
   });
   if (!res.ok) {

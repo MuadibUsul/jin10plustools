@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "PLUS Research",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "金十数据 PLUS 日报素材采集与编排助手",
   "icons": {
     "16": "public/icons/icon-16.png",
@@ -37,7 +37,8 @@
     "contextMenus",
     "storage",
     "unlimitedStorage",
-    "alarms"
+    "alarms",
+    "scripting"
   ],
   "host_permissions": [
     "https://www.jin10.com/*",

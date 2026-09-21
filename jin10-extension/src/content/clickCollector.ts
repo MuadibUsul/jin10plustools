@@ -1,5 +1,6 @@
 import { logger } from '@/shared/logger';
 import { collectFlash } from './collector';
+import { isActive } from './lifecycle';
 import { findFlashRoot } from './parser/jin10Parser';
 
 /** Mac 上 Ctrl+点击等同右键，改用 ⌘ */
@@ -19,6 +20,8 @@ export function installClickCollector(): void {
     'click',
     (event) => {
       if (!isCollectClick(event) || !(event.target instanceof Element)) return;
+      // 插件更新后本脚本已失效或被新注入的脚本接手，不再拦截
+      if (!isActive()) return;
       const root = findFlashRoot(event.target);
       if (!root) return;
       event.preventDefault();

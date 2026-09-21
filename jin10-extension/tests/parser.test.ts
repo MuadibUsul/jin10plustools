@@ -160,3 +160,21 @@ describe('PLUS 快讯（.flash.is-plus，线上实测结构）', () => {
     expect(d.images.map((i) => i.url)).toEqual(['https://flash-scdn.jin10.com/e528734f.jpg']);
   });
 });
+
+describe('小程序卡片快讯（线上实测结构）', () => {
+  it('小程序卡片的封面缩略图不作为配图', () => {
+    document.body.innerHTML = `
+<div class="jin-flash-item-container" id="flash20260921220251000000"><div class="jin-flash-item flash">
+  <div class="flash-item-header"><div class="item-time"><span>22:02:51</span></div></div>
+  <div class="item-right is-common"><div class="right-top">
+    <div class="right-content"><div class="flash-text">美联储古尔斯比：如果通胀由需求驱动，那么美联储的经济预测不足以应对。</div></div>
+    <div class="right-pic"><div class="miniprogram-remark"><div class="miniprogram-remark_left"><img alt="thumb" src="https://img.jin10.com/mp/25/07/a.jpg/pcover"></div></div></div>
+    <div class="flash-remark"><a class="remark-item plus-link-remark"><img src="https://cdn.jin10.com/assets/img/vip_logo/plus_small.png"><span title="信号价值" class="plus-link-title">信号价值</span></a></div>
+  </div></div>
+</div></div>`;
+    const d = parseAt('.flash-text');
+    expect(d.images).toEqual([]);
+    expect(d.plus_title).toBe('信号价值');
+    expect(d.has_plus_link).toBe(true);
+  });
+});

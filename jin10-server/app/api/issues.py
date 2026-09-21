@@ -142,9 +142,14 @@ def create_issue(body: GenerateRequest, db: DbSession, user: Editor) -> IssueOut
 
 
 @router.get("/issues", response_model=list[IssueOut])
-def list_issues(db: DbSession, user: CurrentUser, limit: Annotated[int, Query(ge=1, le=100)] = 20) -> list[IssueOut]:
+def list_issues(
+    db: DbSession,
+    user: CurrentUser,
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> list[IssueOut]:
     rows = db.scalars(
-        select(Issue).where(Issue.team_id == user.team_id).order_by(Issue.created_at.desc()).limit(limit)
+        select(Issue).where(Issue.team_id == user.team_id).order_by(Issue.created_at.desc()).offset(offset).limit(limit)
     )
     return [_issue_out(i) for i in rows]
 

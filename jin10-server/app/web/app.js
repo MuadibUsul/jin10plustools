@@ -149,8 +149,25 @@ async function refresh() {
   render();
 }
 
-async function loadHistory() {
-  const issues = await api('/api/issues?limit=10');
+const HISTORY_PAGE = 5;
+let historyPage = 0;
+
+async function loadHistory(page = historyPage) {
+  // 多取一条判断是否还有下一页
+  const rows = await api(`/api/issues?limit=${HISTORY_PAGE + 1}&offset=${page * HISTORY_PAGE}`);
+  if (!rows.length && page > 0) return loadHistory(page - 1);
+  historyPage = page;
+  const issues = rows.slice(0, HISTORY_PAGE);
+  const hasNext = rows.length > HISTORY_PAGE;
+  $('#history-pager').replaceChildren(
+    ...(page > 0 || hasNext
+      ? [
+          el('button', { class: 'link', disabled: page === 0, onclick: () => loadHistory(page - 1) }, '‹ 上一页'),
+          el('span', { class: 'muted' }, `第 ${page + 1} 页`),
+          el('button', { class: 'link', disabled: !hasNext, onclick: () => loadHistory(page + 1) }, '下一页 ›'),
+        ]
+      : []),
+  );
   const list = $('#history');
   list.replaceChildren(
     ...(issues.length
@@ -501,7 +518,7 @@ async function generate() {
         issue.has_pdf ? el('button', { class: 'primary', onclick: () => download(issue, 'pdf') }, '下载 PDF') : null,
         el('button', { onclick: () => download(issue, 'pptx') }, '下载 PPT')));
     if (issue.has_pdf) await download(issue, 'pdf');
-    await loadHistory();
+    await loadHistory(0);
   } catch (err) {
     status.replaceChildren(el('span', { class: 'error' }, `生成失败：${err.message}`));
   } finally {

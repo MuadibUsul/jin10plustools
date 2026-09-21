@@ -75,6 +75,9 @@ main { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 16px; pa
 .gen-status .downloads { display: flex; gap: 8px; margin-top: 6px; }
 .history { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; font-size: 13px; }
 .history li { display: flex; justify-content: space-between; gap: 8px; align-items: center; }
+.pager { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; font-size: 12px; }
+.pager:empty { display: none; }
+.pager .link:disabled { color: #cbd5e1; cursor: default; }
 .install summary { cursor: pointer; color: var(--brand-dark); font-weight: 600; }
 .install ol { margin: 8px 0; padding-left: 20px; line-height: 1.8; font-size: 13px; }
 .install code { background: #f1f5f9; border-radius: 4px; padding: 0 4px; }

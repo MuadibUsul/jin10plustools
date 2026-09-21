@@ -10,7 +10,7 @@
     <section id="login-view" class="login" hidden>
       <form id="login-form" class="card login-card">
         <h1>PLUS 日报选稿</h1>
-        <p class="muted">使用团队账号登录</p>
+        <p class="muted">使用团队账号登录 · <a href="guide.html" target="_blank" rel="noopener">第一次使用？看使用教程</a></p>
         <label>邮箱<input name="email" type="email" autocomplete="username" required /></label>
         <label>密码<input name="password" type="password" autocomplete="current-password" required /></label>
         <p id="login-error" class="error" hidden></p>
@@ -46,7 +46,7 @@
           <button id="clear-pick">清空选择</button>
           <button id="reset-ai" title="撤销手动的排序与栏目调整，回到 AI 分类与评分的结果">恢复 AI 排版</button>
         </div>
-        <div class="user"><span id="whoami"></span><button id="logout" class="link">退出</button></div>
+        <div class="user"><a class="guide-link" href="guide.html" target="_blank" rel="noopener">使用教程</a><span id="whoami"></span><button id="logout" class="link">退出</button></div>
       </header>
 
       <main>

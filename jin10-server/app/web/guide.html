@@ -1,0 +1,433 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>PLUS 日报使用教程</title>
+    <style>
+      :root {
+        --bg: #eef6fc;
+        --paper: #ffffff;
+        --ink: #0d2b45;
+        --ink-2: #334a60;
+        --muted: #62778a;
+        --line: #d7e5f0;
+        --brand: #1fa2e8;
+        --brand-deep: #0b6fa8;
+        --brand-soft: #e3f3fd;
+        --warn: #b45309;
+        --warn-soft: #fff7e8;
+        --danger: #c62828;
+        font-family: "Source Han Sans SC", "Noto Sans CJK SC", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+        color-scheme: light;
+      }
+      * { box-sizing: border-box; }
+      html { scroll-behavior: smooth; scroll-padding-top: 76px; }
+      @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+      body { margin: 0; background: var(--bg); color: var(--ink); font-size: 15px; line-height: 1.75; }
+      a { color: var(--brand-deep); }
+      a:focus-visible, button:focus-visible { outline: 3px solid var(--brand); outline-offset: 2px; border-radius: 4px; }
+      code, kbd { font-family: "JetBrains Mono", Consolas, "Courier New", monospace; font-size: .88em; background: #eaf2f8; border-radius: 4px; padding: .1em .35em; }
+      kbd { border: 1px solid var(--line); border-bottom-width: 2px; background: #fff; }
+
+      .topbar { position: sticky; top: 0; z-index: 10; display: flex; align-items: center; gap: 12px; padding: 12px 20px; background: rgba(255, 255, 255, .92); backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); }
+      .tag { background: var(--brand); color: #fff; border-radius: 999px; padding: 1px 10px; font-size: 12px; font-weight: 700; letter-spacing: .04em; }
+      .topbar strong { font-size: 16px; }
+      .topbar .spacer { flex: 1; }
+      .topbar a.back { text-decoration: none; font-size: 14px; border: 1px solid var(--line); border-radius: 8px; padding: 4px 12px; background: #fff; }
+
+      .layout { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 40px; max-width: 1160px; margin: 0 auto; padding: 32px 20px 80px; }
+      .toc { position: sticky; top: 84px; align-self: start; font-size: 14px; }
+      .toc p { margin: 0 0 8px; color: var(--muted); font-size: 12px; letter-spacing: .08em; }
+      .toc ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+      .toc a { display: flex; gap: 8px; text-decoration: none; color: var(--ink-2); padding: 4px 8px; border-radius: 6px; }
+      .toc a:hover { background: var(--brand-soft); color: var(--brand-deep); }
+      .toc .n { color: var(--brand); font-variant-numeric: tabular-nums; min-width: 1.4em; }
+      @media (max-width: 900px) {
+        .layout { grid-template-columns: 1fr; gap: 16px; padding-top: 20px; }
+        .toc { position: static !important; }
+        .toc ol { flex-direction: row; flex-wrap: wrap; gap: 6px; }
+        .toc a { background: var(--paper); border: 1px solid var(--line); padding: 2px 10px; font-size: 13px; }
+      }
+
+      main { min-width: 0; }
+      .hero { padding-bottom: 8px; }
+      .hero h1 { margin: 0; font-size: clamp(28px, 4vw, 38px); line-height: 1.25; text-wrap: balance; }
+      .hero .lead { margin: 10px 0 0; color: var(--ink-2); font-size: 16px; max-width: 62ch; }
+
+      .flow { display: flex; flex-wrap: wrap; align-items: stretch; gap: 8px; margin: 24px 0 8px; }
+      .flow .node { flex: 1 1 120px; background: var(--paper); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
+      .flow .node b { display: block; font-size: 14px; }
+      .flow .node span { color: var(--muted); font-size: 12px; }
+      .flow .node.ai { background: var(--brand-soft); border-color: #bfe2f7; }
+      .flow .arrow { align-self: center; color: var(--brand); font-weight: 700; }
+      @media (max-width: 640px) { .flow .arrow { display: none; } }
+
+      .parts { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; margin-top: 16px; }
+      .part { background: var(--paper); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; font-size: 14px; }
+      .part h3 { margin: 0 0 4px; font-size: 15px; }
+      .part p { margin: 0; color: var(--ink-2); }
+
+      section.step { margin-top: 56px; }
+      .step-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 8px; }
+      .step-no { font-size: 13px; font-weight: 700; color: #fff; background: var(--ink); border-radius: 6px; padding: 1px 8px; font-variant-numeric: tabular-nums; }
+      .step h2 { margin: 0; font-size: 24px; text-wrap: balance; }
+      .step h3 { margin: 28px 0 6px; font-size: 17px; }
+      .step p, .step li { max-width: 68ch; }
+      .step ol, .step ul { padding-left: 1.4em; }
+      .step li + li { margin-top: 4px; }
+
+      figure { margin: 18px 0 22px; }
+      figure .shot { display: block; max-width: 100%; height: auto; border-radius: 10px; border: 1px solid var(--line); box-shadow: 0 8px 28px rgba(13, 43, 69, .10); background: #fff; }
+      figure.narrow .shot { width: 380px; }
+      figure.medium .shot { width: 560px; }
+      figcaption { margin-top: 8px; font-size: 13px; color: var(--muted); max-width: 68ch; }
+      .pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; align-items: start; }
+      .pair figure { margin: 0; }
+
+      /* 金十快讯 + 右键菜单示意 */
+      .ctx-demo { position: relative; }
+      .ctx-menu { position: absolute; right: 6%; bottom: -18px; width: 250px; background: #fff; border: 1px solid #cfd8e0; border-radius: 8px; box-shadow: 0 10px 30px rgba(0, 0, 0, .18); padding: 6px 0; font-size: 13px; line-height: 1.5; }
+      .ctx-menu div { padding: 5px 14px; color: #1f2a33; }
+      .ctx-menu .sep { height: 1px; background: #e5e9ee; padding: 0; margin: 4px 0; }
+      .ctx-menu .has-sub { display: flex; justify-content: space-between; background: #e8f1fb; }
+      .ctx-sub { position: absolute; left: 100%; top: 30px; width: 170px; background: #fff; border: 1px solid #cfd8e0; border-radius: 8px; box-shadow: 0 10px 30px rgba(0, 0, 0, .18); padding: 6px 0; }
+      .ctx-sub .hot { background: var(--brand); color: #fff; }
+      @media (max-width: 760px) { .ctx-menu { position: static; margin: 12px 0 0 auto; } .ctx-sub { position: static; width: auto; box-shadow: none; border: none; border-top: 1px solid #e5e9ee; border-radius: 0; } }
+
+      .note, .warn { border-radius: 10px; padding: 12px 16px; margin: 16px 0; font-size: 14px; max-width: 72ch; }
+      .note { background: var(--brand-soft); border: 1px solid #c7e6f8; }
+      .warn { background: var(--warn-soft); border: 1px solid #f5d9a8; }
+      .note b, .warn b { display: block; margin-bottom: 2px; }
+      .warn b { color: var(--warn); }
+
+      .table-wrap { overflow-x: auto; margin: 12px 0 20px; }
+      table { border-collapse: collapse; min-width: 520px; width: 100%; background: var(--paper); border-radius: 10px; overflow: hidden; font-size: 14px; }
+      th, td { text-align: left; padding: 9px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+      th { background: #f3f8fc; font-weight: 600; color: var(--ink-2); }
+      tr:last-child td { border-bottom: none; }
+      td.num { font-variant-numeric: tabular-nums; }
+
+      .ops { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; margin: 14px 0; }
+      .op { background: var(--paper); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; font-size: 14px; }
+      .op h4 { margin: 0 0 4px; font-size: 15px; }
+      .op p { margin: 0; color: var(--ink-2); }
+
+      pre { background: #0f2436; color: #d9e8f3; border-radius: 10px; padding: 14px 16px; overflow-x: auto; font-size: 13px; line-height: 1.6; }
+      pre code { background: none; padding: 0; color: inherit; }
+      footer { margin-top: 64px; color: var(--muted); font-size: 13px; }
+    </style>
+  </head>
+  <body>
+    <header class="topbar">
+      <span class="tag">PLUS</span><strong>日报使用教程</strong>
+      <span class="spacer"></span>
+      <a class="back" href="./">返回选稿网页</a>
+    </header>
+
+    <div class="layout">
+      <nav class="toc" aria-label="目录">
+        <p>目录</p>
+        <ol>
+          <li><a href="#overview"><span class="n">·</span>整体流程</a></li>
+          <li><a href="#install"><span class="n">1</span>安装插件</a></li>
+          <li><a href="#login"><span class="n">2</span>登录团队</a></li>
+          <li><a href="#collect"><span class="n">3</span>采集快讯</a></li>
+          <li><a href="#pick"><span class="n">4</span>选稿</a></li>
+          <li><a href="#arrange"><span class="n">5</span>排序、换栏目、删除</a></li>
+          <li><a href="#edit"><span class="n">6</span>修改文字与配图</a></li>
+          <li><a href="#generate"><span class="n">7</span>预览与生成</a></li>
+          <li><a href="#faq"><span class="n">?</span>常见问题</a></li>
+          <li><a href="#admin"><span class="n">⚙</span>给管理员</a></li>
+        </ol>
+      </nav>
+
+      <main>
+        <section class="hero" id="overview">
+          <h1>从金十快讯到当天日报 PDF，十分钟上手</h1>
+          <p class="lead">
+            在金十页面右键把快讯存进团队素材库，AI 自动分栏目、打分，你在选稿网页里挑选、调整、预览，最后一键导出和模板一模一样的日报 PDF。
+          </p>
+
+          <div class="flow" role="list" aria-label="整体流程">
+            <div class="node" role="listitem"><b>右键采集</b><span>金十快讯 + PLUS 解读 + 配图</span></div>
+            <span class="arrow" aria-hidden="true">→</span>
+            <div class="node" role="listitem"><b>团队素材库</b><span>自动同步、自动去重</span></div>
+            <span class="arrow" aria-hidden="true">→</span>
+            <div class="node ai" role="listitem"><b>AI 分类评分</b><span>6 个栏目 · 重要度 · S/A/B/C</span></div>
+            <span class="arrow" aria-hidden="true">→</span>
+            <div class="node" role="listitem"><b>选稿网页</b><span>勾选、拖拽、编辑、预览</span></div>
+            <span class="arrow" aria-hidden="true">→</span>
+            <div class="node" role="listitem"><b>日报 PDF</b><span>按模板一键生成</span></div>
+          </div>
+
+          <div class="parts">
+            <div class="part">
+              <h3>Chrome 插件「PLUS Research」</h3>
+              <p>只在 www.jin10.com 上工作，负责右键采集快讯，并同步到团队素材库。</p>
+            </div>
+            <div class="part">
+              <h3>选稿网站 plus.tlines.tech</h3>
+              <p>团队共用的素材库，在这里选稿、修改、预览和生成日报。</p>
+            </div>
+          </div>
+
+          <div class="note">
+            <b>开始之前你需要</b>
+            Chrome 浏览器、管理员发给你的<strong>团队账号</strong>（邮箱 + 密码）。如果你的金十账号是 PLUS 会员，插件还能一起采集 PLUS 解读；不是会员也能采集，只是没有解读内容。
+          </div>
+        </section>
+
+        <section class="step" id="install">
+          <div class="step-head"><span class="step-no">第 1 步</span><h2>安装插件</h2></div>
+          <figure class="medium">
+            <img class="shot" src="guide/login.webp" alt="选稿网站登录页，下方展开了「安装采集插件（Chrome）」的四步说明" loading="lazy" />
+            <figcaption>选稿网站的登录页下方就有插件下载入口（登录后在右侧栏最下方也能找到）。</figcaption>
+          </figure>
+          <ol>
+            <li>打开 <a href="./">plus.tlines.tech</a>，点「<b>安装采集插件（Chrome）</b>」→「<b>下载插件压缩包</b>」。</li>
+            <li>把压缩包<b>解压到一个固定的文件夹</b>。不要放在桌面或下载目录里随手删掉，插件运行时一直需要它。</li>
+            <li>Chrome 地址栏输入 <code>chrome://extensions</code>，打开右上角的「<b>开发者模式</b>」。</li>
+            <li>点「<b>加载已解压的扩展程序</b>」，选择刚才解压出来的文件夹。</li>
+            <li>工具栏出现蓝色 <b>P</b> 图标就装好了。建议在拼图形状的扩展菜单里把它<b>固定</b>到工具栏。</li>
+          </ol>
+          <div class="note">
+            <b>以后怎么更新插件</b>
+            下载新压缩包，解压覆盖原来的文件夹，回到 <code>chrome://extensions</code> 点插件卡片上的刷新图标，再把已打开的金十页面刷新一下（<kbd>F5</kbd>）。
+          </div>
+        </section>
+
+        <section class="step" id="login">
+          <div class="step-head"><span class="step-no">第 2 步</span><h2>登录团队</h2></div>
+          <div class="pair">
+            <figure>
+              <img class="shot" src="guide/options.webp" alt="插件设置页：团队服务端地址已默认填好，下面是邮箱和密码输入框" loading="lazy" />
+              <figcaption>服务端地址已经默认填好，只需要输入邮箱和密码。</figcaption>
+            </figure>
+            <div>
+              <ol>
+                <li>点工具栏的插件图标 →「<b>登录团队</b>」，打开设置页。</li>
+                <li>团队服务端地址保持 <code>https://plus.tlines.tech</code>。</li>
+                <li>输入管理员给你的邮箱和密码，点「<b>登录</b>」。</li>
+              </ol>
+              <p>登录成功后，设置页会显示「PLUS 研究组 · 你的名字」。插件只保存登录凭证，<b>不保存密码</b>；凭证 14 天有效，过期后重新登录即可。</p>
+              <p><b>没登录也能采集</b>：素材先存在本机，登录后会自动补传到团队素材库。</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="step" id="collect">
+          <div class="step-head"><span class="step-no">第 3 步</span><h2>采集快讯</h2></div>
+          <p>在金十快讯的<b>正文区域</b>点右键，选「<b>PLUS Research › 加入日报素材库</b>」。</p>
+
+          <figure class="ctx-demo">
+            <img class="shot" src="guide/flash.webp" alt="金十网站上一条带 PLUS 注解的快讯" loading="lazy" />
+            <div class="ctx-menu" aria-hidden="true">
+              <div>返回</div>
+              <div>重新加载</div>
+              <div class="sep"></div>
+              <div class="has-sub"><span>PLUS Research</span><span>›</span></div>
+              <div>检查</div>
+              <div class="ctx-sub">
+                <div class="hot">加入日报素材库</div>
+                <div>加入并 AI 分析</div>
+                <div class="sep"></div>
+                <div>打开选稿网页</div>
+              </div>
+            </div>
+            <figcaption>快讯下方的「PLUS 注解」标签（如图中的「自律替代监管」）表示这条有 PLUS 解读，插件会一并采集。右键菜单为示意。</figcaption>
+          </figure>
+
+          <p>采集时插件会自动完成三件事：</p>
+          <ul>
+            <li><b>读取快讯</b>：标题、正文、发布时间；</li>
+            <li><b>读取 PLUS 解读</b>：注解弹窗会<b>自己弹开再关闭</b>，约 1.5 秒，这时不要去点它；</li>
+            <li><b>下载配图原图</b>：快讯配图和解读里的配图。</li>
+          </ul>
+          <p>完成后页面右上角会提示「已加入素材库」。重复采集不会产生重复素材；同事也收藏过的，会显示「N 人收藏」，排序更靠前。</p>
+
+          <div class="pair">
+            <figure>
+              <img class="shot" src="guide/popup.webp" alt="插件弹窗：团队今日素材数、同步状态和最近采集列表" loading="lazy" style="width:380px" />
+              <figcaption>点插件图标打开弹窗：今日素材数、同步状态、最近采集。</figcaption>
+            </figure>
+            <div>
+              <h3>看懂插件弹窗</h3>
+              <ul>
+                <li><b>团队今日素材 / 我采集</b>：按北京时间统计。工具栏图标上的数字也是今日素材数。</li>
+                <li><b>已同步 / 待同步 N 条</b>：采集后约 2 秒、每 5 分钟、打开浏览器时都会自动同步；着急可以点「<b>立即同步</b>」。</li>
+                <li><b>选稿网页 →</b>：直接打开选稿网站。</li>
+              </ul>
+              <div class="warn">
+                <b>右键没反应？</b>
+                插件刚装好或刚更新时，已经打开的金十页面要先刷新（<kbd>F5</kbd>）。另外，在 PLUS 注解的弹窗<b>里面</b>右键不会采集，请回到快讯正文上右键。
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="step" id="pick">
+          <div class="step-head"><span class="step-no">第 4 步</span><h2>选稿</h2></div>
+          <p>浏览器打开 <a href="./">plus.tlines.tech</a>，用同一个账号登录。</p>
+          <figure>
+            <img class="shot" src="guide/overview.webp" alt="选稿网页：6 个栏目的卡片网格，每条素材显示等级、分数、时间、PLUS 解读标记；右侧是本期日报汇总" loading="lazy" />
+            <figcaption>素材按 6 个栏目分组，每个栏目内按综合分从高到低排列。勾选的素材显示在右侧「本期日报」里。</figcaption>
+          </figure>
+
+          <h3>顶栏</h3>
+          <figure>
+            <img class="shot" src="guide/topbar.webp" alt="顶栏：日期、范围、刷新、按配额自动选稿、清空选择、恢复 AI 排版" loading="lazy" />
+          </figure>
+          <ul>
+            <li><b>日期 / 范围</b>：看哪一天（北京时间）、往前看几天的素材。</li>
+            <li><b>按配额自动选稿</b>：每个栏目按建议条数取前几条，<b>会覆盖当前的勾选</b>，之后可以再手动增减。</li>
+            <li><b>恢复 AI 排版</b>：见第 5 步。</li>
+          </ul>
+
+          <h3>看懂一条素材</h3>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>标记</th><th>含义</th></tr></thead>
+              <tbody>
+                <tr><td><b>S / A / B / C</b> 和分数</td><td>AI 给出的综合分：重要度 60% + 团队热度 20% + 时效 10% + 内容完整度 10%。S ≥ 85，A ≥ 70，B ≥ 50</td></tr>
+                <tr><td>PLUS 解读</td><td>已采集到 PLUS 解读</td></tr>
+                <tr><td>配图 N</td><td>进入日报的配图数量</td></tr>
+                <tr><td>N 人收藏</td><td>多位同事都采集了这条</td></tr>
+                <tr><td>已编辑</td><td>文字或配图被修改过（见第 6 步）</td></tr>
+                <tr><td>栏目待确认</td><td>AI 对栏目把握不大，建议人工看一眼</td></tr>
+                <tr><td>AI 分析中 / 失败</td><td>还没分析完，或分析失败（不影响手动选稿）</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <h3>栏目与建议条数</h3>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>栏目</th><th>建议条数</th><th>说明</th></tr></thead>
+              <tbody>
+                <tr><td>01 宏观消息</td><td class="num">3</td><td>央行、利率、通胀、财政、地缘</td></tr>
+                <tr><td>02 国内股市动向</td><td class="num">2</td><td>A 股、港股、国内公司</td></tr>
+                <tr><td>03 海外股市动向</td><td class="num">2</td><td>美股、欧股、日韩</td></tr>
+                <tr><td>04 AI热点</td><td class="num">2</td><td>大模型、算力、AI 产业</td></tr>
+                <tr><td>05 精选研报</td><td class="num">1</td><td>按形式划分，AI 常分错，需要手动拖进来</td></tr>
+                <tr><td>06 精选图表</td><td class="num">1</td><td>按形式划分，AI 常分错，需要手动拖进来</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p>日报的目录固定为这 6 个栏目。<b>没选素材的栏目也会生成一页空白栏目页</b>，方便之后在 PPT 里补充。</p>
+          <p>勾选结果和排序保存在<b>你自己的浏览器</b>里：同事看不到你的勾选，换一台电脑需要重新选。</p>
+        </section>
+
+        <section class="step" id="arrange">
+          <div class="step-head"><span class="step-no">第 5 步</span><h2>排序、换栏目、删除</h2></div>
+          <p>按住任意素材卡片直接拖动：</p>
+          <figure>
+            <img class="shot" src="guide/drag.webp" alt="拖动素材时，目标栏目出现蓝色虚线框，插入位置出现蓝色提示线，页面底部中间出现红色垃圾桶图标" loading="lazy" />
+            <figcaption>拖动时：蓝色横线是插入位置，虚线框是目标栏目，页面底部正中出现垃圾桶。</figcaption>
+          </figure>
+          <div class="ops">
+            <div class="op"><h4>调整顺序</h4><p>在同一栏目内上下拖。生成日报时按这个顺序排版，「按配额自动选稿」也按这个顺序取。</p></div>
+            <div class="op"><h4>换栏目</h4><p>拖到别的栏目（卡片之间或栏目空白处），或者用卡片右下角的栏目下拉框。换过的栏目会锁定，AI 不会再改回去。</p></div>
+            <div class="op"><h4>删除</h4><p>拖到底部的垃圾桶（变红时松手），确认后删除。删除后<b>整个团队都看不到</b>这条素材。</p></div>
+            <div class="op"><h4>恢复 AI 排版</h4><p>顶栏按钮。撤销所有手动的排序和换栏目，回到 AI 的分类结果；文字和配图的修改会保留。</p></div>
+          </div>
+          <figure class="narrow" style="max-width:140px">
+            <img class="shot" src="guide/trash.webp" alt="拖到垃圾桶上方时，垃圾桶变成红底白色" loading="lazy" style="width:120px;border:none;box-shadow:none;background:transparent" />
+            <figcaption>拖到垃圾桶上方时变红，松手即可。</figcaption>
+          </figure>
+        </section>
+
+        <section class="step" id="edit">
+          <div class="step-head"><span class="step-no">第 6 步</span><h2>修改文字与配图</h2></div>
+          <p>点素材标题展开卡片，可以看到完整的【新闻】【解读】和配图。</p>
+          <div class="pair">
+            <figure>
+              <img class="shot" src="guide/card-detail.webp" alt="展开的素材卡片：新闻、解读全文，配图下有替换和移除按钮，旁边是上传图片，底部是编辑文字按钮" loading="lazy" />
+              <figcaption>展开后：配图可以「替换」「移除」，也可以「+ 上传图片」。</figcaption>
+            </figure>
+            <figure>
+              <img class="shot" src="guide/card-edit.webp" alt="编辑状态：标题、新闻、解读三个输入框，下方是保存和取消按钮" loading="lazy" />
+              <figcaption>点「编辑文字」后：标题、【新闻】、【解读】都能改，解读的段落之间空一行。</figcaption>
+            </figure>
+          </div>
+          <ul>
+            <li><b>改文字</b>：「编辑文字」→ 修改 →「保存」。卡片上会出现「已编辑」标记，日报里用修改后的文字。</li>
+            <li><b>换图 / 加图</b>：每张图下面有「替换」「移除」，最后一格「+ 上传图片」可以从电脑选一张图加进来。每条素材最多放 2 张图进日报。</li>
+            <li><b>恢复原文</b>：编辑过的素材会出现「恢复原文」，一键撤销这条的所有文字和配图修改。</li>
+          </ul>
+          <div class="note">
+            <b>原文不会丢</b>
+            修改只保存成一份「编辑版本」，采集到的原始文字和图片一直保留，随时可以恢复。修改会同步给团队，同事看到的也是修改后的版本。
+          </div>
+        </section>
+
+        <section class="step" id="generate">
+          <div class="step-head"><span class="step-no">第 7 步</span><h2>预览与生成</h2></div>
+          <figure>
+            <img class="shot" src="guide/preview.webp" alt="日报预览窗口：封面、宏观消息、国内股市动向等页面并排显示，顶部有重新渲染、生成 PDF 和关闭按钮" loading="lazy" />
+            <figcaption>预览是在服务器上真实生成一次 PDF 再逐页显示的，看到的就是最终文件的样子。</figcaption>
+          </figure>
+          <ol>
+            <li>勾选好素材后，点右侧的「<b>预览</b>」，大约 15～20 秒后显示所有页面。</li>
+            <li>发现问题就关掉预览，回去修改文字、配图或顺序，再点「<b>重新渲染</b>」。</li>
+            <li>满意后点「<b>生成 PDF</b>」，完成后自动下载，文件名如 <code>PLUS日报-2026-09-21.pdf</code>。</li>
+          </ol>
+          <div class="pair">
+            <figure>
+              <img class="shot" src="guide/side.webp" alt="右侧栏：本期日报按栏目列出已选素材，下方是预览和生成 PDF 按钮，以及生成记录" loading="lazy" style="width:340px" />
+              <figcaption>右侧栏：本期日报清单、预览 / 生成按钮、生成记录。</figcaption>
+            </figure>
+            <div>
+              <h3>生成之后</h3>
+              <ul>
+                <li><b>生成记录</b>里保留最近 10 次，随时可以重新下载 PDF 或 PPT。</li>
+                <li>需要在 PowerPoint 里再加工，就下载 PPT；PPT 和 PDF 内容一致。</li>
+                <li>版面自动适配字数：内容多会自动续页、按句拆分，必要时栏目字号从 36pt 缩到 34 / 32pt，保证手机上也能看清。</li>
+                <li>只读账号可以预览，但不能生成日报。</li>
+              </ul>
+            </div>
+          </div>
+        </section>
+
+        <section class="step" id="faq">
+          <div class="step-head"><span class="step-no">常见问题</span><h2>遇到问题先看这里</h2></div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>现象</th><th>原因与处理</th></tr></thead>
+              <tbody>
+                <tr><td>右键看不到菜单，或点了没反应</td><td>插件刚安装或更新过，刷新金十页面（F5）</td></tr>
+                <tr><td>提示「未识别到新闻组件」</td><td>右键的位置不在快讯上，请对准快讯正文再右键</td></tr>
+                <tr><td>提示「PLUS 解读需要登录会员账号」</td><td>你的金十账号不是 PLUS 会员。素材照样采集，只是没有解读，可以在选稿页手动补写</td></tr>
+                <tr><td>素材带「VIP 锁定」</td><td>这条是 VIP 快讯，正文不完整，需要人工补充</td></tr>
+                <tr><td>采集了但同事看不到</td><td>看插件弹窗：显示「已同步」才算上传成功；显示「待同步 / 同步失败」就点「立即同步」</td></tr>
+                <tr><td>插件登录一直转圈或提示超时</td><td>去 <code>chrome://extensions</code> 刷新插件后重试；仍不行就重新下载安装最新版插件</td></tr>
+                <tr><td>素材在「待分类」里、没有分数</td><td>AI 还没分析完或分析失败（比如 AI 额度用完）。不影响使用，用下拉框或拖动给它指定栏目即可</td></tr>
+                <tr><td>「按配额自动选稿」没选到想要的</td><td>它只按当前排序取每个栏目的前几条，不会动「待分类」；手动补选即可</td></tr>
+                <tr><td>网页没出现新功能</td><td>按 <kbd>Ctrl</kbd> + <kbd>F5</kbd> 强制刷新一次</td></tr>
+                <tr><td>插件自动退出登录</td><td>登录凭证 14 天过期，重新登录即可</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="step" id="admin">
+          <div class="step-head"><span class="step-no">附录</span><h2>给管理员</h2></div>
+          <p>新增账号、重置密码在服务器上执行（密码会要求交互输入，至少 8 位）：</p>
+<pre><code>cd ~/plus
+docker compose exec api python -m app.cli create-user --team "PLUS 研究组" \
+  --email 005@jin10-inc.com --name 编辑005 --role editor
+docker compose exec api python -m app.cli reset-password --email 005@jin10-inc.com
+docker compose exec api python -m app.cli list-users</code></pre>
+          <ul>
+            <li>角色：<code>admin</code> / <code>editor</code> 可以采集、编辑和生成；<code>viewer</code> 只能查看和预览。</li>
+            <li>更新系统：在本机仓库根目录运行 <code>bash deploy/deploy.sh</code>，会同时更新网站和插件下载包。</li>
+            <li>备份：服务器上的数据卷 <code>plus_pgdata</code>（数据库）和 <code>plus_storage</code>（图片与生成的日报）。</li>
+            <li>AI 分类由 TypeSafe JEV 提供，Key 配置在服务器 <code>.env</code> 的 <code>PLUS_JEV_API_KEY</code>。额度用完不影响人工选稿和生成。</li>
+          </ul>
+        </section>
+
+        <footer>PLUS 日报素材系统 · 本教程截图来自线上真实界面</footer>
+      </main>
+    </div>
+  </body>
+</html>

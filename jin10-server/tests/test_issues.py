@@ -114,6 +114,9 @@ def test_web_page_served(client: TestClient) -> None:
     assert page.status_code == 200 and "PLUS 日报选稿" in page.text
     js = client.get("/app.js")
     assert js.status_code == 200 and js.headers["cache-control"] == "no-cache"
+    guide = client.get("/guide.html")
+    assert guide.status_code == 200 and "PLUS 日报使用教程" in guide.text and 'href="guide.html"' in page.text
+    assert client.get("/guide/overview.webp").status_code == 200
 
 
 def test_edits_are_used_in_ppt_and_can_be_cleared(client: TestClient) -> None:

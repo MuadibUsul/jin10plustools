@@ -109,3 +109,5 @@ body.is-dragging .trash { opacity: 1; transform: none; pointer-events: auto; }
 .preview-bar .spacer { flex: 1; }
 .preview-pages { flex: 1; overflow: auto; display: flex; flex-wrap: wrap; gap: 16px; justify-content: center; padding: 20px; }
 .preview-pages img { width: 360px; max-width: 100%; box-shadow: 0 4px 16px rgba(0, 0, 0, .25); background: #fff; }
+.guide-link { color: var(--brand-dark); text-decoration: none; font-weight: 600; margin-right: 8px; }
+.guide-link:hover { text-decoration: underline; }

@@ -525,6 +525,21 @@ async function deleteMaterial(id) {
   render();
 }
 
+async function clearPool() {
+  const ids = state.materials.map((m) => m.id);
+  if (!ids.length) return alert('当前没有素材');
+  const range = $('#days').value === '1' ? $('#day').value : `${$('#day').value} 起近 ${$('#days').value} 天`;
+  if (!confirm(`删除当前显示的全部 ${ids.length} 条素材（${range}）？
+团队成员都将看不到这些素材；重新采集同一条快讯可恢复。`)) return;
+  await api('/api/materials/bulk-delete', { method: 'POST', json: { ids } });
+  state.materials = [];
+  state.picked.clear();
+  state.order = {};
+  savePicked();
+  saveOrder();
+  render();
+}
+
 async function resetAiLayout() {
   if (!confirm('恢复 AI 排版？手动调整的排序与栏目会被撤销（文字与配图的编辑保留）。')) return;
   state.order = {};
@@ -569,7 +584,7 @@ async function enterApp() {
   restorePicked();
   restoreOrder();
   await Promise.all([refresh(), loadHistory()]);
-  if (!editable) $('#generate').disabled = true;
+  if (!editable) { $('#generate').disabled = true; $('#clear-pool').disabled = true; }
 }
 
 function wire() {
@@ -599,6 +614,7 @@ function wire() {
   $('#preview-close').addEventListener('click', () => { $('#preview-view').hidden = true; });
   $('#preview-generate').addEventListener('click', () => { $('#preview-view').hidden = true; generate(); });
   $('#reset-ai').addEventListener('click', () => resetAiLayout().catch(alert));
+  $('#clear-pool').addEventListener('click', () => clearPool().catch(alert));
   const trash = $('#trash');
   trash.addEventListener('dragover', (e) => { if (!state.dragId) return; e.preventDefault(); clearDropMarks(); trash.classList.add('drop-target'); });
   trash.addEventListener('dragleave', () => trash.classList.remove('drop-target'));

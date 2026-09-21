@@ -5,6 +5,8 @@ import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query, status
+from pydantic import BaseModel, Field
+from sqlalchemy import select
 
 from app.config import get_settings
 from app.db.models import Material, utcnow
@@ -53,6 +55,30 @@ def _get_team_material(db: DbSession, user: CurrentUser, material_id: uuid.UUID)
 @router.get("/{material_id}", response_model=MaterialOut)
 def get_material(material_id: uuid.UUID, db: DbSession, user: CurrentUser) -> MaterialOut:
     return MaterialOut.model_validate(_get_team_material(db, user, material_id))
+
+
+class BulkDeleteRequest(BaseModel):
+    ids: list[uuid.UUID] = Field(min_length=1, max_length=2000)
+
+
+class BulkDeleteResponse(BaseModel):
+    deleted: int
+
+
+@router.post("/bulk-delete", response_model=BulkDeleteResponse)
+def bulk_delete(body: BulkDeleteRequest, db: DbSession, user: Editor) -> BulkDeleteResponse:
+    """一键清空：软删除本团队的一批素材（重新采集同一条快讯会自动恢复）"""
+    now = utcnow()
+    rows = db.scalars(
+        select(Material).where(
+            Material.team_id == user.team_id, Material.id.in_(body.ids), Material.deleted_at.is_(None)
+        )
+    ).all()
+    for material in rows:
+        material.deleted_at = now
+        material.updated_at = now
+    db.commit()
+    return BulkDeleteResponse(deleted=len(rows))
 
 
 @router.delete("/{material_id}", status_code=status.HTTP_204_NO_CONTENT)

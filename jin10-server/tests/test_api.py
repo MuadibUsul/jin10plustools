@@ -163,6 +163,17 @@ class TestSync:
         assert restored["material"]["id"] == m["id"]
         assert restored["material"]["deleted_at"] is None
 
+    def test_bulk_delete(self, client: TestClient) -> None:
+        h = login(client, "editor@plus.test")
+        a = material()
+        b = material(source_item_id="flash20260921164125290801", fingerprint="b" * 64)
+        push(client, h, a, b)
+        viewer = login(client, "viewer@plus.test")
+        assert client.post("/api/materials/bulk-delete", json={"ids": [a["id"]]}, headers=viewer).status_code == 403
+        res = client.post("/api/materials/bulk-delete", json={"ids": [a["id"], b["id"], str(uuid.uuid4())]}, headers=h)
+        assert res.json() == {"deleted": 2}
+        assert client.get(f"/api/materials/{a['id']}", headers=h).json()["deleted_at"] is not None
+
     def test_viewer_cannot_push(self, client: TestClient) -> None:
         h = login(client, "viewer@plus.test")
         res = client.post("/api/materials/sync", json={"materials": [material()]}, headers=h)

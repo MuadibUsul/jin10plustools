@@ -2,10 +2,12 @@ import { createMessageListener } from '@/shared/messaging';
 import { logger } from '@/shared/logger';
 import { nowIso } from '@/shared/time';
 import { collectAtContext } from './collector';
+import { installClickCollector } from './clickCollector';
 import { installContextTracker } from './contextTracker';
 import { scanFlashItems } from './parser/jin10Parser';
 
 installContextTracker();
+installClickCollector();
 
 chrome.runtime.onMessage.addListener(
   createMessageListener({

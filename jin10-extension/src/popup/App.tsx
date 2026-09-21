@@ -113,7 +113,10 @@ export function App() {
       </section>
 
       {conn.content === 'ok' && (
-        <p className="text-xs text-slate-500">在快讯上右键 →「PLUS Research › 加入日报素材库」</p>
+        <p className="text-xs text-slate-500">
+          在快讯上右键 →「PLUS Research › 加入日报素材库」，
+          或按住 <kbd className="rounded border border-slate-300 bg-white px-1 font-mono">Ctrl</kbd> 点击快讯（加 Shift 同时 AI 分析）
+        </p>
       )}
 
       <section className="flex flex-col gap-2">

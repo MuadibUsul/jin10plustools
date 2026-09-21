@@ -44,14 +44,18 @@ function describe(res: CollectResponse): string {
   return parts.join(' · ');
 }
 
-/** 采集最近一次右键位置所在的快讯：解析 → 读取 PLUS 解读 → 下载配图 → 交给 background 入库 */
+/** 采集最近一次右键位置所在的快讯 */
 export async function collectAtContext(analyze: boolean): Promise<CollectResponse> {
   const root = findFlashRoot(getLastContextTarget());
   if (!root) {
     showToast('warning', '未识别到新闻组件', '请在快讯内容区域右键').dismiss();
     throw new AppException('NOT_FOUND', '未识别到新闻组件');
   }
+  return collectFlash(root, analyze);
+}
 
+/** 采集一条快讯：解析 → 读取 PLUS 解读 → 下载配图 → 交给 background 入库 */
+export async function collectFlash(root: Element, analyze: boolean): Promise<CollectResponse> {
   const parsed = parseFlashItem(root, { pageUrl: location.href, now: new Date() });
   if (!parsed.ok) {
     showToast('error', '解析失败', parsed.reason).dismiss();

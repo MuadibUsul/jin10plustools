@@ -1,6 +1,6 @@
 /**
- * chrome.contextMenus.onClicked 拿不到被点击的 DOM，
- * 因此在捕获阶段记录最近一次右键的目标元素，供采集时使用。
+ * chrome.contextMenus.onClicked 拿不到被右键的 DOM，
+ * 所以在捕获阶段记录最近一次右键的元素，菜单点击时再取用。
  */
 let lastTarget: Element | null = null;
 

@@ -1,0 +1,47 @@
+# 共享服务器部署（plus.tlines.tech）：服务端与数据库不对外暴露端口，
+# 通过外部网络 `web` 由服务器上共享的 Caddy 反向代理并签发 HTTPS 证书。
+#   docker compose -p plus up -d --build
+name: plus
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-plus}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?请在 .env 中设置 POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-plus}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    mem_limit: 512m
+
+  api:
+    build: ./jin10-server
+    container_name: plus-api
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PLUS_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-plus}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-plus}
+      PLUS_JWT_SECRET: ${PLUS_JWT_SECRET:?请在 .env 中设置 PLUS_JWT_SECRET}
+      PLUS_JEV_API_KEY: ${PLUS_JEV_API_KEY:-}
+    volumes:
+      - storage:/data
+    networks:
+      - default
+      - web
+    mem_limit: 1536m
+
+networks:
+  web:
+    external: true
+
+volumes:
+  pgdata:
+  storage:

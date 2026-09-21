@@ -1,0 +1,51 @@
+{
+  "manifest_version": 3,
+  "name": "PLUS Research",
+  "version": "0.1.0",
+  "description": "金十数据 PLUS 日报素材采集与编排助手",
+  "icons": {
+    "16": "public/icons/icon-16.png",
+    "32": "public/icons/icon-32.png",
+    "48": "public/icons/icon-48.png",
+    "128": "public/icons/icon-128.png"
+  },
+  "action": {
+    "default_title": "PLUS Research",
+    "default_popup": "src/popup/index.html",
+    "default_icon": {
+      "16": "public/icons/icon-16.png",
+      "32": "public/icons/icon-32.png"
+    }
+  },
+  "background": {
+    "service_worker": "src/background/serviceWorker.ts",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.jin10.com/*"
+      ],
+      "js": [
+        "src/content/contentScript.ts"
+      ],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ],
+  "permissions": [
+    "contextMenus",
+    "storage",
+    "unlimitedStorage",
+    "alarms"
+  ],
+  "host_permissions": [
+    "https://www.jin10.com/*",
+    "https://plus.tlines.tech/*"
+  ],
+  "options_page": "src/options/index.html",
+  "optional_host_permissions": [
+    "https://*/*",
+    "http://*/*"
+  ]
+}

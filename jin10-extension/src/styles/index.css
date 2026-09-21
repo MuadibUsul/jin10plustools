@@ -1,0 +1,14 @@
+@import 'tailwindcss';
+
+@theme {
+  --color-plus-50: #eef8ff;
+  --color-plus-100: #d8eeff;
+  --color-plus-500: #1fa2e8;
+  --color-plus-600: #0b86cc;
+  --color-plus-900: #0d2b45;
+  --font-sans: 'Source Han Sans SC', 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+}
+
+body {
+  @apply bg-white text-slate-800 antialiased;
+}

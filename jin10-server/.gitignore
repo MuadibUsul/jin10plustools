@@ -1,0 +1,9 @@
+.venv/
+out/
+__pycache__/
+*.pyc
+.env
+app/web/plus-research-extension.zip
+.pytest_cache/
+data/
+*.db

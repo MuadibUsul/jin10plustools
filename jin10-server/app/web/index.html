@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>PLUS 日报选稿</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <section id="login-view" class="login" hidden>
+      <form id="login-form" class="card login-card">
+        <h1>PLUS 日报选稿</h1>
+        <p class="muted">使用团队账号登录</p>
+        <label>邮箱<input name="email" type="email" autocomplete="username" required /></label>
+        <label>密码<input name="password" type="password" autocomplete="current-password" required /></label>
+        <p id="login-error" class="error" hidden></p>
+        <button class="primary" type="submit">登录</button>
+          <details class="install">
+            <summary>安装采集插件（Chrome）</summary>
+            <ol>
+              <li><a href="plus-research-extension.zip" download>下载插件压缩包</a>，解压到一个固定文件夹</li>
+              <li>Chrome 打开 <code>chrome://extensions</code>，打开右上角「开发者模式」</li>
+              <li>点「加载已解压的扩展程序」，选择解压后的文件夹</li>
+              <li>点插件图标 →「登录团队」，用本网站的账号登录</li>
+            </ol>
+            <p class="muted">更新插件：下载新压缩包覆盖原文件夹，在扩展页点刷新图标。</p>
+          </details>
+      </form>
+    </section>
+
+    <section id="app-view" hidden>
+      <header class="topbar">
+        <div class="brand"><span class="tag">PLUS</span><strong>日报选稿</strong></div>
+        <div class="controls">
+          <label>日期 <input id="day" type="date" /></label>
+          <label>范围
+            <select id="days">
+              <option value="1">当天</option>
+              <option value="2">近 2 天</option>
+              <option value="3">近 3 天</option>
+              <option value="7">近 7 天</option>
+            </select>
+          </label>
+          <button id="refresh">刷新</button>
+          <button id="auto-pick">按配额自动选稿</button>
+          <button id="clear-pick">清空选择</button>
+          <button id="reset-ai" title="撤销手动的排序与栏目调整，回到 AI 分类与评分的结果">恢复 AI 排版</button>
+        </div>
+        <div class="user"><span id="whoami"></span><button id="logout" class="link">退出</button></div>
+      </header>
+
+      <main>
+        <div id="sections" class="sections"></div>
+
+        <aside class="side">
+          <div class="card">
+            <h2>本期日报</h2>
+            <p class="muted" id="pick-summary">尚未选择素材</p>
+            <ol id="pick-list" class="pick-list"></ol>
+            <div class="gen-buttons">
+              <button id="preview" class="wide" disabled>预览</button>
+              <button id="generate" class="primary wide" disabled>生成 PDF</button>
+            </div>
+            <div id="gen-status" class="gen-status" hidden></div>
+          </div>
+          <div class="card">
+            <h2>生成记录</h2>
+            <ul id="history" class="history"></ul>
+          </div>
+          <div class="card">
+          <details class="install">
+            <summary>安装采集插件（Chrome）</summary>
+            <ol>
+              <li><a href="plus-research-extension.zip" download>下载插件压缩包</a>，解压到一个固定文件夹</li>
+              <li>Chrome 打开 <code>chrome://extensions</code>，打开右上角「开发者模式」</li>
+              <li>点「加载已解压的扩展程序」，选择解压后的文件夹</li>
+              <li>点插件图标 →「登录团队」，用本网站的账号登录</li>
+            </ol>
+            <p class="muted">更新插件：下载新压缩包覆盖原文件夹，在扩展页点刷新图标。</p>
+          </details>
+          </div>
+        </aside>
+      </main>
+    </section>
+
+    <div id="trash" class="trash" title="拖到这里删除素材" aria-label="删除素材">
+      <svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M3 6h18"/><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/>
+      </svg>
+      <span>拖到这里删除</span>
+    </div>
+
+    <div id="preview-view" class="preview" hidden>
+      <div class="preview-bar">
+        <strong>日报预览</strong>
+        <span id="preview-info" class="muted"></span>
+        <span class="spacer"></span>
+        <button id="preview-refresh">重新渲染</button>
+        <button id="preview-generate" class="primary">生成 PDF</button>
+        <button id="preview-close">关闭</button>
+      </div>
+      <div id="preview-pages" class="preview-pages"></div>
+    </div>
+
+    <script type="module" src="app.js"></script>
+  </body>
+</html>

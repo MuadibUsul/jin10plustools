@@ -169,3 +169,22 @@ class Issue(Base):
     pdf_path: Mapped[str | None] = mapped_column(Text)
     created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     created_at: Mapped[dt.datetime] = mapped_column(default=utcnow)
+
+
+class Board(Base):
+    """团队某一天的共享选稿板：已选素材与各栏目的手动排序（多账号协作）"""
+
+    __tablename__ = "boards"
+    __table_args__ = (Index("uq_boards_team_day", "team_id", "day", unique=True),)
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    team_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("teams.id", ondelete="CASCADE"))
+    day: Mapped[dt.date] = mapped_column(Date)
+    #: 已选入日报的素材 ID
+    picked: Mapped[list[str]] = mapped_column(JsonType, default=list)
+    #: {栏目: [素材 ID, ...]}，拖拽排过序的素材顺序
+    order: Mapped[dict[str, list[str]]] = mapped_column(JsonType, default=dict)
+    #: 每次修改 +1，前端据此判断是否有他人改动
+    version: Mapped[int] = mapped_column(Integer, default=0)
+    updated_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    updated_at: Mapped[dt.datetime] = mapped_column(default=utcnow)

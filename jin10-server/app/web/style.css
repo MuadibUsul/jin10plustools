@@ -130,3 +130,7 @@ button.danger-solid { background: var(--danger); border-color: var(--danger); co
 .item.bulk input.bulk-check { accent-color: var(--danger); }
 .item.marked { border-color: var(--danger); background: #fff5f5; }
 body.bulk-mode main { padding-bottom: 96px; }
+
+/* 多人采集 */
+.chip.multi { background: #fff4e5; color: #c2410c; font-weight: 600; }
+.item.multi { box-shadow: inset 3px 0 0 #f97316; }

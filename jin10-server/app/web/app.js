@@ -12,6 +12,7 @@ const SECTIONS = [
 const UNSORTED = { id: 'unsorted', label: '待分类', quota: 0 };
 const TOKEN_KEY = 'plus.token';
 const REFRESH_MS = 30_000;
+const BOARD_REFRESH_MS = 4_000;
 
 const $ = (sel) => document.querySelector(sel);
 const state = { token: null, me: null, materials: [], picked: new Set(), expanded: new Set(), order: {}, dragId: null, editing: null, editingTitle: null, bulk: null };
@@ -70,14 +71,12 @@ function fmtTime(iso) {
   const utc = /([zZ]|[+-]\d{2}:?\d{2})$/.test(iso) ? iso : `${iso}Z`;
   return new Date(utc).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
 }
+function collectorNames(ids) {
+  const names = new Map((state.me?.members ?? []).map((u) => [u.id, u.name]));
+  return ids.map((id) => names.get(id) ?? '已停用账号').join('、');
+}
 function sectionOf(m) {
   return SECTIONS.some((s) => s.id === m.category) ? m.category : UNSORTED.id;
-}
-function pickKey() {
-  return `plus.picked.${$('#day').value}`;
-}
-function orderKey() {
-  return `plus.order.${$('#day').value}`;
 }
 
 /** 栏目内的素材：拖拽排过序的在前（按拖拽顺序），其余按综合分 */
@@ -87,11 +86,56 @@ function sectionItems(sectionId) {
   const rank = (m) => { const i = order.indexOf(m.id); return i === -1 ? Infinity : i; };
   return items.map((m, i) => ({ m, i })).sort((a, b) => rank(a.m) - rank(b.m) || a.i - b.i).map((x) => x.m);
 }
-function saveOrder() {
-  store(orderKey(), JSON.stringify(state.order));
+// ---------- 团队共享选稿板（已选 + 手动排序，多账号同步） ----------
+
+let boardVersion = -1;
+let boardQueue = Promise.resolve();
+let boardPending = 0;
+
+function adoptBoard(board) {
+  boardVersion = board.version;
+  state.picked = new Set(board.picked);
+  state.order = board.order;
 }
-function restoreOrder() {
-  try { state.order = JSON.parse(load(orderKey()) || '{}'); } catch { state.order = {}; }
+
+/** 拉取选稿板；有本地操作未提交完时跳过，避免把刚做的改动闪回去 */
+async function loadBoard() {
+  const day = $('#day').value;
+  const board = await api(`/api/board?day=${day}`);
+  if (boardPending || day !== $('#day').value) return false;
+  const changed = board.version !== boardVersion;
+  adoptBoard(board);
+  return changed;
+}
+
+/** 旧版把已选 / 排序存在本机：服务端当天还是空板时上传一次，之后以服务端为准 */
+function migrateLocalBoard() {
+  const day = $('#day').value;
+  const keys = [`plus.picked.${day}`, `plus.order.${day}`];
+  let picked = [];
+  let order = {};
+  try {
+    picked = JSON.parse(load(keys[0]) || '[]');
+    order = JSON.parse(load(keys[1]) || '{}');
+  } catch { /* 损坏的旧数据直接丢弃 */ }
+  keys.forEach((k) => store(k, null));
+  if (boardVersion !== 0 || !canEdit() || (!picked.length && !Object.keys(order).length)) return;
+  state.picked = new Set(picked);
+  state.order = order;
+  boardOps({ pick_set: picked, order });
+  render();
+}
+
+/** 本地已先行更新（界面即时响应），再把增量操作按顺序提交给服务端合并 */
+function boardOps(ops) {
+  const day = $('#day').value;
+  boardPending++;
+  boardQueue = boardQueue
+    .then(() => api(`/api/board/ops?day=${day}`, { method: 'POST', json: ops }))
+    .then((board) => { if (boardPending === 1 && day === $('#day').value) { adoptBoard(board); render(); } })
+    .catch((err) => alert(`选稿同步失败：${err.message ?? err}`))
+    .finally(() => { boardPending--; });
+  return boardQueue;
 }
 
 /** 拖拽放下：移到 targetSection 的 index 位置；跨栏目时同时修改栏目（锁定，AI 不再覆盖） */
@@ -104,10 +148,10 @@ async function dropMaterial(id, targetSection, index) {
   const from = sectionOf(m);
   if (from !== targetSection) {
     state.order[from] = (state.order[from] ?? []).filter((x) => x !== id);
-    saveOrder();
+    boardOps({ order: { [targetSection]: ids, [from]: state.order[from] } });
     await moveTo(m, targetSection);
   } else {
-    saveOrder();
+    boardOps({ order: { [targetSection]: ids } });
     render();
   }
 }
@@ -143,9 +187,8 @@ function logout() {
 async function refresh() {
   const day = $('#day').value;
   const days = $('#days').value;
-  state.materials = await api(`/api/pool?day=${day}&days=${days}`);
-  const valid = new Set(state.materials.map((m) => m.id));
-  for (const id of [...state.picked]) if (!valid.has(id)) state.picked.delete(id);
+  const [materials] = await Promise.all([api(`/api/pool?day=${day}&days=${days}`), loadBoard()]);
+  state.materials = materials;
   render();
 }
 
@@ -197,9 +240,13 @@ async function moveTo(material, category) {
 // ---------- 选择 ----------
 
 function togglePick(id) {
-  if (state.picked.has(id)) state.picked.delete(id);
-  else state.picked.add(id);
-  savePicked();
+  if (state.picked.has(id)) {
+    state.picked.delete(id);
+    boardOps({ pick_remove: [id] });
+  } else {
+    state.picked.add(id);
+    boardOps({ pick_add: [id] });
+  }
   render();
 }
 
@@ -208,20 +255,10 @@ function autoPick() {
   for (const s of SECTIONS) {
     sectionItems(s.id).slice(0, s.quota).forEach((m) => state.picked.add(m.id));
   }
-  savePicked();
+  boardOps({ pick_set: [...state.picked] });
   render();
 }
 
-function savePicked() {
-  store(pickKey(), JSON.stringify([...state.picked]));
-}
-function restorePicked() {
-  try {
-    state.picked = new Set(JSON.parse(load(pickKey()) || '[]'));
-  } catch {
-    state.picked = new Set();
-  }
-}
 
 function pickedBySection() {
   return SECTIONS.map((s) => ({
@@ -390,8 +427,11 @@ function renderItem(m) {
   if (!SECTIONS.some((s) => s.id === m.category)) select.prepend(el('option', { value: '', selected: true, disabled: true }, '选择栏目'));
 
   const marked = state.bulk?.has(m.id) ?? false;
+  // 多人采集的同一条快讯：团队共识度高，醒目标出
+  const collectors = m.collected_by ?? [];
+  const multi = collectors.length >= 2;
   const li = el('li', {
-    class: `item${picked ? ' picked' : ''}${state.bulk ? ' bulk' : ''}${marked ? ' marked' : ''}`,
+    class: `item${picked ? ' picked' : ''}${state.bulk ? ' bulk' : ''}${marked ? ' marked' : ''}${multi ? ' multi' : ''}`,
     // 批量删除模式：点卡片任意位置勾选 / 取消
     onclick: (e) => {
       if (!state.bulk || e.target.closest('input, select, button, a')) return;
@@ -446,6 +486,7 @@ function renderItem(m) {
       m.level ? el('span', { class: `level ${m.level}` }, m.level) : null,
       m.ai_status === 'done' ? el('span', {}, `${m.final_score} 分`) : el('span', { class: 'chip warn' }, { pending: 'AI 分析中', analyzing: 'AI 分析中', failed: 'AI 分析失败' }[m.ai_status] ?? m.ai_status),
       el('span', {}, fmtTime(m.publish_time ?? m.collect_time)),
+      multi ? el('span', { class: 'chip multi', title: `采集人：${collectorNames(collectors)}` }, `${collectors.length} 人采集`) : null,
       m.interpretation_status === 'fetched' ? el('span', { class: 'chip plus' }, 'PLUS 解读') : null,
       images ? el('span', { class: 'chip' }, `配图 ${images}`) : null,
       m.edits ? el('span', { class: 'chip edited' }, '已编辑') : null,
@@ -535,10 +576,10 @@ async function deleteMaterial(id) {
 function removeLocal(ids) {
   const gone = new Set(ids);
   state.materials = state.materials.filter((x) => !gone.has(x.id));
+  const wasPicked = ids.filter((id) => state.picked.has(id));
   for (const id of gone) { state.picked.delete(id); state.bulk?.delete(id); }
   for (const k of Object.keys(state.order)) state.order[k] = state.order[k].filter((x) => !gone.has(x));
-  savePicked();
-  saveOrder();
+  if (wasPicked.length) boardOps({ pick_remove: wasPicked });
   render();
 }
 
@@ -598,13 +639,15 @@ async function clearPool() {
   if (!confirm(`【第 3 步，共 3 步】最后确认：立即删除这 ${ids.length} 条素材？`)) return;
   await api('/api/materials/bulk-delete', { method: 'POST', json: { ids } });
   state.order = {};
+  state.picked.clear();
+  boardOps({ pick_set: [], order_reset: true });
   removeLocal(ids);
 }
 
 async function resetAiLayout() {
   if (!confirm('恢复 AI 排版？手动调整的排序与栏目会被撤销（文字与配图的编辑保留）。')) return;
   state.order = {};
-  saveOrder();
+  boardOps({ order_reset: true });
   state.materials = await api(`/api/pool/reset-ai?day=${$('#day').value}&days=${$('#days').value}`, { method: 'POST' });
   render();
 }
@@ -642,9 +685,8 @@ async function enterApp() {
   $('#app-view').hidden = false;
   const editable = canEdit();
   $('#generate').title = editable ? '' : '只读账号不能生成日报';
-  restorePicked();
-  restoreOrder();
   await Promise.all([refresh(), loadHistory()]);
+  migrateLocalBoard();
   if (!editable) { $('#generate').disabled = true; $('#clear-pool').disabled = true; $('#bulk-delete').disabled = true; }
 }
 
@@ -665,10 +707,10 @@ function wire() {
   });
   $('#logout').addEventListener('click', logout);
   $('#refresh').addEventListener('click', () => refresh().catch(alert));
-  $('#day').addEventListener('change', () => { restorePicked(); restoreOrder(); refresh().catch(alert); });
+  $('#day').addEventListener('change', () => { boardVersion = -1; refresh().catch(alert); });
   $('#days').addEventListener('change', () => refresh().catch(alert));
   $('#auto-pick').addEventListener('click', autoPick);
-  $('#clear-pick').addEventListener('click', () => { state.picked.clear(); savePicked(); render(); });
+  $('#clear-pick').addEventListener('click', () => { state.picked.clear(); boardOps({ pick_set: [] }); render(); });
   $('#generate').addEventListener('click', generate);
   $('#preview').addEventListener('click', openPreview);
   $('#preview-refresh').addEventListener('click', openPreview);
@@ -687,7 +729,10 @@ function wire() {
     if (id) deleteMaterial(id).catch(alert);
   });
   // 定时刷新，看到同事新采集的素材与 AI 分析结果
-  setInterval(() => { if (state.token && !document.hidden && !state.dragId && !state.editing && !state.editingTitle && !state.bulk) refresh().catch(() => {}); }, REFRESH_MS);
+  const idle = () => state.token && !document.hidden && !state.dragId && !state.editing && !state.editingTitle;
+  setInterval(() => { if (idle() && !state.bulk) refresh().catch(() => {}); }, REFRESH_MS);
+  // 选稿板轮询更频繁：同事勾选 / 排序几秒内可见
+  setInterval(() => { if (idle()) loadBoard().then((changed) => changed && render()).catch(() => {}); }, BOARD_REFRESH_MS);
 }
 
 wire();

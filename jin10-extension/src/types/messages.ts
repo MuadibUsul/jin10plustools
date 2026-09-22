@@ -84,8 +84,26 @@ export interface MessageMap {
   /** background：登录团队服务端（调用前需已获得该地址的主机权限） */
   LOGIN: { req: { api_base_url: string; email: string; password: string }; res: AuthSession };
   LOGOUT: { req: undefined; res: undefined };
+  /** background：比对团队服务端上的最新插件版本 */
+  CHECK_UPDATE: { req: undefined; res: UpdateInfo };
+  /** background：上报采集 / 解析异常（金十改版预警） */
+  REPORT_PARSE: { req: ParseReport; res: undefined };
   /** background：立即与团队服务端同步 */
   SYNC_NOW: { req: undefined; res: SyncReport };
+}
+
+export interface UpdateInfo {
+  current: string;
+  latest: string | null;
+  outdated: boolean;
+  download_url: string | null;
+}
+
+export interface ParseReport {
+  kind: 'parse_failed' | 'unrecognized_title' | 'image_failed' | 'plus_failed';
+  source_item_id: string | null;
+  detail: string;
+  html: string;
 }
 
 export type MessageType = keyof MessageMap;

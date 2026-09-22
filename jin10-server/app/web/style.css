@@ -134,3 +134,16 @@ body.bulk-mode main { padding-bottom: 96px; }
 /* 多人采集 */
 .chip.multi { background: #fff4e5; color: #c2410c; font-weight: 600; }
 .item.multi { box-shadow: inset 3px 0 0 #f97316; }
+
+/* 协作：正在编辑 */
+.chip.editing { background: #ede9fe; color: #6d28d9; font-weight: 600; }
+/* 解析异常提醒 */
+.parse-alert { border-color: #f59e0b; background: #fffbeb; color: #b45309; font-size: 12px; padding: 4px 10px; margin-right: 8px; }
+/* 回收站 */
+.recycle { border: none; border-radius: 14px; padding: 20px; width: min(640px, calc(100vw - 32px)); box-shadow: 0 20px 50px rgba(15, 23, 42, .25); }
+.recycle::backdrop { background: rgba(15, 23, 42, .4); }
+.recycle h2 { margin: 0 0 12px; font-size: 16px; }
+.recycle-list { list-style: none; margin: 0; padding: 0; max-height: 60vh; overflow-y: auto; font-size: 13px; }
+.recycle-list li { padding: 6px 0; border-bottom: 1px solid var(--line); }
+.recycle-list label { display: flex; gap: 8px; align-items: baseline; cursor: pointer; }
+.recycle-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px; }

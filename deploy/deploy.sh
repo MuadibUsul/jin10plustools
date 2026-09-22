@@ -16,8 +16,10 @@ echo "==> 构建插件并放入网页下载目录"
 (cd jin10-extension && npm run build --silent >/dev/null)
 PY=jin10-server/.venv/Scripts/python; [ -x "$PY" ] || PY=python3
 "$PY" - <<'ZIP'
-import pathlib, zipfile
+import json, pathlib, zipfile
 src = pathlib.Path("jin10-extension/dist")
+version = json.loads((src / "manifest.json").read_text(encoding="utf-8"))["version"]
+pathlib.Path("jin10-server/app/web/extension-version.json").write_text(json.dumps({"version": version}), encoding="utf-8")
 with zipfile.ZipFile("jin10-server/app/web/plus-research-extension.zip", "w", zipfile.ZIP_DEFLATED) as z:
     for p in src.rglob("*"):
         if p.is_file():

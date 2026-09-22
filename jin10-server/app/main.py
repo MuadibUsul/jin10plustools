@@ -13,9 +13,10 @@ from fastapi.staticfiles import StaticFiles
 
 from app.ai.jev_client import JevClient
 from app.ai.worker import AnalysisWorker
-from app.api import assets, auth, board, issues, materials
+from app.api import assets, auth, board, collab, issues, materials
 from app.config import get_settings
 from app.db.session import get_session_factory
+from app.services.maintenance import MaintenanceWorker
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 log = logging.getLogger("plus")
@@ -30,7 +31,10 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         worker.start()
     else:
         log.warning("AI 分析未启用（未配置 PLUS_JEV_API_KEY 或 PLUS_AI_WORKER_ENABLED=false）")
+    maintenance = MaintenanceWorker(get_session_factory(), settings.retention_days)
+    maintenance.start()
     yield
+    maintenance.stop()
     if worker:
         worker.stop()
 
@@ -41,6 +45,7 @@ app.include_router(materials.router)
 app.include_router(assets.router)
 app.include_router(issues.router)
 app.include_router(board.router)
+app.include_router(collab.router)
 
 
 @app.get("/api/health", tags=["system"])

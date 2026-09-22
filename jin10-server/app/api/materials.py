@@ -52,6 +52,18 @@ def _get_team_material(db: DbSession, user: CurrentUser, material_id: uuid.UUID)
     return material
 
 
+@router.get("/deleted", response_model=list[MaterialOut])
+def list_deleted(db: DbSession, user: CurrentUser) -> list[MaterialOut]:
+    """回收站：本团队已删除的素材（最近删除的在前；超过保留期的会被自动清理）"""
+    rows = db.scalars(
+        select(Material)
+        .where(Material.team_id == user.team_id, Material.deleted_at.is_not(None))
+        .order_by(Material.deleted_at.desc())
+        .limit(500)
+    ).all()
+    return [MaterialOut.model_validate(m) for m in rows]
+
+
 @router.get("/{material_id}", response_model=MaterialOut)
 def get_material(material_id: uuid.UUID, db: DbSession, user: CurrentUser) -> MaterialOut:
     return MaterialOut.model_validate(_get_team_material(db, user, material_id))
@@ -76,6 +88,22 @@ def bulk_delete(body: BulkDeleteRequest, db: DbSession, user: Editor) -> BulkDel
     ).all()
     for material in rows:
         material.deleted_at = now
+        material.updated_at = now
+    db.commit()
+    return BulkDeleteResponse(deleted=len(rows))
+
+
+@router.post("/restore", response_model=BulkDeleteResponse)
+def restore(body: BulkDeleteRequest, db: DbSession, user: Editor) -> BulkDeleteResponse:
+    """从回收站恢复（插件会通过增量同步拿到恢复后的素材）"""
+    now = utcnow()
+    rows = db.scalars(
+        select(Material).where(
+            Material.team_id == user.team_id, Material.id.in_(body.ids), Material.deleted_at.is_not(None)
+        )
+    ).all()
+    for material in rows:
+        material.deleted_at = None
         material.updated_at = now
     db.commit()
     return BulkDeleteResponse(deleted=len(rows))

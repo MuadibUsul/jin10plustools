@@ -1,4 +1,5 @@
 /** 团队服务端接口（与 jin10-server/app/api 对应） */
+import type { ParseReport } from '@/types/messages';
 import type { ImageAsset, NewsMaterial } from '@/types/material';
 import type { AuthSession, SessionTeam, SessionUser } from '@/types/settings';
 import { apiRequest } from './apiClient';
@@ -96,4 +97,14 @@ export async function uploadAsset(asset: ImageAsset): Promise<void> {
     body: blob,
     headers: { 'Content-Type': asset.mime, 'X-Source-Url': encodeURIComponent(asset.source_url) },
   });
+}
+
+/** 部署脚本在网页目录写出的最新插件版本 */
+export async function latestExtensionVersion(): Promise<string | null> {
+  const res = await apiRequest<{ version?: string }>('/extension-version.json');
+  return res.version ?? null;
+}
+
+export async function reportParse(report: ParseReport, version: string): Promise<void> {
+  await apiRequest('/api/parse-reports', { method: 'POST', json: { ...report, extension_version: version } });
 }

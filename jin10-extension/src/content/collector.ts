@@ -8,6 +8,32 @@ import { findFlashRoot, parseFlashItem } from './parser/jin10Parser';
 import { SELECTORS } from './parser/selectors';
 import { fetchPlusInterpretation } from './plus/plusFetcher';
 import { showToast, type ToastHandle } from './toast';
+import type { ParseReport } from '@/types/messages';
+
+/** 上报异常（不影响采集流程），集中出现说明金十页面结构变了 */
+function report(kind: ParseReport['kind'], root: Element, sourceItemId: string | null, detail: string): void {
+  void sendToBackground('REPORT_PARSE', { kind, source_item_id: sourceItemId, detail, html: root.outerHTML.slice(0, 30_000) });
+}
+
+const TITLE_LIKE = 'b, strong, h1, h2, h3, h4, [class*="title"]';
+
+/** 快讯里有像标题的加粗文字，但解析器没认出来（新样式的信号） */
+function unrecognizedTitle(root: Element, known: (string | null)[]): string | null {
+  for (const el of Array.from(root.querySelectorAll(TITLE_LIKE))) {
+    if (el.closest(`${SELECTORS.content}, ${SELECTORS.remark}, .item-time`)) continue;
+    const text = el.textContent?.replace(/\s+/g, ' ').trim() ?? '';
+    if (text.length >= 6 && text.length <= 80 && !known.some((k) => k?.includes(text))) return text;
+  }
+  return null;
+}
+
+/** 插件有新版本时提醒（每次采集后检查，结果在后台缓存） */
+async function remindUpdate(): Promise<void> {
+  const res = await sendToBackground('CHECK_UPDATE', undefined);
+  if (res.ok && res.data.outdated) {
+    showToast('warning', `插件有新版本 v${res.data.latest}`, '请到选稿网页下载新版并在扩展管理页刷新').dismiss(8000);
+  }
+}
 
 function allImages(
   flashImages: MaterialImage[],
@@ -59,6 +85,7 @@ export async function collectFlash(root: Element, analyze: boolean): Promise<Col
   const parsed = parseFlashItem(root, { pageUrl: location.href, now: new Date() });
   if (!parsed.ok) {
     showToast('error', '解析失败', parsed.reason).dismiss();
+    report('parse_failed', root, null, parsed.reason);
     throw new AppException('PARSE_FAILED', parsed.reason);
   }
   const { draft } = parsed;
@@ -107,6 +134,15 @@ export async function collectFlash(root: Element, analyze: boolean): Promise<Col
     const tone = saved.data.outcome === 'duplicate' ? 'info' : status === 'fetched' || status === 'none' ? 'success' : 'warning';
     toast.update(tone, OUTCOME_TEXT[saved.data.outcome], describe(response) || draft.title);
     toast.dismiss();
+
+    const missedTitle = unrecognizedTitle(root, [draft.title, draft.flash_title, draft.plus_title, draft.content]);
+    if (missedTitle) report('unrecognized_title', root, draft.source_item_id, missedTitle);
+    if (images.length < imageRefs.length) {
+      const failed = imageRefs.filter((r) => !images.some((i) => i.url === r.url)).map((r) => r.url);
+      report('image_failed', root, draft.source_item_id, failed.join(' '));
+    }
+    if (status === 'failed') report('plus_failed', root, draft.source_item_id, interpretationError ?? '');
+    void remindUpdate();
     return response;
   } catch (err) {
     toast.update('error', '采集失败', err instanceof Error ? err.message : String(err));

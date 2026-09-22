@@ -15,7 +15,7 @@ const REFRESH_MS = 30_000;
 const BOARD_REFRESH_MS = 4_000;
 
 const $ = (sel) => document.querySelector(sel);
-const state = { token: null, me: null, materials: [], picked: new Set(), expanded: new Set(), order: {}, dragId: null, editing: null, editingTitle: null, bulk: null };
+const state = { token: null, me: null, materials: [], picked: new Set(), expanded: new Set(), order: {}, dragId: null, editing: null, editingTitle: null, bulk: null, presence: new Map() };
 
 // ---------- 通用 ----------
 
@@ -71,6 +71,65 @@ function fmtTime(iso) {
   const utc = /([zZ]|[+-]\d{2}:?\d{2})$/.test(iso) ? iso : `${iso}Z`;
   return new Date(utc).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
 }
+/** 同事正在编辑这条时先提醒，避免后保存的覆盖先保存的 */
+function confirmEditing(m) {
+  const who = state.presence.get(m.id);
+  return !who || confirm(`${who} 正在编辑这条素材，同时编辑时后保存的会覆盖先保存的。仍要编辑？`);
+}
+
+// ---------- 协作：正在编辑心跳 ----------
+
+async function heartbeat() {
+  const mine = state.editing || state.editingTitle || null;
+  const others = await api('/api/presence', { method: 'POST', json: { material_id: mine } });
+  const next = new Map(others.map((p) => [p.material_id, p.user_name]));
+  const changed = JSON.stringify([...next]) !== JSON.stringify([...state.presence]);
+  state.presence = next;
+  // 自己在编辑时不重绘（会打断输入），标记在编辑结束后显示
+  if (changed && !state.editing && !state.editingTitle && !state.dragId) render();
+}
+
+// ---------- 解析异常提醒（金十可能改版） ----------
+
+const PARSE_ALERT_MIN = 3;
+const KIND_TEXT = { parse_failed: '解析失败', unrecognized_title: '标题未识别', image_failed: '配图下载失败', plus_failed: 'PLUS 解读读取失败' };
+
+async function loadParseAlert() {
+  const s = await api('/api/parse-reports/summary');
+  const btn = $('#parse-alert');
+  btn.hidden = s.total < PARSE_ALERT_MIN;
+  btn.textContent = `⚠ 采集异常 ${s.total} 次`;
+  btn.onclick = () => alert(
+    `最近 24 小时插件上报的采集异常：${Object.entries(s.by_kind).map(([k, n]) => `${KIND_TEXT[k] ?? k} ${n} 次`).join('，')}\n` +
+    '集中出现时通常是金十页面改版，请把这个提示转给维护人员。\n\n最近记录：\n' +
+    s.latest.slice(0, 8).map((r) => `${fmtTime(r.created_at)} ${KIND_TEXT[r.kind] ?? r.kind} · ${r.user_name ?? ''} · v${r.extension_version} · ${r.detail}`).join('\n'),
+  );
+}
+
+// ---------- 回收站 ----------
+
+async function openRecycle() {
+  const dlg = $('#recycle');
+  const list = $('#recycle-list');
+  list.replaceChildren(el('li', { class: 'muted' }, '加载中…'));
+  dlg.showModal();
+  const rows = await api('/api/materials/deleted');
+  const chosen = new Set();
+  const sync = () => { $('#recycle-restore').textContent = `恢复所选（${chosen.size}）`; $('#recycle-restore').disabled = !chosen.size; };
+  list.replaceChildren(...(rows.length ? rows.map((m) => el('li', {},
+    el('label', {},
+      el('input', { type: 'checkbox', onchange: (e) => { e.target.checked ? chosen.add(m.id) : chosen.delete(m.id); sync(); } }),
+      el('span', {}, eff.title(m)),
+      el('span', { class: 'muted' }, ` · 删除于 ${fmtTime(m.deleted_at)}`)))) : [el('li', { class: 'muted' }, '回收站是空的')]));
+  $('#recycle-all').onclick = () => { list.querySelectorAll('input').forEach((i) => { i.checked = true; }); rows.forEach((m) => chosen.add(m.id)); sync(); };
+  $('#recycle-restore').onclick = async () => {
+    await api('/api/materials/restore', { method: 'POST', json: { ids: [...chosen] } });
+    dlg.close();
+    await refresh();
+  };
+  sync();
+}
+
 function collectorNames(ids) {
   const names = new Map((state.me?.members ?? []).map((u) => [u.id, u.name]));
   return ids.map((id) => names.get(id) ?? '已停用账号').join('、');
@@ -410,7 +469,7 @@ function renderDetail(m) {
     paragraphs.map((p, i) => el('p', {}, i === 0 ? el('strong', {}, '【解读】') : null, p)),
     renderImages(m),
     el('div', { class: 'editor-actions' },
-      el('button', { onclick: () => { state.editing = m.id; render(); } }, '编辑文字'),
+      el('button', { onclick: () => { if (confirmEditing(m)) { state.editing = m.id; render(); } } }, '编辑文字'),
       m.edits ? el('button', { class: 'link', onclick: () => clearEdits(m).catch(alert) }, '恢复原文') : null),
     m.ai_reason ? el('p', { class: 'reason' }, m.ai_reason) : null);
 }
@@ -481,11 +540,12 @@ function renderItem(m) {
       ? renderTitleEditor(m)
       : el('div', { class: 'item-title' },
           el('span', { onclick: () => { if (state.bulk) return; expanded ? state.expanded.delete(m.id) : state.expanded.add(m.id); render(); } }, eff.title(m)),
-          canEdit() && !state.bulk ? el('button', { class: 'title-edit', title: '修改标题', 'aria-label': '修改标题', onclick: () => { state.editingTitle = m.id; render(); } }, '✎') : null),
+          canEdit() && !state.bulk ? el('button', { class: 'title-edit', title: '修改标题', 'aria-label': '修改标题', onclick: () => { if (confirmEditing(m)) { state.editingTitle = m.id; render(); } } }, '✎') : null),
     el('div', { class: 'item-meta' },
       m.level ? el('span', { class: `level ${m.level}` }, m.level) : null,
       m.ai_status === 'done' ? el('span', {}, `${m.final_score} 分`) : el('span', { class: 'chip warn' }, { pending: 'AI 分析中', analyzing: 'AI 分析中', failed: 'AI 分析失败' }[m.ai_status] ?? m.ai_status),
       el('span', {}, fmtTime(m.publish_time ?? m.collect_time)),
+      state.presence.has(m.id) ? el('span', { class: 'chip editing' }, `${state.presence.get(m.id)} 正在编辑`) : null,
       multi ? el('span', { class: 'chip multi', title: `采集人：${collectorNames(collectors)}` }, `${collectors.length} 人采集`) : null,
       m.interpretation_status === 'fetched' ? el('span', { class: 'chip plus' }, 'PLUS 解读') : null,
       images ? el('span', { class: 'chip' }, `配图 ${images}`) : null,
@@ -686,8 +746,9 @@ async function enterApp() {
   const editable = canEdit();
   $('#generate').title = editable ? '' : '只读账号不能生成日报';
   await Promise.all([refresh(), loadHistory()]);
+  loadParseAlert().catch(() => {});
   migrateLocalBoard();
-  if (!editable) { $('#generate').disabled = true; $('#clear-pool').disabled = true; $('#bulk-delete').disabled = true; }
+  if (!editable) { $('#generate').disabled = true; $('#clear-pool').disabled = true; $('#bulk-delete').disabled = true; $('#recycle-restore').hidden = true; }
 }
 
 function wire() {
@@ -719,6 +780,8 @@ function wire() {
   $('#reset-ai').addEventListener('click', () => resetAiLayout().catch(alert));
   $('#clear-pool').addEventListener('click', () => clearPool().catch(alert));
   $('#bulk-delete').addEventListener('click', () => setBulk(!state.bulk));
+  $('#recycle-open').addEventListener('click', () => openRecycle().catch(alert));
+  $('#recycle-close').addEventListener('click', () => $('#recycle').close());
   const trash = $('#trash');
   trash.addEventListener('dragover', (e) => { if (!state.dragId) return; e.preventDefault(); clearDropMarks(); trash.classList.add('drop-target'); });
   trash.addEventListener('dragleave', () => trash.classList.remove('drop-target'));
@@ -731,6 +794,8 @@ function wire() {
   // 定时刷新，看到同事新采集的素材与 AI 分析结果
   const idle = () => state.token && !document.hidden && !state.dragId && !state.editing && !state.editingTitle;
   setInterval(() => { if (idle() && !state.bulk) refresh().catch(() => {}); }, REFRESH_MS);
+  setInterval(() => { if (state.token && !document.hidden) heartbeat().catch(() => {}); }, BOARD_REFRESH_MS);
+  setInterval(() => { if (state.token && !document.hidden) loadParseAlert().catch(() => {}); }, 5 * 60_000);
   // 选稿板轮询更频繁：同事勾选 / 排序几秒内可见
   setInterval(() => { if (idle()) loadBoard().then((changed) => changed && render()).catch(() => {}); }, BOARD_REFRESH_MS);
 }

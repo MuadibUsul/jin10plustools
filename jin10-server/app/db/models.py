@@ -188,3 +188,22 @@ class Board(Base):
     version: Mapped[int] = mapped_column(Integer, default=0)
     updated_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     updated_at: Mapped[dt.datetime] = mapped_column(default=utcnow)
+
+
+class ParseReport(Base):
+    """插件上报的采集 / 解析异常，集中出现时说明金十页面改版"""
+
+    __tablename__ = "parse_reports"
+    __table_args__ = (Index("ix_parse_reports_team_created", "team_id", "created_at"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    team_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("teams.id", ondelete="CASCADE"))
+    user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    #: parse_failed / unrecognized_title / image_failed / plus_failed
+    kind: Mapped[str] = mapped_column(String(40))
+    source_item_id: Mapped[str | None] = mapped_column(String(64))
+    detail: Mapped[str] = mapped_column(Text, default="")
+    #: 出问题的快讯 HTML（截断），便于对照金十新结构修解析器
+    html: Mapped[str] = mapped_column(Text, default="")
+    extension_version: Mapped[str] = mapped_column(String(20), default="")
+    created_at: Mapped[dt.datetime] = mapped_column(default=utcnow)

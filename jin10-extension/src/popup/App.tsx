@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import type { UpdateInfo } from '@/types/messages';
 import { DraftCard } from '@/components/DraftCard';
 import { MaterialRow } from '@/components/MaterialRow';
 import { StatusDot } from '@/components/StatusDot';
@@ -23,6 +24,11 @@ export function App() {
   const { materials, loading } = useMaterials();
   const [scan, setScan] = useState<ScanState>({ status: 'idle' });
   const { session, sync } = useTeamSession();
+  const [update, setUpdate] = useState<UpdateInfo | null>(null);
+
+  useEffect(() => {
+    void sendToBackground('CHECK_UPDATE', undefined).then((res) => res.ok && setUpdate(res.data));
+  }, []);
 
   const { today, mineToday, pending } = useMemo(() => {
     const key = beijingDayKey();
@@ -114,6 +120,22 @@ export function App() {
           </>
         )}
       </section>
+
+      {update?.outdated && (
+        <section className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-800">
+          <p className="font-semibold">
+            有新版本 v{update.latest}（当前 v{update.current}）
+          </p>
+          <p className="mt-1">
+            下载后覆盖原插件文件夹，再在扩展管理页点刷新。
+            {update.download_url && (
+              <a href={update.download_url} target="_blank" rel="noreferrer" className="ml-1 font-semibold underline">
+                下载新版
+              </a>
+            )}
+          </p>
+        </section>
+      )}
 
       {conn.content === 'ok' && (
         <p className="text-xs text-slate-500">

@@ -45,6 +45,7 @@
           <button id="auto-pick">按配额自动选稿</button>
           <button id="clear-pick">清空选择</button>
           <button id="reset-ai" title="撤销手动的排序与栏目调整，回到 AI 分类与评分的结果">恢复 AI 排版</button>
+          <button id="bulk-delete" title="勾选多条素材一次删除">批量删除</button>
           <button id="clear-pool" class="danger" title="删除当前显示的全部素材，开始新一期">一键清空素材</button>
         </div>
         <div class="user"><a class="guide-link" href="guide.html" target="_blank" rel="noopener">使用教程</a><span id="whoami"></span><button id="logout" class="link">退出</button></div>
@@ -85,6 +86,7 @@
       </main>
     </section>
 
+    <div id="bulk-bar" class="bulk-bar" role="toolbar" aria-label="批量删除"></div>
     <div id="trash" class="trash" title="拖到这里删除素材" aria-label="删除素材">
       <svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <path d="M3 6h18"/><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/>

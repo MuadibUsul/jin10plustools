@@ -3,7 +3,7 @@
     python scripts/build_sample_issue.py templates/plus_daily_source.pptx samples/2026-09-18
 
 识别规则：思源黑体 Bold 段落为条目标题；「【新闻】」开头为新闻；「【解读】」开头为解读首段；其余为补充段落。
-模板中 AI热点、精选研报 为占位（xxxxxxxx），AI热点使用 2026-09-21 从金十页面实测采集的一条素材补上。
+模板中 AI热点、精选观点 为占位（xxxxxxxx），AI热点使用 2026-09-21 从金十页面实测采集的一条素材补上。
 """
 
 from __future__ import annotations

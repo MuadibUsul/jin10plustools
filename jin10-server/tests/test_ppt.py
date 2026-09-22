@@ -154,9 +154,9 @@ class TestGenerator:
 
         cover = texts[0]
         assert "2026 年 9 月 18 日" in cover
-        # 目录固定 6 个栏目；精选研报没有素材也保留（空白栏目页）
-        assert "05 精选研报" in cover and "06 精选图表" in cover
-        assert len(prs.slides) == 1 + 9  # 封面 + 8 页素材 + 精选研报空白页
+        # 目录固定 6 个栏目；精选观点没有素材也保留（空白栏目页）
+        assert "05 精选观点" in cover and "06 精选图表" in cover
+        assert len(prs.slides) == 1 + 9  # 封面 + 8 页素材 + 精选观点空白页
         assert "可编辑文本" not in cover
 
         body = "\n".join(texts[1:])
@@ -172,7 +172,7 @@ class TestGenerator:
         out = tmp_path / "one.pptx"
         report = generate(issue, out)
         assert report.page_count == 7  # 封面 + 6 个栏目页（其余 5 个为空白页）
-        assert report.sections == ["宏观消息", "国内股市动向", "海外股市动向", "AI热点", "精选研报", "精选图表"]
+        assert report.sections == ["宏观消息", "国内股市动向", "海外股市动向", "AI热点", "精选观点", "精选图表"]
 
     def test_empty_issue_rejected(self, tmp_path: Path) -> None:
         with pytest.raises(ValueError):

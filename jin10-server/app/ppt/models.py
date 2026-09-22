@@ -23,7 +23,7 @@ SECTION_LABELS: dict[SectionId, str] = {
     SectionId.CN_EQUITY: "国内股市动向",
     SectionId.GLOBAL_EQUITY: "海外股市动向",
     SectionId.AI: "AI热点",
-    SectionId.RESEARCH: "精选研报",
+    SectionId.RESEARCH: "精选观点",
     SectionId.CHARTS: "精选图表",
 }
 

@@ -7,7 +7,7 @@ export const SECTIONS = [
   { id: 'cn_equity', label: '国内股市动向', kind: 'news' },
   { id: 'global_equity', label: '海外股市动向', kind: 'news' },
   { id: 'ai', label: 'AI热点', kind: 'news' },
-  { id: 'research', label: '精选研报', kind: 'feature' },
+  { id: 'research', label: '精选观点', kind: 'feature' },
   { id: 'charts', label: '精选图表', kind: 'feature' },
 ] as const;
 

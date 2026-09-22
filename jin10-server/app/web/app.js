@@ -6,7 +6,7 @@ const SECTIONS = [
   { id: 'cn_equity', label: '国内股市动向', quota: 2 },
   { id: 'global_equity', label: '海外股市动向', quota: 2 },
   { id: 'ai', label: 'AI热点', quota: 2 },
-  { id: 'research', label: '精选研报', quota: 1 },
+  { id: 'research', label: '精选观点', quota: 1 },
   { id: 'charts', label: '精选图表', quota: 1 },
 ];
 const UNSORTED = { id: 'unsorted', label: '待分类', quota: 0 };
@@ -14,7 +14,7 @@ const TOKEN_KEY = 'plus.token';
 const REFRESH_MS = 30_000;
 
 const $ = (sel) => document.querySelector(sel);
-const state = { token: null, me: null, materials: [], picked: new Set(), expanded: new Set(), order: {}, dragId: null, editing: null, editingTitle: null };
+const state = { token: null, me: null, materials: [], picked: new Set(), expanded: new Set(), order: {}, dragId: null, editing: null, editingTitle: null, bulk: null };
 
 // ---------- 通用 ----------
 
@@ -389,10 +389,16 @@ function renderItem(m) {
     SECTIONS.map((s) => el('option', { value: s.id, selected: s.id === m.category }, s.label)));
   if (!SECTIONS.some((s) => s.id === m.category)) select.prepend(el('option', { value: '', selected: true, disabled: true }, '选择栏目'));
 
+  const marked = state.bulk?.has(m.id) ?? false;
   const li = el('li', {
-    class: `item${picked ? ' picked' : ''}`,
+    class: `item${picked ? ' picked' : ''}${state.bulk ? ' bulk' : ''}${marked ? ' marked' : ''}`,
+    // 批量删除模式：点卡片任意位置勾选 / 取消
+    onclick: (e) => {
+      if (!state.bulk || e.target.closest('input, select, button, a')) return;
+      toggleBulk(m.id);
+    },
     // 编辑文字时不可拖动，避免选中文字时误触发拖拽
-    draggable: state.editing === m.id || state.editingTitle === m.id ? 'false' : 'true',
+    draggable: state.bulk || state.editing === m.id || state.editingTitle === m.id ? 'false' : 'true',
     title: '拖动可调整顺序，或拖到其他栏目',
     ondragstart: (e) => {
       state.dragId = m.id;
@@ -428,12 +434,14 @@ function renderItem(m) {
       dropMaterial(id, section, ids.indexOf(m.id) + (after ? 1 : 0)).catch(alert);
     },
   },
-    el('input', { type: 'checkbox', checked: picked, onchange: () => togglePick(m.id), 'aria-label': '选入日报' }),
+    state.bulk
+      ? el('input', { type: 'checkbox', class: 'bulk-check', checked: marked, onchange: () => toggleBulk(m.id), 'aria-label': '勾选删除' })
+      : el('input', { type: 'checkbox', checked: picked, onchange: () => togglePick(m.id), 'aria-label': '选入日报' }),
     state.editingTitle === m.id
       ? renderTitleEditor(m)
       : el('div', { class: 'item-title' },
-          el('span', { onclick: () => { expanded ? state.expanded.delete(m.id) : state.expanded.add(m.id); render(); } }, eff.title(m)),
-          canEdit() ? el('button', { class: 'title-edit', title: '修改标题', 'aria-label': '修改标题', onclick: () => { state.editingTitle = m.id; render(); } }, '✎') : null),
+          el('span', { onclick: () => { if (state.bulk) return; expanded ? state.expanded.delete(m.id) : state.expanded.add(m.id); render(); } }, eff.title(m)),
+          canEdit() && !state.bulk ? el('button', { class: 'title-edit', title: '修改标题', 'aria-label': '修改标题', onclick: () => { state.editingTitle = m.id; render(); } }, '✎') : null),
     el('div', { class: 'item-meta' },
       m.level ? el('span', { class: `level ${m.level}` }, m.level) : null,
       m.ai_status === 'done' ? el('span', {}, `${m.final_score} 分`) : el('span', { class: 'chip warn' }, { pending: 'AI 分析中', analyzing: 'AI 分析中', failed: 'AI 分析失败' }[m.ai_status] ?? m.ai_status),
@@ -473,10 +481,13 @@ function render() {
     },
       el('div', { class: 'section-head' },
         el('h2', {}, s === UNSORTED ? null : el('span', { class: 'no' }, String(idx + 1).padStart(2, '0')), s.label),
-        s.quota ? el('span', { class: `quota${count >= s.quota ? ' full' : ''}` }, `已选 ${count} / 建议 ${s.quota}`) : null),
+        state.bulk && items.length
+          ? el('button', { class: 'link', onclick: () => markAll(items.map((x) => x.id)) }, items.every((x) => state.bulk.has(x.id)) ? '取消本栏' : '全选本栏')
+          : s.quota ? el('span', { class: `quota${count >= s.quota ? ' full' : ''}` }, `已选 ${count} / 建议 ${s.quota}`) : null),
       items.length ? el('ul', { class: 'items' }, items.map(renderItem)) : el('p', { class: 'empty' }, '暂无素材'));
   });
   $('#sections').replaceChildren(...groups.filter(Boolean));
+  renderBulkBar();
 
   const picked = pickedBySection();
   const total = picked.reduce((n, s) => n + s.items.length, 0);
@@ -517,27 +528,77 @@ async function deleteMaterial(id) {
   const m = state.materials.find((x) => x.id === id);
   if (!m || !confirm(`删除「${eff.title(m)}」？删除后团队成员都看不到这条素材。`)) return;
   await api(`/api/materials/${id}`, { method: 'DELETE' });
-  state.materials = state.materials.filter((x) => x.id !== id);
-  state.picked.delete(id);
-  for (const k of Object.keys(state.order)) state.order[k] = state.order[k].filter((x) => x !== id);
+  removeLocal([id]);
+}
+
+/** 从页面状态中移除已删除的素材 */
+function removeLocal(ids) {
+  const gone = new Set(ids);
+  state.materials = state.materials.filter((x) => !gone.has(x.id));
+  for (const id of gone) { state.picked.delete(id); state.bulk?.delete(id); }
+  for (const k of Object.keys(state.order)) state.order[k] = state.order[k].filter((x) => !gone.has(x));
   savePicked();
   saveOrder();
   render();
 }
 
+// ---------- 批量删除 ----------
+
+function setBulk(on) {
+  state.bulk = on ? new Set() : null;
+  document.body.classList.toggle('bulk-mode', on);
+  $('#bulk-delete').textContent = on ? '退出批量删除' : '批量删除';
+  render();
+}
+
+function toggleBulk(id) {
+  state.bulk.has(id) ? state.bulk.delete(id) : state.bulk.add(id);
+  render();
+}
+
+/** 全部已勾选则全部取消，否则全部勾选 */
+function markAll(ids) {
+  const all = ids.every((id) => state.bulk.has(id));
+  for (const id of ids) all ? state.bulk.delete(id) : state.bulk.add(id);
+  render();
+}
+
+function renderBulkBar() {
+  const bar = $('#bulk-bar');
+  if (!state.bulk) return bar.replaceChildren();
+  const n = state.bulk.size;
+  bar.replaceChildren(
+    el('span', {}, '批量删除：已选 ', el('b', {}, String(n)), ' 条'),
+    el('button', { onclick: () => markAll(state.materials.map((m) => m.id)) }, '全选'),
+    el('button', { class: 'danger-solid', disabled: n === 0, onclick: () => deleteMarked().catch(alert) }, `删除所选（${n}）`),
+    el('button', { onclick: () => setBulk(false) }, '取消'),
+  );
+}
+
+async function deleteMarked() {
+  const ids = [...state.bulk];
+  if (!ids.length || !confirm(`删除所选的 ${ids.length} 条素材？删除后团队成员都看不到；重新采集同一条快讯可恢复。`)) return;
+  await api('/api/materials/bulk-delete', { method: 'POST', json: { ids } });
+  removeLocal(ids);
+  setBulk(false);
+}
+
+const CLEAR_PHRASE = '我要清除所有素材';
+
 async function clearPool() {
   const ids = state.materials.map((m) => m.id);
   if (!ids.length) return alert('当前没有素材');
   const range = $('#days').value === '1' ? $('#day').value : `${$('#day').value} 起近 ${$('#days').value} 天`;
-  if (!confirm(`删除当前显示的全部 ${ids.length} 条素材（${range}）？
-团队成员都将看不到这些素材；重新采集同一条快讯可恢复。`)) return;
+  // 三道确认：确认范围 → 手动输入口令 → 最终确认
+  if (!confirm(`【第 1 步，共 3 步】即将清空当前显示的全部 ${ids.length} 条素材（${range}）。
+团队成员都将看不到这些素材。继续？`)) return;
+  const typed = prompt(`【第 2 步，共 3 步】请输入「${CLEAR_PHRASE}」以继续：`);
+  if (typed === null) return;
+  if (typed.trim() !== CLEAR_PHRASE) return alert('输入不一致，已取消清空。');
+  if (!confirm(`【第 3 步，共 3 步】最后确认：立即删除这 ${ids.length} 条素材？`)) return;
   await api('/api/materials/bulk-delete', { method: 'POST', json: { ids } });
-  state.materials = [];
-  state.picked.clear();
   state.order = {};
-  savePicked();
-  saveOrder();
-  render();
+  removeLocal(ids);
 }
 
 async function resetAiLayout() {
@@ -584,7 +645,7 @@ async function enterApp() {
   restorePicked();
   restoreOrder();
   await Promise.all([refresh(), loadHistory()]);
-  if (!editable) { $('#generate').disabled = true; $('#clear-pool').disabled = true; }
+  if (!editable) { $('#generate').disabled = true; $('#clear-pool').disabled = true; $('#bulk-delete').disabled = true; }
 }
 
 function wire() {
@@ -615,6 +676,7 @@ function wire() {
   $('#preview-generate').addEventListener('click', () => { $('#preview-view').hidden = true; generate(); });
   $('#reset-ai').addEventListener('click', () => resetAiLayout().catch(alert));
   $('#clear-pool').addEventListener('click', () => clearPool().catch(alert));
+  $('#bulk-delete').addEventListener('click', () => setBulk(!state.bulk));
   const trash = $('#trash');
   trash.addEventListener('dragover', (e) => { if (!state.dragId) return; e.preventDefault(); clearDropMarks(); trash.classList.add('drop-target'); });
   trash.addEventListener('dragleave', () => trash.classList.remove('drop-target'));
@@ -625,7 +687,7 @@ function wire() {
     if (id) deleteMaterial(id).catch(alert);
   });
   // 定时刷新，看到同事新采集的素材与 AI 分析结果
-  setInterval(() => { if (state.token && !document.hidden && !state.dragId && !state.editing && !state.editingTitle) refresh().catch(() => {}); }, REFRESH_MS);
+  setInterval(() => { if (state.token && !document.hidden && !state.dragId && !state.editing && !state.editingTitle && !state.bulk) refresh().catch(() => {}); }, REFRESH_MS);
 }
 
 wire();

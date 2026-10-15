@@ -33,6 +33,7 @@ def test_cached_rules_reuse_sources_and_render_repairs_without_fetch(tmp_path):
             with patch('app.briefs.sources.render_volume',side_effect=lambda rows,out:payload(out)):
                 restored=generate('volume','2026-10-14',tmp_path,'restored','render')
             assert (tmp_path/restored['artifact_dir']/'image.png').read_bytes()==b'valid-chart'
+            assert ai.call_count==1
 
 
 def test_fixed_explanations_are_identical_and_not_duplicated():

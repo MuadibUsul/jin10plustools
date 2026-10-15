@@ -4,6 +4,7 @@ ENV PYTHONUNBUFFERED=1 \
     PYTHONUTF8=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PLAYWRIGHT_BROWSERS_PATH=/opt/playwright \
     PLUS_STORAGE_DIR=/data/storage
 
 # PDF 导出：LibreOffice + 思源同款开源字体（Noto CJK 全字重）+ 模板字体名映射

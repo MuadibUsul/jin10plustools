@@ -70,6 +70,10 @@ def generate(category,day,root,run_id,action='produce'):
     payload['artifact_dir']=out.relative_to(root).as_posix()
     payload['image_sha256']={name:hashlib.sha256((out/name).read_bytes()).hexdigest() for name in payload['images']}
     payload['valid']=True
+    if action=='render':
+        payload['deepseek']=previous.get('deepseek',{'status':'not_configured'})
+        save(out/'result.json',payload);save(cache,payload)
+        return payload
     payload['deepseek']={'status':'pending'}
     # A complete rule product is durable before the optional model request.
     save(out/'result.json',payload);save(cache,payload)

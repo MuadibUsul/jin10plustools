@@ -11,10 +11,11 @@ from datetime import datetime,timedelta,time as clock
 from sqlalchemy import select,text,update
 
 from app.config import get_settings
-from app.db.models import BriefConfig,BriefIssue,BriefJob,BriefVersion,utcnow
+from app.db.models import BriefConfig,BriefIssue,BriefJob,BriefVersion,BriefSourceSnapshot,utcnow
 from app.db.session import get_session_factory,get_engine
 from .policy import CATEGORIES,CHINA,expected_date,first_run,production_window,next_slot
 from .service import enqueue,ensure_issue,owned,append_version,root_for
+from .source_archive import archive_run
 
 log=logging.getLogger('plus.briefs')
 
@@ -76,6 +77,22 @@ def execute(factory,id):
         report=json.loads((out/'error.json').read_text(encoding='utf-8'));error=report['message']
     with factory() as db:
         job=db.get(BriefJob,id);job.lease_until=None;job.updated_at=utcnow()
+        try:
+            source_dir=None
+            if payload and payload.get('artifact_dir'):
+                source_dir=(root/payload['artifact_dir']).resolve()
+                if not source_dir.is_relative_to(root.resolve()):
+                    raise ValueError('被复用的来源快照路径不安全')
+            source_archive=archive_run(db,job,out,history_dir=root/'history'/category,
+                                       source_dir=source_dir)
+        except Exception as exc:
+            db.rollback()
+            job=db.get(BriefJob,id)
+            job.status='failed';job.active_key=None;job.lease_until=None
+            job.error=f'来源数据入库失败：{exc}'
+            job.updated_at=utcnow();db.commit()
+            log.exception('Brief source archive failed for job %s',id)
+            return
         if payload and payload.get('valid'):
             if automatic and not production_window(datetime.now(CHINA)):
                 job.status='skipped';job.active_key=None;job.error='超过10:00，快照保留但未生成当天稿';db.commit();return
@@ -84,8 +101,11 @@ def execute(factory,id):
                 previous=db.scalars(select(BriefVersion).where(BriefVersion.issue_id==issue.id,BriefVersion.number==issue.version)).first()
                 if previous and 'fixed_notes' in previous.payload:payload['fixed_notes']=previous.payload['fixed_notes']
             payload['preview']=preview
+            payload['source_archive']=source_archive
             if error:payload.setdefault('warnings',[]).append('规则稿已保存；模型未完成或任务达到时限')
-            append_version(db,issue,payload,user_id=job.created_by)
+            version=append_version(db,issue,payload,user_id=job.created_by)
+            db.execute(update(BriefSourceSnapshot).where(BriefSourceSnapshot.job_id==id,
+                BriefSourceSnapshot.attempt==job.attempts).values(version_id=version.id))
             job.status='succeeded';job.active_key=None;job.error=None
         else:
             job.error=error or '未生成完整结果，来源可能尚未更新'

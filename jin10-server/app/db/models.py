@@ -7,7 +7,7 @@ import uuid
 from enum import StrEnum
 from typing import Any
 
-from sqlalchemy import JSON, Boolean, Date, DateTime, Float, ForeignKey, Index, Integer, String, Text, text
+from sqlalchemy import JSON, Boolean, Date, DateTime, Float, ForeignKey, Index, Integer, LargeBinary, String, Text, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -266,6 +266,24 @@ class BriefJob(Base):
     created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey('users.id', ondelete='SET NULL'))
     created_at: Mapped[dt.datetime] = mapped_column(default=utcnow)
     updated_at: Mapped[dt.datetime] = mapped_column(default=utcnow)
+
+
+class BriefSourceSnapshot(Base):
+    """Immutable-by-attempt copy of every fetched or normalized brief data file."""
+    __tablename__ = 'brief_source_snapshots'
+    __table_args__ = (Index('uq_brief_source_file', 'job_id', 'attempt', 'relative_path', unique=True),)
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    team_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('teams.id', ondelete='CASCADE'), index=True)
+    job_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('brief_jobs.id', ondelete='CASCADE'), index=True)
+    version_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey('brief_versions.id', ondelete='SET NULL'))
+    attempt: Mapped[int] = mapped_column(Integer)
+    category: Mapped[str] = mapped_column(String(30))
+    data_date: Mapped[dt.date] = mapped_column(Date)
+    relative_path: Mapped[str] = mapped_column(String(1024))
+    sha256: Mapped[str] = mapped_column(String(64))
+    byte_count: Mapped[int] = mapped_column(Integer)
+    content: Mapped[bytes] = mapped_column(LargeBinary)
+    captured_at: Mapped[dt.datetime] = mapped_column(default=utcnow)
 
 
 class BriefAudit(Base):

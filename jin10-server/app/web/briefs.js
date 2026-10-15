@@ -20,14 +20,18 @@ function renderCards() {
     const item = items.find((x) => x.category === category.id); const card = node('article', undefined, 'brief-card');
     card.append(node('h2', category.label));
     const job = item?.jobs[0], version = item?.versions[0];
-    const state = item?.confirmed_version ? `已确认 v${item.confirmed_version}` : version ? '待核对' : '未生成';
+    const state = item?.confirmed_version
+      ? (version?.number > item.confirmed_version
+        ? `已确认 v${item.confirmed_version} · 最新预览 v${version.number} 待核对`
+        : `已确认 v${item.confirmed_version}`)
+      : version ? `最新预览 v${version.number} 待核对` : '未生成';
     card.append(node('span', state, item?.confirmed_version ? 'badge ready' : 'badge'));
     card.append(node('h3', version?.title || '等待本期数据与成品'));
     card.append(node('p', version ? `数据日 ${version.data_date}` : '尚无有效数据', 'muted'));
-    if (job) card.append(node('p', `${labels[job.status] || job.status}${job.error ? '：' + job.error : ''}`, job.status === 'failed' ? 'error' : 'muted'));
+    if (job) card.append(node('p', `${job.status === 'failed' && version ? '最近一次任务失败；已有预览图可查看' : labels[job.status] || job.status}${job.error ? '：' + job.error : ''}`, job.status === 'failed' ? 'error' : 'muted'));
     if (version?.warnings.length) card.append(node('p', '有来源或口径说明，请核对', 'warning'));
     const controls = node('div', undefined, 'toolbar');
-    if (item?.versions.length) { const view = node('button', '查看与取稿'); view.onclick = () => safe(() => open(item)); controls.append(view); }
+    if (item?.versions.length) { const view = node('button', version?.images.length ? `查看最新图 v${version.number} 与取稿` : '查看与取稿'); view.onclick = () => safe(() => open(item)); controls.append(view); }
     if (canEdit()) { const run = node('button', '生成稿件'); run.onclick = () => safe(() => runJob(category.id, 'produce')); controls.append(run); }
     card.append(controls); $('#cards').append(card);
   }

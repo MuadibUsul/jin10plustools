@@ -1,0 +1,32 @@
+{
+  "title": "【A股温度计】换手率均线显示交易活跃度回落",
+  "dynamic_body": "2026年10月14日，A股低于3%换手率股票占比的9日均线升至72.18%，高于5%换手率股票占比的9日均线降至13.87%，继续低于17%的参考阈值。整体来看，市场交易活跃度有所回落。",
+  "images": [
+    "换手率_20161014至20261014_原模板版.png"
+  ],
+  "data_date": "2026-10-14",
+  "facts": {
+    "date": "2026-10-14",
+    "previous_date": "2026-10-13",
+    "low_ma9": "72.18",
+    "high_ma9": "13.87",
+    "previous_low_ma9": "71.42",
+    "previous_high_ma9": "14.34",
+    "low_change_pp": "0.76",
+    "high_change_pp": "-0.47",
+    "average_window_trading_days": 9,
+    "low_threshold": "96",
+    "high_threshold": "17",
+    "trend": "cooling",
+    "fact_body": "2026年10月14日，A股低于3%换手率股票占比的9日均线升至72.18%，高于5%换手率股票占比的9日均线降至13.87%，继续低于17%的参考阈值。"
+  },
+  "warnings": [],
+  "artifact_dir": "runs/turnover-20261015",
+  "image_sha256": {
+    "换手率_20161014至20261014_原模板版.png": "22f1e9dd370ceb6304839f43fa6b534a57b7accf4d0b1f0479e32c68153af57c"
+  },
+  "valid": true,
+  "deepseek": {
+    "status": "not_configured"
+  }
+}

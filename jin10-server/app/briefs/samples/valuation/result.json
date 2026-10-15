@@ -1,0 +1,113 @@
+{
+  "title": "【A股温度计】股债性价比指标更新，沪深300ERP报5.99%",
+  "dynamic_body": "2026-10-14，巴菲特指数（全A总市值/上年度全年GDP）为87.21%；沪深300指数股权风险溢价（ERP）为5.99%，较2026-10-13变动+0.06个百分点，低于6%参考线。权益资产相对国债的估值优势较前日增强。",
+  "images": [
+    "股债性价比.png"
+  ],
+  "data_date": "2026-10-14",
+  "facts": {
+    "buffett_percent": "87.21098624753736948766619658",
+    "gdp": {
+      "value_yi": "1401879",
+      "period": "2025全年",
+      "source": "https://www.stats.gov.cn/sj/zxfb/202602/t20260228_1962662.html",
+      "revision_policy": "按国家统计局发布版本保存；下年度缺失时暂停估值稿，不自动沿用旧分母"
+    },
+    "market_cap": {
+      "source": "eastmoney_public_all_a_company_total_capitalization",
+      "units": "CNY",
+      "scope": "Shanghai, Shenzhen and Beijing A-share companies returned by the dated provider universe",
+      "definition": "sum(A_share_close * full_company_total_shares)",
+      "cross_listed_company_treatment": "Full company share count priced at A-share close; not A-share-only or mixed A/H price capitalization",
+      "legulegu_equivalence": "not_asserted; provider universe and maintenance can differ",
+      "reference_comparison": [],
+      "may_label_as_legulegu_source_value": false,
+      "automatic_source_switch_allowed": false,
+      "historical_backfill_2015_complete": false,
+      "universe_audit": "Response completeness is checked against this provider, not independently against all exchanges historical listing rosters",
+      "previous_date_rechecked": "2026-10-13",
+      "expected_date": "2026-10-14",
+      "rows": [
+        {
+          "date": "2026-10-13",
+          "market_cap_cny": "123688734462292.14",
+          "market_cap_yi": "1236887.3446229214",
+          "company_count": 5574,
+          "exchange_counts": {
+            "SH": 2320,
+            "SZ": 2905,
+            "BJ": 349
+          },
+          "source": "eastmoney_public_all_a_company_total_capitalization"
+        },
+        {
+          "date": "2026-10-14",
+          "market_cap_cny": "122259250189711.44",
+          "market_cap_yi": "1222592.5018971144",
+          "company_count": 5574,
+          "exchange_counts": {
+            "SH": 2320,
+            "SZ": 2905,
+            "BJ": 349
+          },
+          "source": "eastmoney_public_all_a_company_total_capitalization"
+        }
+      ],
+      "fetched_at": "2026-10-15T15:56:27.227585+08:00",
+      "raw_evidence": [
+        {
+          "url": "https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_VALUEANALYSIS_DET&columns=SECURITY_CODE%2CSECUCODE%2CTRADE_MARKET%2CTRADE_DATE%2CTOTAL_MARKET_CAP%2CTOTAL_SHARES%2CCLOSE_PRICE&filter=%28TRADE_DATE%3E%3D%272026-10-13%27%29%28TRADE_DATE%3C%3D%272026-10-14%27%29&pageNumber=1&pageSize=10000&source=WEB&client=WEB&sortColumns=TRADE_DATE%2CSECURITY_CODE&sortTypes=-1%2C1",
+          "sha256": "797053206f32a6b94f00fe0d9c61b7b14d4b8282c4209155caa2a2c81acf2ed1",
+          "bytes": 1919720
+        },
+        {
+          "url": "https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_VALUEANALYSIS_DET&columns=SECURITY_CODE%2CSECUCODE%2CTRADE_MARKET%2CTRADE_DATE%2CTOTAL_MARKET_CAP%2CTOTAL_SHARES%2CCLOSE_PRICE&filter=%28TRADE_DATE%3E%3D%272026-10-13%27%29%28TRADE_DATE%3C%3D%272026-10-14%27%29&pageNumber=2&pageSize=10000&source=WEB&client=WEB&sortColumns=TRADE_DATE%2CSECURITY_CODE&sortTypes=-1%2C1",
+          "sha256": "d883905c774131d88259ac5d6df4fc73db65bfc1a84874507d85d4d7dff3b61c",
+          "bytes": 218728
+        }
+      ]
+    },
+    "erp_latest": {
+      "date": "2026-10-14",
+      "close": "4217.68",
+      "pe_ttm_mcw": "13.09",
+      "bond_yield_number": "1.6516",
+      "excel_row": 2,
+      "source_status": "free_sources_verified_latest_two_sessions",
+      "erp": "0.05987819404125286478227654698",
+      "erp_percent": "5.987819404125286478227654698",
+      "pe_ttm_mcw_raw": "13.0883",
+      "pe_source": "snowball_fund_danjuan_public",
+      "close_source": "CSI_official_index_performance",
+      "pe_input_precision_policy": "two_decimal_places_matching_latest_uploaded_input_convention",
+      "bond_source": "chinabond_treasury_yield_curve"
+    },
+    "erp_previous": {
+      "date": "2026-10-13",
+      "close": "4275.68",
+      "pe_ttm_mcw": "13.17",
+      "bond_yield_number": "1.6654",
+      "excel_row": 3,
+      "source_status": "free_sources_verified_latest_two_sessions",
+      "erp": "0.05927614426727410782080485953",
+      "erp_percent": "5.927614426727410782080485953",
+      "pe_ttm_mcw_raw": "13.1697",
+      "pe_source": "snowball_fund_danjuan_public",
+      "close_source": "CSI_official_index_performance",
+      "pe_input_precision_policy": "two_decimal_places_matching_latest_uploaded_input_convention",
+      "bond_source": "chinabond_treasury_yield_curve"
+    }
+  },
+  "warnings": [
+    "巴菲特指数最新值采用东方财富全A上市公司总市值，历史保留原站序列，来源过渡待核对；未宣称与乐咕数值一致",
+    "ERP采用免费市值加权PE候选源和中债国债收益率曲线，已记录与原模板的来源差异"
+  ],
+  "artifact_dir": "runs/valuation-20261015",
+  "image_sha256": {
+    "股债性价比.png": "b8b4269b426a225432e60c6063d548c3dd4f6ddceff4ef235367586a0a776ef1"
+  },
+  "valid": true,
+  "deepseek": {
+    "status": "not_configured"
+  }
+}

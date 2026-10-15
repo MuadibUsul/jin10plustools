@@ -38,6 +38,27 @@ services:
       - web
     mem_limit: 1536m
 
+  brief-worker:
+    build: ./jin10-server
+    restart: unless-stopped
+    command: ["python", "-m", "app.briefs.worker"]
+    healthcheck:
+      disable: true
+    depends_on:
+      db:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+    environment:
+      PLUS_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-plus}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-plus}
+      PLUS_JWT_SECRET: ${PLUS_JWT_SECRET:?请在 .env 中设置 PLUS_JWT_SECRET}
+      PLUS_BRIEFS_DEEPSEEK_API_KEY: ${PLUS_BRIEFS_DEEPSEEK_API_KEY:-}
+      PLUS_BRIEFS_DEEPSEEK_MODEL: ${PLUS_BRIEFS_DEEPSEEK_MODEL:-}
+    volumes:
+      - storage:/data
+    mem_limit: 1g
+    cpus: 1.0
+
 networks:
   web:
     external: true

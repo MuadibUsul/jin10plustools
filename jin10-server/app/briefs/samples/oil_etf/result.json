@@ -1,0 +1,132 @@
+{
+  "title": "【原油ETF】美布两油ETF持仓数据更新",
+  "dynamic_body": "2026-10-14，WTI（USO）名义敞口估算约1883.40万桶；Brent（BNO）期货持仓约696.30万桶。",
+  "images": [],
+  "data_date": "2026-10-14",
+  "facts": {
+    "funds": [
+      {
+        "ticker": "USO",
+        "barrels": "18833983.62002129925452609159",
+        "futures_barrels": "15836000.0000",
+        "swap_barrels_estimate": "2997983.620021299254526091587",
+        "reference_price": "93.900000000",
+        "change_barrels": null,
+        "method": "nearest_future_swap_notional_v1"
+      },
+      {
+        "ticker": "BNO",
+        "barrels": "6963000.0000",
+        "futures_barrels": "6963000.0000",
+        "swap_barrels_estimate": "0",
+        "reference_price": "106.060000000",
+        "change_barrels": null,
+        "method": "nearest_future_swap_notional_v1"
+      }
+    ],
+    "official_source": {
+      "provider": "USCF official public holdings",
+      "fetched_at": "2026-10-15T15:58:00.495687+08:00",
+      "data_date": "2026-10-14",
+      "expected_data_date": "2026-10-14",
+      "status": "date_verified",
+      "funds": [
+        {
+          "ticker": "USO",
+          "underlying": "WTI",
+          "data_date": "2026-10-14",
+          "source_page": "https://www.uscfinvestments.com/holdings/uso",
+          "nav_usd": "153.4600",
+          "net_assets_usd": "1814426404.0400",
+          "futures_barrels": "15836000.0000",
+          "futures_ten_thousand_barrels": "1583.6000",
+          "futures_contracts": [
+            {
+              "name": "WTI CRUDE FUTURE Dec26",
+              "ticker": "CLZ6",
+              "quantity_contracts": "15836.0000",
+              "barrels_per_contract": "1000",
+              "barrels": "15836000.0000",
+              "reference_price_usd_per_barrel": "93.900000000",
+              "market_value_usd": "1487000400.00"
+            }
+          ],
+          "swaps": [
+            {
+              "name": "TRS MACQUARIE MQCP361E 07212026",
+              "ticker": "MQCP361ET",
+              "quantity_source": "2195848.1400",
+              "market_value_usd": "147012911.31",
+              "reference_price_source": "66.950400000"
+            },
+            {
+              "name": "TRS SOC GEN SGIXCWTI  06182026",
+              "ticker": "SGIXCWTIT",
+              "quantity_source": "977427.5900",
+              "market_value_usd": "134497750.61",
+              "reference_price_source": "137.603800000"
+            }
+          ],
+          "swap_market_value_usd": "281510661.92",
+          "total_barrels": null,
+          "total_barrels_status": "not_comparable_without_swap_method",
+          "other_derivatives": [],
+          "daily_change_barrels": null,
+          "daily_change_status": "previous_daily_holdings_not_supplied",
+          "jin10_total_exposure_verified": false
+        },
+        {
+          "ticker": "BNO",
+          "underlying": "Brent",
+          "data_date": "2026-10-14",
+          "source_page": "https://www.uscfinvestments.com/holdings/bno",
+          "nav_usd": "65.0600",
+          "net_assets_usd": "738417265.7300",
+          "futures_barrels": "6963000.0000",
+          "futures_ten_thousand_barrels": "696.3000",
+          "futures_contracts": [
+            {
+              "name": "BRENT CRUDE FUTR Dec26",
+              "ticker": "COZ6",
+              "quantity_contracts": "6963.0000",
+              "barrels_per_contract": "1000",
+              "barrels": "6963000.0000",
+              "reference_price_usd_per_barrel": "106.060000000",
+              "market_value_usd": "738495780.00"
+            }
+          ],
+          "swaps": [],
+          "swap_market_value_usd": "0",
+          "total_barrels": "6963000.0000",
+          "total_barrels_status": "futures_only_no_swaps",
+          "other_derivatives": [],
+          "daily_change_barrels": null,
+          "daily_change_status": "previous_daily_holdings_not_supplied",
+          "jin10_total_exposure_verified": false
+        }
+      ],
+      "raw_sha256": {
+        "holding-USO-full.json": "93d132d9ed4e35725619df718c46c567d44a0a433981cb7134fde7f69f1984a0",
+        "dailyprice-USO.json": "f918a26a4a5039c70a506929eb5b1704f81e790800f41fff465fdc8dad5e878c",
+        "holding-BNO-full.json": "b7d5fbf986f523476b0cdf45d576a9bf34af3d2e165d851abceb255507102a21",
+        "dailyprice-BNO.json": "b26812d7af693f16d45c83578291c607e66d84673641804b9745a2a56f289af2"
+      },
+      "requests_per_successful_collection": 5,
+      "images_generated": false,
+      "ai_used": false,
+      "published": false
+    },
+    "previous_date": "2026-10-13"
+  },
+  "warnings": [
+    "USO掉期按当前最近月期货价格折算桶等值，属于测试估算口径，尚未与金十逐值对账",
+    "USO缺少2026-10-13同口径快照，暂不判断单日增减",
+    "BNO缺少2026-10-13同口径快照，暂不判断单日增减"
+  ],
+  "artifact_dir": "runs/oil-20261015",
+  "image_sha256": {},
+  "valid": true,
+  "deepseek": {
+    "status": "not_configured"
+  }
+}

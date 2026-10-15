@@ -1,0 +1,8 @@
+{
+  "2025": {
+    "value_yi": "1401879",
+    "period": "2025全年",
+    "source": "https://www.stats.gov.cn/sj/zxfb/202602/t20260228_1962662.html",
+    "revision_policy": "按国家统计局发布版本保存；下年度缺失时暂停估值稿，不自动沿用旧分母"
+  }
+}

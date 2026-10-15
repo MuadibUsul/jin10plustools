@@ -1,0 +1,23 @@
+{
+  "title": "【A股温度计】两市成交额回落至1.41万亿元",
+  "dynamic_body": "2026-10-14，沪深两市成交额为1.41万亿元，较前一条有效交易日减少2615.15亿元，变动-15.60%；连续3条有效交易日低于20日均线（1.74万亿元）。成交活跃度较前日回落。",
+  "images": [
+    "成交额.png"
+  ],
+  "data_date": "2026-10-14",
+  "facts": {
+    "amount_yi": "14144.02399959",
+    "ma20_yi": "17401.0740021615",
+    "previous_date": "2026-10-13",
+    "source": "https://www.jin10.com/minipro/index.html#/pages_sub/huShenVolume/huShenVolume?category=hu_shen_volume&id=550059&type=4"
+  },
+  "warnings": [],
+  "artifact_dir": "runs/volume-20261015",
+  "image_sha256": {
+    "成交额.png": "e69f11f9f8d51f6543046a80f590c64d6f0019df569b3a13699278b9d32c4269"
+  },
+  "valid": true,
+  "deepseek": {
+    "status": "not_configured"
+  }
+}

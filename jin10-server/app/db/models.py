@@ -207,3 +207,69 @@ class ParseReport(Base):
     html: Mapped[str] = mapped_column(Text, default="")
     extension_version: Mapped[str] = mapped_column(String(20), default="")
     created_at: Mapped[dt.datetime] = mapped_column(default=utcnow)
+
+
+class BriefConfig(Base):
+    __tablename__ = 'brief_configs'
+    team_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('teams.id', ondelete='CASCADE'), primary_key=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    updated_at: Mapped[dt.datetime] = mapped_column(default=utcnow)
+
+
+class BriefIssue(Base):
+    __tablename__ = 'brief_issues'
+    __table_args__ = (Index('uq_brief_issue', 'team_id', 'issue_date', 'category', unique=True),)
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    team_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('teams.id', ondelete='CASCADE'), index=True)
+    issue_date: Mapped[dt.date] = mapped_column(Date)
+    category: Mapped[str] = mapped_column(String(30))
+    version: Mapped[int] = mapped_column(Integer, default=0)
+    confirmed_version: Mapped[int | None] = mapped_column(Integer)
+    confirmed_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey('users.id', ondelete='SET NULL'))
+    confirmed_at: Mapped[dt.datetime | None]
+    updated_at: Mapped[dt.datetime] = mapped_column(default=utcnow)
+
+
+class BriefVersion(Base):
+    __tablename__ = 'brief_versions'
+    __table_args__ = (Index('uq_brief_version', 'issue_id', 'number', unique=True),)
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    issue_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('brief_issues.id', ondelete='CASCADE'), index=True)
+    number: Mapped[int] = mapped_column(Integer)
+    kind: Mapped[str] = mapped_column(String(20), default='generated')
+    title: Mapped[str] = mapped_column(Text)
+    dynamic_body: Mapped[str] = mapped_column(Text)
+    payload: Mapped[dict[str, Any]] = mapped_column(JsonType, default=dict)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey('users.id', ondelete='SET NULL'))
+    created_at: Mapped[dt.datetime] = mapped_column(default=utcnow)
+
+
+class BriefJob(Base):
+    __tablename__ = 'brief_jobs'
+    __table_args__ = (Index('uq_brief_job_key', 'dedupe_key', unique=True), Index('ix_brief_job_queue', 'status', 'next_attempt_at'))
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    team_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('teams.id', ondelete='CASCADE'), index=True)
+    issue_date: Mapped[dt.date] = mapped_column(Date)
+    category: Mapped[str] = mapped_column(String(30))
+    action: Mapped[str] = mapped_column(String(20), default='produce')
+    preview: Mapped[bool] = mapped_column(Boolean, default=False)
+    dedupe_key: Mapped[str] = mapped_column(String(180))
+    active_key: Mapped[str | None] = mapped_column(String(180), unique=True)
+    status: Mapped[str] = mapped_column(String(20), default='queued')
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    next_attempt_at: Mapped[dt.datetime] = mapped_column(default=utcnow)
+    lease_until: Mapped[dt.datetime | None]
+    error: Mapped[str | None] = mapped_column(Text)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey('users.id', ondelete='SET NULL'))
+    created_at: Mapped[dt.datetime] = mapped_column(default=utcnow)
+    updated_at: Mapped[dt.datetime] = mapped_column(default=utcnow)
+
+
+class BriefAudit(Base):
+    __tablename__ = 'brief_audits'
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    issue_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('brief_issues.id', ondelete='CASCADE'), index=True)
+    action: Mapped[str] = mapped_column(String(30))
+    version: Mapped[int] = mapped_column(Integer)
+    user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey('users.id', ondelete='SET NULL'))
+    created_at: Mapped[dt.datetime] = mapped_column(default=utcnow)

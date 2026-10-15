@@ -15,7 +15,7 @@ WORKDIR /srv
 
 # 先装依赖（利用镜像层缓存）
 COPY pyproject.toml ./
-RUN mkdir app && touch app/__init__.py && pip install -e . && rm -rf app
+RUN mkdir app && touch app/__init__.py && pip install -e . && python -m playwright install --with-deps chromium && rm -rf app
 
 COPY app ./app
 COPY alembic.ini ./

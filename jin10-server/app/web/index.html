@@ -4,13 +4,13 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>PLUS 日报选稿</title>
-    <link rel="stylesheet" href="style.css" />
+    <link rel="stylesheet" href="/style.css" />
   </head>
   <body>
     <section id="login-view" class="login" hidden>
       <form id="login-form" class="card login-card">
         <h1>PLUS 日报选稿</h1>
-        <p class="muted">使用团队账号登录 · <a href="guide.html" target="_blank" rel="noopener">第一次使用？看使用教程</a></p>
+        <p class="muted">使用团队账号登录 · <a href="/guide.html" target="_blank" rel="noopener">第一次使用？看使用教程</a></p>
         <label>邮箱<input name="email" type="email" autocomplete="username" required /></label>
         <label>密码<input name="password" type="password" autocomplete="current-password" required /></label>
         <p id="login-error" class="error" hidden></p>
@@ -18,7 +18,7 @@
           <details class="install">
             <summary>安装采集插件（Chrome）</summary>
             <ol>
-              <li><a href="plus-research-extension.zip" download>下载插件压缩包</a>，解压到一个固定文件夹</li>
+              <li><a href="/plus-research-extension.zip" download>下载插件压缩包</a>，解压到一个固定文件夹</li>
               <li>Chrome 打开 <code>chrome://extensions</code>，打开右上角「开发者模式」</li>
               <li>点「加载已解压的扩展程序」，选择解压后的文件夹</li>
               <li>点插件图标 →「登录团队」，用本网站的账号登录</li>
@@ -30,7 +30,7 @@
 
     <section id="app-view" hidden>
       <header class="topbar">
-        <div class="brand"><span class="tag">PLUS</span><strong>日报选稿</strong></div>
+        <a class="guide-link" href="/">← 工作台</a><div class="brand"><span class="tag">PLUS</span><strong>日报选稿</strong></div>
         <div class="controls">
           <label>日期 <input id="day" type="date" /></label>
           <label>范围
@@ -49,7 +49,7 @@
           <button id="bulk-delete" title="勾选多条素材一次删除">批量删除</button>
           <button id="clear-pool" class="danger" title="删除当前显示的全部素材，开始新一期">一键清空素材</button>
         </div>
-        <div class="user"><button id="parse-alert" class="parse-alert" hidden></button><a class="guide-link" href="guide.html" target="_blank" rel="noopener">使用教程</a><span id="whoami"></span><button id="logout" class="link">退出</button></div>
+        <div class="user"><button id="parse-alert" class="parse-alert" hidden></button><a class="guide-link" href="/guide.html" target="_blank" rel="noopener">使用教程</a><span id="whoami"></span><button id="logout" class="link">退出</button></div>
       </header>
 
       <main>
@@ -75,7 +75,7 @@
           <details class="install">
             <summary>安装采集插件（Chrome）</summary>
             <ol>
-              <li><a href="plus-research-extension.zip" download>下载插件压缩包</a>，解压到一个固定文件夹</li>
+              <li><a href="/plus-research-extension.zip" download>下载插件压缩包</a>，解压到一个固定文件夹</li>
               <li>Chrome 打开 <code>chrome://extensions</code>，打开右上角「开发者模式」</li>
               <li>点「加载已解压的扩展程序」，选择解压后的文件夹</li>
               <li>点插件图标 →「登录团队」，用本网站的账号登录</li>
@@ -116,6 +116,6 @@
       <div id="preview-pages" class="preview-pages"></div>
     </div>
 
-    <script type="module" src="app.js"></script>
+    <script type="module" src="/app.js"></script>
   </body>
 </html>

@@ -110,12 +110,12 @@ def test_pdf_failure_still_returns_pptx(client: TestClient, monkeypatch: pytest.
 
 
 def test_web_page_served(client: TestClient) -> None:
-    page = client.get("/")
+    page = client.get("/daily/")
     assert page.status_code == 200 and "PLUS 日报选稿" in page.text
     js = client.get("/app.js")
     assert js.status_code == 200 and js.headers["cache-control"] == "no-cache"
     guide = client.get("/guide.html")
-    assert guide.status_code == 200 and "PLUS 日报使用教程" in guide.text and 'href="guide.html"' in page.text
+    assert guide.status_code == 200 and "PLUS 日报使用教程" in guide.text and 'href="/guide.html"' in page.text
     assert client.get("/guide/overview.webp").status_code == 200
 
 

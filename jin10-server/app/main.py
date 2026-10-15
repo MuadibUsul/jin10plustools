@@ -10,10 +10,12 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 
 from app.ai.jev_client import JevClient
 from app.ai.worker import AnalysisWorker
 from app.api import assets, auth, board, collab, issues, materials
+from app.api import briefs
 from app.config import get_settings
 from app.db.session import get_session_factory
 from app.services.maintenance import MaintenanceWorker
@@ -46,6 +48,7 @@ app.include_router(assets.router)
 app.include_router(issues.router)
 app.include_router(board.router)
 app.include_router(collab.router)
+app.include_router(briefs.router)
 
 
 @app.get("/api/health", tags=["system"])
@@ -63,5 +66,27 @@ class _WebFiles(StaticFiles):
         return response
 
 
-# 选稿网页（同源，登录后调用上面的接口）；必须最后挂载，避免遮住 /api
+# Explicit workspace routes precede the legacy static-file mount.
+_WEB=Path(__file__).parent/'web'
+
+
+@app.get('/',include_in_schema=False)
+@app.get('/fresh/',include_in_schema=False)
+@app.get('/annotations/',include_in_schema=False)
+@app.get('/login/',include_in_schema=False)
+def workspace_page():
+    return FileResponse(_WEB/'portal.html',headers={'Cache-Control':'no-cache'})
+
+
+@app.get('/daily/',include_in_schema=False)
+def daily_page():
+    return FileResponse(_WEB/'index.html',headers={'Cache-Control':'no-cache'})
+
+
+@app.get('/briefs/',include_in_schema=False)
+def briefs_page():
+    return FileResponse(_WEB/'briefs.html',headers={'Cache-Control':'no-cache'})
+
+
+# Legacy script, guide and extension-download URLs remain available.
 app.mount("/", _WebFiles(directory=Path(__file__).parent / "web", html=True), name="web")

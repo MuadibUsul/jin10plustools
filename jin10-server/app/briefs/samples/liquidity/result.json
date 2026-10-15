@@ -1,0 +1,67 @@
+{
+  "title": "【流动性指标】DR007加权利率下行至1.3352%",
+  "dynamic_body": "截至2026-10-15 15:45，DR007加权利率为1.3352%，最新成交利率为1.3233%；较2026-10-14的日加权利率下行1.22个基点。短端回购融资利率较上一日有所回落。较当日7天期逆回购操作利率1.40%低6.48个基点。央行当日开展450亿元7天期逆回购，投标量450亿元，中标量450亿元。",
+  "images": [
+    "流动性指标_20261015_Plus简约版.png"
+  ],
+  "data_date": "2026-10-15",
+  "facts": {
+    "quotes": {
+      "updated_at": "2026-10-15 15:45",
+      "quote_date": "2026-10-15",
+      "rows": [
+        {
+          "product": "DR001",
+          "weighted_rate": "1.2633",
+          "latest_rate": "1.2548",
+          "average_term_days": "1",
+          "updated_at": "2026-10-15 15:45"
+        },
+        {
+          "product": "DR007",
+          "weighted_rate": "1.3352",
+          "latest_rate": "1.3233",
+          "average_term_days": "6.74",
+          "updated_at": "2026-10-15 15:45"
+        },
+        {
+          "product": "DR014",
+          "weighted_rate": "1.3352",
+          "latest_rate": "1.3291",
+          "average_term_days": "13.72",
+          "updated_at": "2026-10-15 15:45"
+        },
+        {
+          "product": "DR021",
+          "weighted_rate": "1.3500",
+          "latest_rate": "1.3500",
+          "average_term_days": "18.01",
+          "updated_at": "2026-10-15 15:45"
+        }
+      ]
+    },
+    "central_bank": {
+      "date": "2026-10-15",
+      "term_days": 7,
+      "rate_percent": "1.40",
+      "bid_yi": "450",
+      "awarded_yi": "450",
+      "full_demand_met": true,
+      "url": "https://www.pbc.gov.cn/zhengcehuobisi/125207/125213/125431/125475/2026101508552484698/index.html",
+      "sha256": "902debe0233a6359c79af9436c8f12548c5a709386c8cde93b1c8dee4537c44c"
+    },
+    "history_range": [
+      "2026-07-14",
+      "2026-10-14"
+    ]
+  },
+  "warnings": [],
+  "artifact_dir": "runs/liquidity-20261015",
+  "image_sha256": {
+    "流动性指标_20261015_Plus简约版.png": "c401e93e909c0e14556399ac62951da08d874c16cc8fdfc398486cb0071cbbdc"
+  },
+  "valid": true,
+  "deepseek": {
+    "status": "not_configured"
+  }
+}

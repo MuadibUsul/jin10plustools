@@ -36,6 +36,10 @@ class Settings(BaseSettings):
     #: 单条素材最多尝试次数，超过后标记为 failed
     ai_max_attempts: int = 3
 
+    # Fixed briefs use a separate optional provider and a separate worker.
+    briefs_deepseek_api_key: str = ''
+    briefs_deepseek_model: str = ''
+
 
 @lru_cache
 def get_settings() -> Settings:

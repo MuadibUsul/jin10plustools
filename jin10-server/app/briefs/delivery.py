@@ -1,0 +1,71 @@
+"""Shared delivery contract, copied verbatim into standalone job packages."""
+import json
+import re
+from pathlib import Path
+
+FIXED_NOTES={
+    'volume':'注：两市成交量反映了各大机构、游资、广大散户对A股看法，高于均线代表总成交量升高，市场情绪偏乐观，低于均线代表总成交量下降，市场情绪降温。',
+    'turnover':'注：1、当换手率低于3%的股票占比上升，尤其是接近历史高位附近（图中虚线，图为反转走势）时，意味着市场很有可能遇到一个阶段低点，容易产生反转或反弹。\n2、当高换手率高于5%的股票占市场总数比例保持在阈值（图中虚线）上方，市场才会出现强的赚钱效应，使得行情具有持续性。牛市的时候，该指标会持续保持在阈值上方，市场迎来普涨行情；而熊市的时候，该指标大多时候在阈值下方，偶尔超过阈值反而要小心冲高回落的风险。',
+    'valuation':'注：1、巴菲特指数是通过将股市总市值和GDP来比较，判断目前股市是否高估，通常70-100%为正常估值，低于该区间为低估，高于该区间为高估。\n2、沪深300指数风险溢价（ERP）主要对比沪深300收益和国债收益率，统计近10年数据可以发现该指标和股指有明显反向关系，每次股市都处于底部区域时，风险溢价均超过6%，也就是当ERP≥6%，股市有投资性价比，而当ERP≤4%时，则股市往往接近或处于阶段性高点，投资性价比低甚至要小心回调风险。',
+    'liquidity':'注：短期货币市场利率如DR007，反映的是市场资金充裕程度。除了实体经济贷款利率，股市、债市等金融市场很多交易本质上是靠“贷款”加杠杆，贷款成本就取决于短期资金利率。DR007通常被视为中国短端利率锚。DR007与央行7天逆回购利率（政策利率）之间的差距就可以看出市场是否缺钱，DR007利率高于政策利率很多，说明市场缺钱，央行可能会出手投放流动性；反之说明市场资金非常宽松。',
+}
+OIL_CLOSING='点击查看完整持仓数据，捕捉油价之外的资金变化。'
+ALIASES={'01_成交额':'volume','02_换手率':'turnover','03_估值指标':'valuation',
+         '04_流动性':'liquidity','05_原油ETF':'oil_etf','valuation_erp':'valuation'}
+
+
+def complete_body(category,body):
+    """Append verbatim user-supplied evergreen text, once, after dynamic facts."""
+    category=ALIASES.get(category,category);body=body.strip()
+    note=FIXED_NOTES.get(category)
+    if note:
+        # Replace any earlier edition of a fixed explanatory block, not daily facts.
+        body=re.split(r'\n\s*-{3,}\s*\n(?=\s*注：)',body,maxsplit=1)[0].strip()
+        if note in body:body=body.replace(note,'').rstrip().rstrip('-').rstrip()
+        return body+'\n\n--------\n\n'+note
+    if category=='oil_etf' and OIL_CLOSING not in body:return body+'\n\n'+OIL_CLOSING
+    return body
+
+
+def split_markdown(text):
+    lines=text.strip().splitlines()
+    if not lines or not lines[0].startswith('# '):raise ValueError('Article must have a title')
+    return {'title':lines[0][2:].strip(),'body':'\n'.join(lines[1:]).strip()}
+
+
+def write_delivery(out,*,category,data_date,rule,images=(),image_required=False,
+                   deepseek=None,limitations=(),ready=True):
+    out=Path(out);out.mkdir(parents=True,exist_ok=True)
+    title=rule.get('title','').strip();body=rule.get('body','').strip()
+    if not title or not body or '\n' in title:raise ValueError('Nonempty single-line title and body are mandatory')
+    body=complete_body(category,body)
+    assets=[]
+    for file in images:
+        path=Path(file)
+        if not path.is_absolute():path=out/path
+        if not path.is_file():raise ValueError('Required image is missing')
+        # Each standalone delivery directory carries its own assets.
+        if path.parent.resolve()!=out.resolve():raise ValueError('Images must belong to the delivery directory')
+        assets.append(path.name)
+    if image_required and not assets:raise ValueError('This category requires an image')
+    (out/'标题.txt').write_text(title+'\n',encoding='utf-8')
+    (out/'正文.txt').write_text(body+'\n',encoding='utf-8')
+    (out/'发布稿.md').write_text(f'# {title}\n\n{body}\n',encoding='utf-8')
+    ai=deepseek or {'status':'not_configured'}
+    tracks={'rules':{'status':'ok','title':title,'body':body,'images':assets},
+            'deepseek':{'status':ai.get('status','not_configured')}}
+    if ai.get('status')=='ok':
+        if not ai.get('title','').strip() or not ai.get('body','').strip():raise ValueError('AI title/body missing')
+        ai_body=complete_body(category,ai['body'])
+        tracks['deepseek'].update(title=ai['title'],body=ai_body,images=assets)
+        (out/'标题_DeepSeek.txt').write_text(ai['title']+'\n',encoding='utf-8')
+        (out/'正文_DeepSeek.txt').write_text(ai_body+'\n',encoding='utf-8')
+    else:
+        # A failed retry must not leave an old AI article looking current.
+        for name in ('标题_DeepSeek.txt','正文_DeepSeek.txt'):
+            (out/name).unlink(missing_ok=True)
+    record={'schema_version':'1.0','category':category,'data_date':data_date,
+        'title':title,'body':body,'images':assets,'image_required':image_required,
+        'tracks':tracks,'limitations':list(limitations),'ready':bool(ready),'published':False}
+    (out/'交付清单.json').write_text(json.dumps(record,ensure_ascii=False,indent=2),encoding='utf-8')
+    return record

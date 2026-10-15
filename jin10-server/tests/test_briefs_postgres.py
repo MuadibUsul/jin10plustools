@@ -59,6 +59,7 @@ def test_migration_preserves_existing_daily_cover(postgres):
     assert 'cover_ids' in {column['name'] for column in inspect(engine).get_columns('boards')}
     command.upgrade(Config('alembic.ini'), 'head')
     assert {'brief_configs', 'brief_issues', 'brief_versions', 'brief_jobs', 'brief_audits'} <= set(inspect(engine).get_table_names())
+    assert 'notes' in {column['name'] for column in inspect(engine).get_columns('brief_configs')}
 
 
 def test_concurrent_enqueue_creates_one_active_job(postgres):

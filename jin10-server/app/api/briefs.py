@@ -1,21 +1,18 @@
 from __future__ import annotations
-import io
-import json
 import uuid
-import zipfile
 from datetime import date, datetime
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, HTTPException, Query
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 
 from app.db.models import BriefAudit, BriefConfig, BriefIssue, BriefJob, BriefVersion, Role, utcnow
 from app.deps import CurrentUser, DbSession, Editor
 from app.briefs.policy import CATEGORIES, CHINA
-from app.briefs.service import owned, enqueue, issue_out, job_out, append_version, artifact_path
-from app.briefs.delivery import complete_body
+from app.briefs.service import owned, enqueue, issue_out, job_out, append_version, artifact_path, delivered_image
+from app.services.image_delivery import download_name
 
 router=APIRouter(prefix='/api/briefs',tags=['fixed briefs'])
 
@@ -31,11 +28,12 @@ class EditRequest(BaseModel):
     base_version: int=Field(ge=1)
     title: str=Field(min_length=1,max_length=300)
     dynamic_body: str=Field(min_length=1,max_length=20000)
+    fixed_notes: str|None=Field(default=None,max_length=2000)
+    notes_as_default: bool=False
 
 
 class ConfirmRequest(BaseModel):
     version: int=Field(ge=1)
-    acknowledge_warnings: bool=False
 
 
 class ConfigRequest(BaseModel):
@@ -113,8 +111,15 @@ def edit(id:uuid.UUID,body:EditRequest,db:DbSession,user:Editor):
     if not body.title.strip() or not body.dynamic_body.strip() or '\n' in body.title:
         raise HTTPException(422,'标题须为单行，标题和正文不能为空')
     previous=db.scalars(select(BriefVersion).where(BriefVersion.issue_id==id,BriefVersion.number==body.base_version)).one()
-    # An immutable payload snapshot retains exact images and source warnings.
-    append_version(db,issue,dict(previous.payload),user_id=user.id,kind='edited',
+    payload=dict(previous.payload)
+    if body.fixed_notes is not None:payload['fixed_notes']=body.fixed_notes.strip()
+    if body.notes_as_default and body.fixed_notes is not None:
+        config=db.get(BriefConfig,user.team_id,with_for_update=True)
+        if config is None:
+            config=BriefConfig(team_id=user.team_id,enabled=False,notes={});db.add(config)
+        config.notes={**(config.notes or {}),issue.category:body.fixed_notes.strip()}
+        config.updated_at=utcnow()
+    append_version(db,issue,payload,user_id=user.id,kind='edited',
                    title=body.title.strip(),body=body.dynamic_body.strip())
     db.commit();return issue_out(db,issue)
 
@@ -125,8 +130,6 @@ def confirm(id:uuid.UUID,body:ConfirmRequest,db:DbSession,user:Editor):
     if issue.version!=body.version:raise HTTPException(409,'只能确认当前版本，请刷新核对')
     version=db.scalars(select(BriefVersion).where(BriefVersion.issue_id==id,BriefVersion.number==body.version)).first()
     if not version or not version.payload.get('valid'):raise HTTPException(409,'数据或图片未通过基础校验')
-    if version.payload.get('warnings') and not body.acknowledge_warnings:
-        raise HTTPException(409,'请先确认已阅读来源口径及数据缺口说明')
     for name in version.payload.get('images',[]):
         try:artifact_path(issue,version,name)
         except ValueError as e:raise HTTPException(409,str(e)) from None
@@ -150,30 +153,7 @@ def file(id:uuid.UUID,number:int,name:str,db:DbSession,user:CurrentUser):
     if user.role==Role.VIEWER and number!=issue.confirmed_version:raise HTTPException(403,'只读账号仅可下载已确认稿')
     version=db.scalars(select(BriefVersion).where(BriefVersion.issue_id==id,BriefVersion.number==number)).first()
     if not version:raise HTTPException(404,'版本不存在')
-    try:path=artifact_path(issue,version,name)
+    try:path,media_type=delivered_image(issue,version,name)
     except ValueError as e:raise HTTPException(404,str(e)) from None
-    return FileResponse(path,media_type='image/png',headers={'Cache-Control':'private, no-cache'})
-
-
-@router.get('/issues/{id}/export')
-def export(id:uuid.UUID,db:DbSession,user:CurrentUser,format:Literal['zip','text']='zip',version:int|None=None):
-    issue=get_issue(db,user,id)
-    number=version or issue.confirmed_version
-    if not number:raise HTTPException(409,'尚无确认稿；编辑可指定版本导出未确认稿')
-    if user.role==Role.VIEWER and number!=issue.confirmed_version:raise HTTPException(403,'仅可导出已确认版本')
-    item=db.scalars(select(BriefVersion).where(BriefVersion.issue_id==id,BriefVersion.number==number)).first()
-    if not item:raise HTTPException(404,'版本不存在')
-    body=complete_body(issue.category,item.dynamic_body);text=f'# {item.title}\n\n{body}\n'
-    if format=='text':return Response(text,media_type='text/plain; charset=utf-8')
-    buffer=io.BytesIO()
-    with zipfile.ZipFile(buffer,'w',zipfile.ZIP_DEFLATED) as archive:
-        archive.writestr('标题.txt',item.title);archive.writestr('正文.txt',body);archive.writestr('发布稿.md',text)
-        archive.writestr('核验信息.json',json.dumps({'data_date':item.payload.get('data_date'),
-            'warnings':item.payload.get('warnings',[]),'confirmed':number==issue.confirmed_version,
-            'version':number,'published':False},ensure_ascii=False,indent=2))
-        for name in item.payload.get('images',[]):
-            try:path=artifact_path(issue,item,name)
-            except ValueError as e:raise HTTPException(409,str(e)) from None
-            archive.write(path,name)
-    return Response(buffer.getvalue(),media_type='application/zip',
-        headers={'Content-Disposition':f'attachment; filename="brief-{issue.category}-{issue.issue_date}-v{number}.zip"'})
+    return FileResponse(path,media_type=media_type,filename=download_name(issue.issue_date,version.title,path.suffix),
+                        headers={'Cache-Control':'private, no-cache'})

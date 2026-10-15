@@ -46,10 +46,10 @@ def buffett_chart(rows,out):
     fig,ax=plt.subplots(figsize=(14.08,5.95),dpi=100,facecolor='black')
     fig.subplots_adjust(left=.07,right=.92,top=.81,bottom=.17);ax.set_facecolor('black')
     other=ax.twinx();ax.plot(x,[float(r['close']) for r in rows],color='#A5A5A5',lw=1.4,label='沪深300')
-    other.plot(x,[float(r['marketCap'])/float(r['gdp'])*100 for r in rows],color='#22A1D6',lw=1.4,label='全A总市值/GDP')
+    other.plot(x,[float(r['marketCap'])/float(r['gdp'])*100 for r in rows],color='#22A1D6',lw=1.4,label='A股总市值/GDP')
     for value in (70,100):other.axhline(value,color='#FFC000',lw=1,ls='--')
     ax.set_ylim(0,6000);other.set_ylim(0,160)
-    ax.set_title('巴菲特指数：全A股总市值 / 上年度全年GDP',fontproperties=font(19),color='white',loc='left',pad=26)
+    ax.set_title('巴菲特指数（A股总市值/上年度全年GDP）',fontproperties=font(19),color='white',loc='center',pad=26)
     ticks=[round((len(rows)-1)*i/7) for i in range(8)]
     ax.set_xticks(ticks,[rows[i]['date'] for i in ticks]);ax.grid(color='#333333',axis='y',ls='--')
     for a in (ax,other):
@@ -58,5 +58,4 @@ def buffett_chart(rows,out):
     other.set_ylabel('%',color='#B6B6B6')
     ax.legend(prop=font(),labelcolor='white',loc='upper left',frameon=False)
     other.legend(prop=font(),labelcolor='white',loc='upper right',frameon=False)
-    fig.text(.07,.035,'数据来源：乐咕乐股（历史）、东方财富（近期）',fontproperties=font(10),color='#999999')
     path=Path(out)/'巴菲特指数.png';fig.savefig(path,dpi=100);plt.close(fig);return path

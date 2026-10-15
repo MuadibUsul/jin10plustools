@@ -49,35 +49,36 @@ async function showVersion() {
   const v = chosen(); if (!v) return; current = v;
   $('#title').value = v.title; $('#body').value = v.dynamic_body;
   $('#title').readOnly = $('#body').readOnly = !canEdit();
-  $('#fixed').textContent = v.fixed_notes || (selected.category === 'oil_etf' ? '点击查看完整持仓数据，捕捉油价之外的资金变化。' : '');
+  $('#fixed').value = v.fixed_notes || '';
+  $('#fixed').readOnly = !canEdit();
+  $('#notes-label').textContent = v.notes_placement === 'image' ? '注释（保存后显示在图片底部）' : '注释（自动加入完整正文）';
+  $('#notes-default-row').hidden = !canEdit(); $('#notes-default').checked = false;
   $('#detail-status').textContent = `数据日 ${v.data_date} · DeepSeek：${aiLabels[v.deepseek.status] || '未完成'}`;
   $('#warnings').replaceChildren(...v.warnings.map((s) => node('p', s)));
-  $('#ack-row').hidden = !v.warnings.length; $('#ack').checked = false;
   $('#facts').textContent = JSON.stringify(v.facts, null, 2);
   for (const id of ['save', 'confirm', 'unconfirm', 'rerender', 'retry-ai', 'refetch']) $(`#${id}`).hidden = !canEdit();
   $('#save').disabled = v.number !== selected.version;
   $('#confirm').disabled = v.number !== selected.version || !v.valid;
   $('#use-ai').hidden = !canEdit() || v.deepseek.status !== 'ok';
+  dirty = false;
   clearImages();
   if (!v.images.length) $('#images').append(node('p', '本栏目无需配图', 'muted'));
   for (const file of v.images) {
-    try { const res = await api(file.url, { raw: true }); if (current !== v) return; const url = URL.createObjectURL(await res.blob()); blobs.add(url); const image = node('img'); image.src = url; image.alt = file.name; const button = node('button', '下载图片'); button.onclick = () => safe(() => download(file.url, file.name)); $('#images').append(image, button); }
+    try { const res = await api(file.url, { raw: true }); const blob = await res.blob(); if (current !== v) return; const url = URL.createObjectURL(blob); blobs.add(url); const image = node('img'); image.src = url; image.alt = file.name; const button = node('button', '下载图片'); button.onclick = () => safe(() => download(file.url)); $('#images').append(image, button); }
     catch (e) { $('#images').append(node('p', e.message, 'error')); }
   }
-  dirty = false;
 }
 async function act(path, json) { await api(`/api/briefs/issues/${selected.id}/${path}`, { method: 'POST', json }); dirty = false; const fresh = await api(`/api/briefs/issues/${selected.id}`); await open(fresh); await refresh(); }
 $('#refresh').onclick = () => safe(refresh);
 $('#day').onchange = () => safe(async () => { if (dirty && !confirm('放弃未保存的修改？')) { $('#day').value = selected.issue_date; return; } selected = null; dirty = false; $('#detail').hidden = true; await refresh(); });
 $('#version').onchange = () => safe(async () => { if (dirty && !confirm('放弃未保存的修改？')) { $('#version').value = current.number; return; } await showVersion(); });
-$('#title').oninput = $('#body').oninput = () => { dirty = true; };
+$('#title').oninput = $('#body').oninput = $('#fixed').oninput = $('#notes-default').onchange = () => { dirty = true; };
 $('#close-detail').onclick = () => { if (dirty && !confirm('放弃未保存的修改？')) return; dirty = false; selected = null; $('#detail').hidden = true; clearImages(); };
-$('#save').onclick = () => safe(() => act('revisions', { base_version: current.number, title: $('#title').value, dynamic_body: $('#body').value }));
-$('#confirm').onclick = () => safe(async () => { if (dirty) throw new Error('请先保存修改，再确认版本'); await act('confirm', { version: current.number, acknowledge_warnings: $('#ack').checked }); message('此版本已确认为正式取稿版本。'); });
+$('#save').onclick = () => safe(() => act('revisions', { base_version: current.number, title: $('#title').value, dynamic_body: $('#body').value, fixed_notes: $('#fixed').value, notes_as_default: $('#notes-default').checked }));
+$('#confirm').onclick = () => safe(async () => { if (dirty) throw new Error('请先保存修改，再确认版本'); await act('confirm', { version: current.number }); message('此版本已确认为正式取稿版本。'); });
 $('#unconfirm').onclick = () => safe(() => act('unconfirm'));
 $('#copy-title').onclick = () => safe(async () => { if (dirty) throw new Error('请先保存修改后取稿'); await copy(current.title); message('标题已复制。'); });
 $('#copy-body').onclick = () => safe(async () => { if (dirty) throw new Error('请先保存修改后取稿'); await copy(current.body); message('完整正文已复制。'); });
-$('#export').onclick = () => safe(async () => { if (dirty) throw new Error('请先保存修改'); await download(`/api/briefs/issues/${selected.id}/export?version=${current.number}`, `${selected.label}-${selected.issue_date}-v${current.number}.zip`); });
 $('#use-ai').onclick = () => { $('#title').value = current.deepseek.title; $('#body').value = current.deepseek.body; dirty = true; message('已采用DeepSeek表达，请保存并核对。'); };
 for (const [id, action] of [['rerender', 'render'], ['retry-ai', 'ai'], ['refetch', 'refresh']]) $(`#${id}`).onclick = () => safe(async () => { if (!confirm(action === 'refresh' ? '重新请求数据源并生成新版本？现有稿件会保留。' : '创建新版本？现有人工修改和确认版本会保留。')) return; await runJob(selected.category, action); });
 $('#schedule').onclick = () => safe(async () => { if (!confirm(config.schedule_enabled ? '关闭本团队自动生产？' : '启用工作日08:00—10:00自动生产？来源差异仍需编辑核对。')) return; await api('/api/briefs/config', { method: 'PUT', json: { enabled: !config.schedule_enabled } }); config.schedule_enabled = !config.schedule_enabled; $('#schedule').textContent = config.schedule_enabled ? '关闭自动排期' : '启用自动排期'; });

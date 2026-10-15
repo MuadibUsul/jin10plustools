@@ -21,5 +21,5 @@ export async function login() {
   });
 }
 function account(me) { const target = $('#account'); if (!target) return; const out = node('button', '退出'); out.onclick = () => { localStorage.removeItem('plus.token'); location.reload(); }; target.replaceChildren(node('span', me.user.name), out); }
-export async function download(path, filename) { const res = await api(path, { raw: true }); const url = URL.createObjectURL(await res.blob()); const a = node('a'); a.href = url; a.download = filename; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); }
+export async function download(path, filename) { const res = await api(path, { raw: true }); const disposition = res.headers.get('Content-Disposition') || ''; const encoded = disposition.match(/filename\*=UTF-8''([^;]+)/i); const plain = disposition.match(/filename=["]([^"]+)["]/i); const url = URL.createObjectURL(await res.blob()); const a = node('a'); a.href = url; a.download = encoded ? decodeURIComponent(encoded[1]) : plain?.[1] || filename || 'image'; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); }
 export async function copy(text) { try { await navigator.clipboard.writeText(text); } catch { throw new Error('浏览器未允许复制，请选中文字手动复制'); } }

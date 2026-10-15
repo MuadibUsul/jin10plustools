@@ -9,6 +9,7 @@ from app.briefs.worker import schedule,claim
 from app.briefs.central_bank import parse_article
 from app.db.models import BriefConfig,BriefJob,BriefVersion
 from tests.conftest import login
+from PIL import Image
 
 
 def draft(db_factory,seed,warnings=None,valid=True):
@@ -16,9 +17,9 @@ def draft(db_factory,seed,warnings=None,valid=True):
     with db_factory() as db:
         issue=ensure_issue(db,user.team_id,date(2026,10,15),'liquidity')
         folder=root_for(user.team_id)/'runs/test';folder.mkdir(parents=True,exist_ok=True)
-        (folder/'test.png').write_bytes(b'png-content')
+        Image.new('RGB',(800,600),'white').save(folder/'test.png')
         payload={'title':'核验标题','dynamic_body':'2026年10月15日，已核验数据。','data_date':'2026-10-15',
-            'images':['test.png'],'image_sha256':{'test.png':hashlib.sha256(b'png-content').hexdigest()},
+            'images':['test.png'],'image_sha256':{'test.png':hashlib.sha256((folder/'test.png').read_bytes()).hexdigest()},
             'artifact_dir':'runs/test','warnings':warnings or [],'facts':{},'valid':valid,'preview':True}
         append_version(db,issue,payload,user_id=user.id);db.commit();return str(issue.id)
 
@@ -56,11 +57,10 @@ def test_draft_team_isolation_confirmation_and_viewer_files(client,db_factory,se
     assert client.get(f'/api/briefs/issues/{id}',headers=other).status_code==404
     assert client.get(f'/api/briefs/issues/{id}',headers=viewer).json()['versions']==[]
     assert client.get(f'/api/briefs/issues/{id}/files/1/test.png',headers=viewer).status_code==403
-    assert client.post(f'/api/briefs/issues/{id}/confirm',json={'version':1},headers=editor).status_code==409
-    assert client.post(f'/api/briefs/issues/{id}/confirm',json={'version':1,'acknowledge_warnings':True},headers=editor).status_code==200
+    assert client.post(f'/api/briefs/issues/{id}/confirm',json={'version':1},headers=editor).status_code==200
     assert client.get(f'/api/briefs/issues/{id}/files/1/test.png',headers=viewer).status_code==200
-    assert '注：短期货币市场' in client.get(f'/api/briefs/issues/{id}/export?format=text',headers=viewer).text
-    assert client.get(f'/api/briefs/issues/{id}/export',headers=viewer).headers['content-type']=='application/zip'
+    assert '注：短期货币市场' in client.get(f'/api/briefs/issues/{id}',headers=viewer).json()['versions'][0]['body']
+    assert client.get(f'/api/briefs/issues/{id}/export',headers=viewer).status_code==404
 
 
 def test_edit_conflict_keeps_old_confirmed_edition(client,db_factory,seed):

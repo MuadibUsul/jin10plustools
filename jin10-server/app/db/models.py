@@ -215,6 +215,7 @@ class BriefConfig(Base):
     __tablename__ = 'brief_configs'
     team_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('teams.id', ondelete='CASCADE'), primary_key=True)
     enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    notes: Mapped[dict] = mapped_column(JSON, default=dict, server_default='{}')
     updated_at: Mapped[dt.datetime] = mapped_column(default=utcnow)
 
 

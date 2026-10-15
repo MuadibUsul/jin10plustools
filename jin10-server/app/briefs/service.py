@@ -9,8 +9,8 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
 from app.config import get_settings
-from app.db.models import BriefAudit, BriefIssue, BriefJob, BriefVersion, utcnow
-from .delivery import complete_body, FIXED_NOTES
+from app.db.models import BriefAudit, BriefConfig, BriefIssue, BriefJob, BriefVersion, utcnow
+from .delivery import complete_body, default_notes
 from .policy import CATEGORIES, expected_date
 
 
@@ -69,6 +69,10 @@ def enqueue(db,team_id,day,category,*,action='produce',preview=False,user_id=Non
 
 def append_version(db,issue,payload,*,user_id=None,kind='generated',title=None,body=None):
     # Lock is always acquired by caller before allocating a revision number.
+    payload=dict(payload)
+    if 'fixed_notes' not in payload:
+        config=db.get(BriefConfig,issue.team_id)
+        payload['fixed_notes']=(config.notes or {}).get(issue.category,default_notes(issue.category)) if config else default_notes(issue.category)
     issue.version+=1;issue.updated_at=utcnow()
     item=BriefVersion(issue_id=issue.id,number=issue.version,kind=kind,
         title=title or payload['title'],dynamic_body=body if body is not None else payload['dynamic_body'],
@@ -79,9 +83,10 @@ def append_version(db,issue,payload,*,user_id=None,kind='generated',title=None,b
 
 def version_out(issue,version):
     data=version.payload or {}
+    notes=data.get('fixed_notes',default_notes(issue.category))
     return {'number':version.number,'kind':version.kind,'title':version.title,
-        'dynamic_body':version.dynamic_body,'body':complete_body(issue.category,version.dynamic_body),
-        'fixed_notes':FIXED_NOTES.get(issue.category,''),'created_at':version.created_at,
+        'dynamic_body':version.dynamic_body,'body':complete_body(issue.category,version.dynamic_body,notes),
+        'fixed_notes':notes,'notes_placement':'image' if issue.category=='valuation' else 'body','created_at':version.created_at,
         'data_date':data.get('data_date'),'warnings':data.get('warnings',[]),
         'facts':data.get('facts',{}),'deepseek':data.get('deepseek',{'status':'not_configured'}),
         'images':[{'name':x,'url':f'/api/briefs/issues/{issue.id}/files/{version.number}/{x}'} for x in data.get('images',[])],
@@ -114,3 +119,17 @@ def artifact_path(issue,version,name):
     if not path.is_relative_to(root) or path.parent!=folder or not path.is_file():raise ValueError('图片文件不存在')
     if hashlib.sha256(path.read_bytes()).hexdigest()!=data['image_sha256'][name]:raise ValueError('图片校验失败')
     return path
+
+
+def delivered_image(issue,version,name):
+    from app.services.image_delivery import POLICY_VERSION, WATERMARK, MAX_BYTES, store_image
+    source=artifact_path(issue,version,name)
+    notes=version.payload.get('fixed_notes',default_notes(issue.category)) if issue.category=='valuation' else ''
+    key=hashlib.sha256(json.dumps([version.payload['image_sha256'][name],notes,issue.category,
+        POLICY_VERSION,hashlib.sha256(WATERMARK.read_bytes()).hexdigest()],ensure_ascii=False).encode()).hexdigest()
+    target=root_for(issue.team_id)/'delivery'/str(version.id)/key
+    for suffix,media in (('.png','image/png'),('.jpg','image/jpeg')):
+        cached=target.with_suffix(suffix)
+        if cached.is_file() and 0<cached.stat().st_size<=MAX_BYTES:return cached,media
+    return store_image(source,target,notes=notes,dark=issue.category in ('valuation','turnover'),
+                       remove_valuation_source=issue.category=='valuation',reuse_footer=issue.category=='liquidity')

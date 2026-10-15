@@ -11,7 +11,7 @@ from datetime import datetime,timedelta,time as clock
 from sqlalchemy import select,text,update
 
 from app.config import get_settings
-from app.db.models import BriefConfig,BriefIssue,BriefJob,utcnow
+from app.db.models import BriefConfig,BriefIssue,BriefJob,BriefVersion,utcnow
 from app.db.session import get_session_factory,get_engine
 from .policy import CATEGORIES,CHINA,expected_date,first_run,production_window,next_slot
 from .service import enqueue,ensure_issue,owned,append_version,root_for
@@ -80,6 +80,9 @@ def execute(factory,id):
             if automatic and not production_window(datetime.now(CHINA)):
                 job.status='skipped';job.active_key=None;job.error='超过10:00，快照保留但未生成当天稿';db.commit();return
             issue=ensure_issue(db,team_id,day,category);issue=owned(db,team_id,issue.id,True)
+            if action!='produce' and issue.version:
+                previous=db.scalars(select(BriefVersion).where(BriefVersion.issue_id==issue.id,BriefVersion.number==issue.version)).first()
+                if previous and 'fixed_notes' in previous.payload:payload['fixed_notes']=previous.payload['fixed_notes']
             payload['preview']=preview
             if error:payload.setdefault('warnings',[]).append('规则稿已保存；模型未完成或任务达到时限')
             append_version(db,issue,payload,user_id=job.created_by)

@@ -6,10 +6,10 @@
 <section id="detail" class="detail" hidden><div class="detail-head"><div><h2 id="detail-title"></h2><p id="detail-status" class="muted"></p></div><button id="close-detail">收起</button></div>
 <div class="editor-grid"><div><div class="toolbar"><label>版本 <select id="version"></select></label><button id="use-ai" hidden>采用DeepSeek文字</button></div>
 <label class="field">标题<input id="title" maxlength="300"></label><label class="field">动态正文<textarea id="body" rows="9"></textarea></label>
-<details open><summary>固定解释（自动加入完整正文）</summary><div id="fixed" class="fixed"></div></details>
-<div id="warnings" class="warnings"></div><label id="ack-row" hidden><input type="checkbox" id="ack"> 我已核对以上来源说明与缺口</label>
+<details open><summary id="notes-label">注释</summary><label class="field">注释内容<textarea id="fixed" rows="8" maxlength="2000"></textarea></label><label id="notes-default-row"><input type="checkbox" id="notes-default"> 作为此栏目后续稿件的默认注释</label></details>
+<div id="warnings" class="warnings"></div>
 <div class="toolbar"><button id="save" class="primary">保存修改</button><button id="confirm">确认此版本</button><button id="unconfirm">撤回确认</button></div>
-<div class="toolbar"><button id="copy-title">复制标题</button><button id="copy-body">复制完整正文</button><button id="export">下载图文包</button></div>
+<div class="toolbar"><button id="copy-title">复制标题</button><button id="copy-body">复制完整正文</button></div>
 </div><div><div id="images" class="images"></div><details><summary>数据核对与来源</summary><pre id="facts"></pre></details><div class="toolbar"><button id="rerender">重新制图</button><button id="retry-ai">补跑DeepSeek</button><button id="refetch">重新取数</button></div></div></div></section>
 <footer class="brief-footer">自动任务：工作日08:00—10:00（北京时间），到点停止重试；手动生成不限时。数据日取前一工作日，流动性取当天。</footer>
 </main><script type="module" src="/briefs.js"></script></body></html>

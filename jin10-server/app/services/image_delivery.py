@@ -10,7 +10,7 @@ ASSETS = Path(__file__).parents[1]
 WATERMARK = ASSETS / 'assets/plus-watermark.png'
 FONT = ASSETS / 'briefs/assets/PlusBriefs.ttf'
 MAX_BYTES = 266_000  # Also satisfies a 266 KiB limit.
-POLICY_VERSION = '3'
+POLICY_VERSION = '4'
 
 
 def download_name(day, title, suffix):

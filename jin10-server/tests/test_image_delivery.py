@@ -1,5 +1,6 @@
 import hashlib
 import io
+import json
 import uuid
 from pathlib import Path
 from urllib.parse import unquote
@@ -8,6 +9,7 @@ import pytest
 from PIL import Image
 
 from app.briefs.delivery import FIXED_NOTES
+from app.briefs.charts import VALUATION_PLOT_BOUNDS, valuation_chart
 from app.briefs.service import append_version, ensure_issue
 from app.db.models import BriefConfig, BriefIssue, BriefVersion
 from app.services.image_delivery import MAX_BYTES, compose_image, download_name, encode_image
@@ -82,3 +84,26 @@ def test_valuation_note_edit_changes_image_without_changing_prior_edition(client
     after=client.get(latest['images'][0]['url'],headers=headers).content
     assert before!=after and len(after)<=MAX_BYTES
     assert client.get(first['images'][0]['url'],headers=headers).content==before
+
+
+def test_unified_valuation_panels_share_plot_geometry_and_stay_legible(tmp_path):
+    (first,second)=VALUATION_PLOT_BOUNDS
+    assert first[0]==second[0] and first[2]==second[2]
+    assert first[3]-first[1]==second[3]-second[1]
+    seed=Path('app/briefs/seed')
+    chart=valuation_chart(json.loads((seed/'buffett-history.json').read_text()),
+                          json.loads((seed/'erp-history.json').read_text()),tmp_path)
+    with Image.open(chart) as raw:
+        # The three upper reference levels are part of the chart, not labels
+        # supplied by the original workbook image.
+        for y,dominant in ((251,0),(396,0),(493,1)):
+            pixels=raw.crop((100,y-2,1300,y+3)).getdata()
+            assert sum(pixel[dominant]>120 and pixel[dominant]>pixel[2]
+                       for pixel in pixels)>100
+    composed=compose_image(chart,notes=FIXED_NOTES['valuation'],dark=True)
+    content,suffix,_=encode_image(composed)
+    assert suffix=='.png' and len(content)<=MAX_BYTES
+    with Image.open(io.BytesIO(content)) as image:
+        assert image.width==1408
+        assert image.getpixel((first[0],first[1]))!=(0,0,0)
+        assert image.getpixel((second[0],second[1]))!=(0,0,0)

@@ -126,10 +126,12 @@ def delivered_image(issue,version,name):
     source=artifact_path(issue,version,name)
     notes=version.payload.get('fixed_notes',default_notes(issue.category)) if issue.category=='valuation' else ''
     key=hashlib.sha256(json.dumps([version.payload['image_sha256'][name],notes,issue.category,
+        version.payload.get('unified_valuation',False),
         POLICY_VERSION,hashlib.sha256(WATERMARK.read_bytes()).hexdigest()],ensure_ascii=False).encode()).hexdigest()
     target=root_for(issue.team_id)/'delivery'/str(version.id)/key
     for suffix,media in (('.png','image/png'),('.jpg','image/jpeg')):
         cached=target.with_suffix(suffix)
         if cached.is_file() and 0<cached.stat().st_size<=MAX_BYTES:return cached,media
     return store_image(source,target,notes=notes,dark=issue.category in ('valuation','turnover'),
-                       remove_valuation_source=issue.category=='valuation',reuse_footer=issue.category=='liquidity')
+                       remove_valuation_source=issue.category=='valuation' and not version.payload.get('unified_valuation'),
+                       reuse_footer=issue.category=='liquidity')

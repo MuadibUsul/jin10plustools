@@ -54,15 +54,9 @@ def generate(category,day,root,run_id,action='produce'):
                 if done.returncode:raise ValueError('快照重绘失败，未请求外部数据')
                 payload=dict(previous);payload['images']=[next(out.glob('换手率*.png')).name]
             elif category=='valuation':
-                from .charts import buffett_chart
-                from .engines.valuation.render_erp import render_erp
-                from PIL import Image
-                top=buffett_chart(read(out/'buffett-plot-data.json'),out)
-                bottom,_=render_erp(read(out/'erp-plot-data.json'),out)
-                with Image.open(top) as a,Image.open(bottom) as b:
-                    combined=Image.new('RGB',(a.width,a.height+b.height),'black')
-                    combined.paste(a,(0,0));combined.paste(b,(0,a.height));combined.save(out/'股债性价比.png')
-                payload=dict(previous);payload['images']=['股债性价比.png']
+                from .charts import valuation_chart
+                valuation_chart(read(out/'buffett-plot-data.json'),read(out/'erp-plot-data.json'),out)
+                payload=dict(previous);payload['images']=['股债性价比.png'];payload['unified_valuation']=True
             else:
                 payload=dict(previous)
                 for name in payload['images']:shutil.copy2(source/name,out/name)

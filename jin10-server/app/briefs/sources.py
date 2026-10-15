@@ -152,7 +152,7 @@ def oil_etf(day,out,state,refresh=False):
 def valuation(day,out,state,refresh=False):
     from .engines.valuation.run_erp import run_erp
     from .engines.valuation.fetch_free_all_a import fetch_all_a
-    from .charts import buffett_chart
+    from .charts import valuation_chart
     erp_history=state/'erp-history.json';bond_history=state/'bond-history.json'
     if not erp_history.exists():shutil.copy2(HERE/'seed/erp-history.json',erp_history)
     if not bond_history.exists():shutil.copy2(HERE/'seed/bond-history.json',bond_history)
@@ -180,14 +180,10 @@ def valuation(day,out,state,refresh=False):
         if close is None:raise ValueError('估值图缺少对应日期沪深300点位')
         history.append({'date':r['date'],'marketCap':r['market_cap_yi'],'gdp':gdp['value_yi'],'close':close,'source':cap['source']})
     history.sort(key=lambda r:r['date']);save(history_path,history)
-    visible=[r for r in history if r['date']<=day];chart=buffett_chart(visible,out)
+    visible=[r for r in history if r['date']<=day]
     save(out/'buffett-plot-data.json',visible);save(out/'erp-plot-data.json',rows)
     erp_image=Path(result['image_path']);shutil.copy2(erp_image,out/erp_image.name)
-    from PIL import Image
-    with Image.open(chart) as top,Image.open(erp_image) as bottom:
-        if top.width!=bottom.width:raise ValueError('估值两图宽度不一致')
-        combined=Image.new('RGB',(top.width,top.height+bottom.height),'black')
-        combined.paste(top,(0,0));combined.paste(bottom,(0,top.height));combined.save(out/'股债性价比.png')
+    valuation_chart(visible,rows,out)
     ratio=Decimal(updated[day]['market_cap_yi'])/Decimal(gdp['value_yi'])*100
     erp=Decimal(current['erp_percent']);change=erp-Decimal(prior['erp_percent'])
     title=f"【A股温度计】股债性价比指标更新，沪深300ERP报{erp:.2f}%"
@@ -195,6 +191,7 @@ def valuation(day,out,state,refresh=False):
           f"沪深300指数股权风险溢价（ERP）为{erp:.2f}%，较{prior['date']}变动{change:+.2f}个百分点，"
           f"{'高于' if erp>6 else '等于' if erp==6 else '低于'}6%参考线。权益资产相对国债的估值优势较前日{'增强' if change>0 else '减弱' if change<0 else '变化不大'}。")
     return {'title':title,'dynamic_body':body,'images':['股债性价比.png'],'data_date':day,
+        'unified_valuation':True,
         'facts':{'buffett_percent':str(ratio),'gdp':gdp,'market_cap':cap,'erp_latest':current,'erp_previous':prior},
         'warnings':['巴菲特指数最新值采用东方财富全A上市公司总市值，历史保留原站序列，来源过渡待核对；未宣称与乐咕数值一致',
                     'ERP采用免费市值加权PE候选源和中债国债收益率曲线，已记录与原模板的来源差异']}

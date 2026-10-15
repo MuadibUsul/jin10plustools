@@ -23,17 +23,17 @@ function renderCards() {
     const state = item?.confirmed_version ? `已确认 v${item.confirmed_version}` : version ? '待核对' : '未生成';
     card.append(node('span', state, item?.confirmed_version ? 'badge ready' : 'badge'));
     card.append(node('h3', version?.title || '等待本期数据与成品'));
-    card.append(node('p', version ? `数据日 ${version.data_date} · ${version.preview ? '测试稿' : '生产稿'}` : '尚无有效数据', 'muted'));
+    card.append(node('p', version ? `数据日 ${version.data_date}` : '尚无有效数据', 'muted'));
     if (job) card.append(node('p', `${labels[job.status] || job.status}${job.error ? '：' + job.error : ''}`, job.status === 'failed' ? 'error' : 'muted'));
     if (version?.warnings.length) card.append(node('p', '有来源或口径说明，请核对', 'warning'));
     const controls = node('div', undefined, 'toolbar');
     if (item?.versions.length) { const view = node('button', '查看与取稿'); view.onclick = () => safe(() => open(item)); controls.append(view); }
-    if (canEdit()) { const run = node('button', '生成当日稿'); run.onclick = () => safe(() => runJob(category.id, 'produce', false)); const preview = node('button', '测试运行'); preview.onclick = () => safe(() => runJob(category.id, 'produce', true)); controls.append(run, preview); }
+    if (canEdit()) { const run = node('button', '生成稿件'); run.onclick = () => safe(() => runJob(category.id, 'produce')); controls.append(run); }
     card.append(controls); $('#cards').append(card);
   }
 }
-async function runJob(category, action, preview) {
-  const result = await api('/api/briefs/jobs', { method: 'POST', json: { category, action, preview, issue_date: $('#day').value } });
+async function runJob(category, action) {
+  const result = await api('/api/briefs/jobs', { method: 'POST', json: { category, action, issue_date: $('#day').value } });
   message(`任务已加入队列：${labels[result.status] || result.status}。不必重复点击。`); await refresh();
 }
 function clearImages() { for (const url of blobs) URL.revokeObjectURL(url); blobs.clear(); $('#images').replaceChildren(); }
@@ -50,7 +50,7 @@ async function showVersion() {
   $('#title').value = v.title; $('#body').value = v.dynamic_body;
   $('#title').readOnly = $('#body').readOnly = !canEdit();
   $('#fixed').textContent = v.fixed_notes || (selected.category === 'oil_etf' ? '点击查看完整持仓数据，捕捉油价之外的资金变化。' : '');
-  $('#detail-status').textContent = `数据日 ${v.data_date} · ${v.preview ? '测试稿' : '生产稿'} · DeepSeek：${aiLabels[v.deepseek.status] || '未完成'}`;
+  $('#detail-status').textContent = `数据日 ${v.data_date} · DeepSeek：${aiLabels[v.deepseek.status] || '未完成'}`;
   $('#warnings').replaceChildren(...v.warnings.map((s) => node('p', s)));
   $('#ack-row').hidden = !v.warnings.length; $('#ack').checked = false;
   $('#facts').textContent = JSON.stringify(v.facts, null, 2);
@@ -79,7 +79,7 @@ $('#copy-title').onclick = () => safe(async () => { if (dirty) throw new Error('
 $('#copy-body').onclick = () => safe(async () => { if (dirty) throw new Error('请先保存修改后取稿'); await copy(current.body); message('完整正文已复制。'); });
 $('#export').onclick = () => safe(async () => { if (dirty) throw new Error('请先保存修改'); await download(`/api/briefs/issues/${selected.id}/export?version=${current.number}`, `${selected.label}-${selected.issue_date}-v${current.number}.zip`); });
 $('#use-ai').onclick = () => { $('#title').value = current.deepseek.title; $('#body').value = current.deepseek.body; dirty = true; message('已采用DeepSeek表达，请保存并核对。'); };
-for (const [id, action] of [['rerender', 'render'], ['retry-ai', 'ai'], ['refetch', 'refresh']]) $(`#${id}`).onclick = () => safe(async () => { if (!confirm(action === 'refresh' ? '重新请求数据源并生成新版本？现有稿件会保留。' : '创建新版本？现有人工修改和确认版本会保留。')) return; await runJob(selected.category, action, true); });
+for (const [id, action] of [['rerender', 'render'], ['retry-ai', 'ai'], ['refetch', 'refresh']]) $(`#${id}`).onclick = () => safe(async () => { if (!confirm(action === 'refresh' ? '重新请求数据源并生成新版本？现有稿件会保留。' : '创建新版本？现有人工修改和确认版本会保留。')) return; await runJob(selected.category, action); });
 $('#schedule').onclick = () => safe(async () => { if (!confirm(config.schedule_enabled ? '关闭本团队自动生产？' : '启用工作日08:00—10:00自动生产？来源差异仍需编辑核对。')) return; await api('/api/briefs/config', { method: 'PUT', json: { enabled: !config.schedule_enabled } }); config.schedule_enabled = !config.schedule_enabled; $('#schedule').textContent = config.schedule_enabled ? '关闭自动排期' : '启用自动排期'; });
 window.addEventListener('beforeunload', (e) => { if (dirty) { e.preventDefault(); e.returnValue = ''; } });
 await safe(async () => { me = await login(); config = await api('/api/briefs/categories'); $('#schedule').hidden = !config.can_configure; $('#schedule').textContent = config.schedule_enabled ? '关闭自动排期' : '启用自动排期'; await refresh(); });

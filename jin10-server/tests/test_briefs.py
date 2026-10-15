@@ -87,7 +87,7 @@ def test_invalid_result_cannot_be_confirmed(client,db_factory,seed):
 
 
 def test_duplicate_job_clicks_share_one_active_job(client):
-    headers=login(client,'editor@plus.test');body={'category':'volume','issue_date':'2026-10-15','preview':True}
+    headers=login(client,'editor@plus.test');body={'category':'volume','issue_date':'2026-10-15'}
     a=client.post('/api/briefs/jobs',json=body,headers=headers);b=client.post('/api/briefs/jobs',json=body,headers=headers)
     assert a.status_code==202;assert a.json()['id']==b.json()['id']
     assert client.get('/api/briefs/issues?date=2026-10-15',headers=headers).json()['items']

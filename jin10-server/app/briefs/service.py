@@ -46,7 +46,13 @@ def enqueue(db,team_id,day,category,*,action='produce',preview=False,user_id=Non
     active=db.scalars(select(BriefJob).where(BriefJob.team_id==team_id,BriefJob.issue_date==day,
         BriefJob.category==category,
         BriefJob.status.in_(['queued','running','waiting']))).first()
-    if active:return active
+    if active:
+        # A manual click takes a queued automatic retry out of the morning schedule.
+        if user_id is not None and active.created_by is None and active.status in ('queued','waiting'):
+            active.created_by=user_id;active.preview=preview
+            active.status='queued';active.next_attempt_at=utcnow()
+            db.flush()
+        return active
     if unique:key+=':'+uuid.uuid4().hex
     previous=db.scalars(select(BriefJob).where(BriefJob.dedupe_key==key)).first()
     if previous:return previous

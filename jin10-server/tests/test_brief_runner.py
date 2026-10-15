@@ -55,3 +55,17 @@ def test_liquidity_uses_final_required_title(tmp_path):
          patch('app.briefs.engines.liquidity.copy_tracks.build_copy',return_value={'title':'旧标题','body':'当日事实。'}):
         result=render_liquidity(snapshot,tmp_path)
     assert result['title']=='【流动性指标】质押式回购利率走势与最新行情'
+
+
+def test_cached_valuation_copy_uses_a_share_label(tmp_path):
+    source=tmp_path/'runs/original';source.mkdir(parents=True)
+    (source/'chart.png').write_bytes(b'chart')
+    body='巴菲特指数（全A总市值/上年度全年GDP）为87.21%。'
+    save(tmp_path/'cache/valuation/2026-10-14.json',{
+        'title':'估值','dynamic_body':body,'data_date':'2026-10-14',
+        'images':['chart.png'],'image_sha256':{'chart.png':hashlib.sha256(b'chart').hexdigest()},
+        'artifact_dir':'runs/original','deepseek':{'status':'ok','body':body}})
+    with patch.dict('app.briefs.runner.ADAPTERS',{'valuation':lambda *a,**k:pytest.fail('unexpected fetch')}):
+        result=generate('valuation','2026-10-14',tmp_path,'updated')
+    assert result['dynamic_body']=='巴菲特指数（A股总市值/上年度全年GDP）为87.21%。'
+    assert result['deepseek']['body']==result['dynamic_body']

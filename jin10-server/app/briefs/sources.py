@@ -191,7 +191,7 @@ def valuation(day,out,state,refresh=False):
     ratio=Decimal(updated[day]['market_cap_yi'])/Decimal(gdp['value_yi'])*100
     erp=Decimal(current['erp_percent']);change=erp-Decimal(prior['erp_percent'])
     title=f"【A股温度计】股债性价比指标更新，沪深300ERP报{erp:.2f}%"
-    body=(f"{day}，巴菲特指数（全A总市值/上年度全年GDP）为{ratio:.2f}%；"
+    body=(f"{day}，巴菲特指数（A股总市值/上年度全年GDP）为{ratio:.2f}%；"
           f"沪深300指数股权风险溢价（ERP）为{erp:.2f}%，较{prior['date']}变动{change:+.2f}个百分点，"
           f"{'高于' if erp>6 else '等于' if erp==6 else '低于'}6%参考线。权益资产相对国债的估值优势较前日{'增强' if change>0 else '减弱' if change<0 else '变化不大'}。")
     return {'title':title,'dynamic_body':body,'images':['股债性价比.png'],'data_date':day,

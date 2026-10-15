@@ -16,6 +16,10 @@ def generate(category,day,root,run_id,action='produce'):
     out=root/'runs'/run_id;out.mkdir(parents=True,exist_ok=True)
     cache=root/'cache'/category/f'{day}.json'
     previous=read(cache) if cache.exists() else None
+    if previous and category=='valuation':
+        previous['dynamic_body']=previous['dynamic_body'].replace('全A总市值/上年度全年GDP','A股总市值/上年度全年GDP')
+        if previous.get('deepseek',{}).get('body'):
+            previous['deepseek']['body']=previous['deepseek']['body'].replace('全A总市值/上年度全年GDP','A股总市值/上年度全年GDP')
     if previous and previous['data_date']!=day:raise ValueError('缓存日期不符')
     if action in ('render','ai') and not previous:raise ValueError('尚无已校验快照，请先生成稿件')
     if previous and action!='refresh':

@@ -42,7 +42,7 @@ def claim(factory,now=None):
             BriefJob.next_attempt_at<=now).order_by(BriefJob.next_attempt_at,BriefJob.created_at)
             .with_for_update(skip_locked=True).limit(1)).first()
         if not row:db.commit();return None
-        if not row.preview and (row.issue_date!=now.astimezone(CHINA).date() or not production_window(now)):
+        if row.created_by is None and not row.preview and (row.issue_date!=now.astimezone(CHINA).date() or not production_window(now)):
             row.status='skipped';row.active_key=None;row.error='已超过工作日上午生产窗口';row.updated_at=now;db.commit();return None
         row.status='running';row.attempts+=1;row.lease_until=now+timedelta(minutes=7);row.updated_at=now
         db.commit();return row.id
@@ -54,6 +54,8 @@ def execute(factory,id):
         job=db.get(BriefJob,id)
         if not job or job.status!='running':return
         team_id=job.team_id;category=job.category;preview=job.preview;day=job.issue_date;action=job.action
+        # Scheduled jobs have no requesting user; manual jobs keep their editor id.
+        automatic=job.created_by is None and not preview
     root=root_for(team_id);out=root/'runs'/str(id);out.mkdir(parents=True,exist_ok=True)
     env=dict(os.environ);env['DEEPSEEK_API_KEY']=settings.briefs_deepseek_api_key;env['DEEPSEEK_MODEL']=settings.briefs_deepseek_model
     command=[sys.executable,'-m','app.briefs.runner','--category',category,'--date',expected_date(category,day).isoformat(),
@@ -62,10 +64,10 @@ def execute(factory,id):
     cutoff=time.monotonic()+360
     error=None
     while process.poll() is None:
-        if time.monotonic()>cutoff or (not preview and not production_window(datetime.now(CHINA))):
+        if time.monotonic()>cutoff or (automatic and not production_window(datetime.now(CHINA))):
             if os.name!='nt':os.killpg(process.pid,signal.SIGKILL)
             else:process.kill()
-            process.wait();error='任务超时或已到10:00截止时间';break
+            process.wait();error='任务超时或自动任务已到10:00截止时间';break
         time.sleep(1)
     result=out/'result.json'
     # If AI times out, the already saved complete rule draft is still usable.
@@ -75,7 +77,7 @@ def execute(factory,id):
     with factory() as db:
         job=db.get(BriefJob,id);job.lease_until=None;job.updated_at=utcnow()
         if payload and payload.get('valid'):
-            if not preview and not production_window(datetime.now(CHINA)):
+            if automatic and not production_window(datetime.now(CHINA)):
                 job.status='skipped';job.active_key=None;job.error='超过10:00，快照保留但未生成当天稿';db.commit();return
             issue=ensure_issue(db,team_id,day,category);issue=owned(db,team_id,issue.id,True)
             payload['preview']=preview
@@ -84,7 +86,7 @@ def execute(factory,id):
             job.status='succeeded';job.active_key=None;job.error=None
         else:
             job.error=error or '未生成完整结果，来源可能尚未更新'
-            slot=next_slot(category,datetime.now(CHINA)) if not preview else None
+            slot=next_slot(category,datetime.now(CHINA)) if automatic else None
             if slot and job.attempts<6:
                 job.status='waiting';job.next_attempt_at=slot
             else:job.status='failed';job.active_key=None

@@ -8,12 +8,12 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse, Response
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 
 from app.db.models import BriefAudit, BriefConfig, BriefIssue, BriefJob, BriefVersion, Role, utcnow
 from app.deps import CurrentUser, DbSession, Editor
-from app.briefs.policy import CATEGORIES, CHINA, production_window
+from app.briefs.policy import CATEGORIES, CHINA
 from app.briefs.service import owned, enqueue, issue_out, job_out, append_version, artifact_path
 from app.briefs.delivery import complete_body
 
@@ -21,10 +21,10 @@ router=APIRouter(prefix='/api/briefs',tags=['fixed briefs'])
 
 
 class JobRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
     category: Literal['volume','turnover','valuation','liquidity','oil_etf']
     issue_date: date
     action: Literal['produce','refresh','render','ai']='produce'
-    preview: bool=False
 
 
 class EditRequest(BaseModel):
@@ -89,11 +89,8 @@ def detail(id:uuid.UUID,db:DbSession,user:CurrentUser):
 def jobs(body:JobRequest,db:DbSession,user:Editor):
     now=datetime.now(CHINA)
     if body.issue_date>now.date():raise HTTPException(422,'不能处理未来日期')
-    if body.issue_date.weekday()>=5:raise HTTPException(422,'周末不生产固定快讯')
-    if not body.preview and (body.issue_date!=now.date() or not production_window(now)):
-        raise HTTPException(409,'生产仅在当天工作日08:00—10:00运行；其他时间请使用测试运行')
     job=enqueue(db,user.team_id,body.issue_date,body.category,action=body.action,
-                preview=body.preview,user_id=user.id,unique=True)
+                user_id=user.id,unique=True)
     db.commit();return job_out(job)
 
 
@@ -162,7 +159,7 @@ def file(id:uuid.UUID,number:int,name:str,db:DbSession,user:CurrentUser):
 def export(id:uuid.UUID,db:DbSession,user:CurrentUser,format:Literal['zip','text']='zip',version:int|None=None):
     issue=get_issue(db,user,id)
     number=version or issue.confirmed_version
-    if not number:raise HTTPException(409,'尚无确认稿；编辑可指定版本导出测试稿')
+    if not number:raise HTTPException(409,'尚无确认稿；编辑可指定版本导出未确认稿')
     if user.role==Role.VIEWER and number!=issue.confirmed_version:raise HTTPException(403,'仅可导出已确认版本')
     item=db.scalars(select(BriefVersion).where(BriefVersion.issue_id==id,BriefVersion.number==number)).first()
     if not item:raise HTTPException(404,'版本不存在')

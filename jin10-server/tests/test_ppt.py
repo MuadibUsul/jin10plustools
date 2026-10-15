@@ -9,7 +9,9 @@ from pptx import Presentation
 
 from app.ppt import layout, textfit
 from app.ppt.cli import load_issue
-from app.ppt.generator import format_cover_date, generate
+from app.ppt.generator import CoverLayoutError, _cover_lines, format_cover_date, generate
+from app.ppt.pptx_xml import qn, require_shape
+from app.ppt.template import DEFAULT_TEMPLATE, Shapes
 from app.ppt.models import DailyIssue, DailyItem, DailySection, ImageRef, SectionId
 from app.ppt.paginate import ImageFrame, TextFrame, paginate, paginate_section
 from app.ppt.textfit import Metrics
@@ -154,8 +156,8 @@ class TestGenerator:
 
         cover = texts[0]
         assert "2026 年 9 月 18 日" in cover
-        # 目录固定 6 个栏目；精选观点没有素材也保留（空白栏目页）
-        assert "05 精选观点" in cover and "06 精选图表" in cover
+        assert "日本央行加息已在市场预期之内" in cover
+        assert "精选观点" not in cover and "精选图表" not in cover
         assert len(prs.slides) == 1 + 9  # 封面 + 8 页素材 + 精选观点空白页
         assert "可编辑文本" not in cover
 
@@ -177,3 +179,34 @@ class TestGenerator:
     def test_empty_issue_rejected(self, tmp_path: Path) -> None:
         with pytest.raises(ValueError):
             generate(DailyIssue(date=dt.date(2026, 9, 21), sections=[]), tmp_path / "x.pptx")
+
+    def test_cover_preserves_template_fonts_and_body(self, tmp_path: Path) -> None:
+        titles = [f"快讯标题{i}" for i in range(13)]
+        titles[3] = 'AI安全评估走进实验室，或引入“嵌入式独立安全评估员”'
+        issue = DailyIssue(date=dt.date(2026, 10, 14),
+                           sections=[DailySection(id=SectionId.MACRO, items=[DailyItem(title=t) for t in titles])],
+                           cover_indices=list(range(12)))
+        out = tmp_path / 'cover.pptx'
+        generate(issue, out)
+        prs = Presentation(str(out))
+        template_cover = Presentation(str(DEFAULT_TEMPLATE)).slides[0]
+        original_runs = require_shape(template_cover, Shapes.COVER_TOC).find('.//' + qn('a:p')).findall(qn('a:r'))
+        for index in range(1, 13):
+            for part, source_run in [('number', original_runs[0]), ('title', original_runs[-1])]:
+                shape = require_shape(prs.slides[0], f'cover-{part}-{index}')
+                rp = shape.find('.//' + qn('a:rPr'))
+                source_rp = source_run.find(qn('a:rPr'))
+                assert rp.get('sz') == source_rp.get('sz') == '3200'
+                assert rp.find(qn('a:ea')).get('typeface') == source_rp.find(qn('a:ea')).get('typeface')
+                assert rp.get('b') == source_rp.get('b')
+        cover_text = '\n'.join(sh.text_frame.text for sh in prs.slides[0].shapes if sh.has_text_frame)
+        assert titles[12] not in cover_text
+        body_text = '\n'.join(sh.text_frame.text for slide in list(prs.slides)[1:] for sh in slide.shapes if sh.has_text_frame)
+        assert titles[12] in body_text
+        assert _cover_lines(titles[3], 11.37) == ['AI安全评估走进实验室，', '或引入“嵌入式独立安全评估员”']
+
+    def test_cover_does_not_silently_shrink_or_clip(self, tmp_path: Path) -> None:
+        issue = DailyIssue(date=dt.date(2026, 10, 14), sections=[DailySection(
+            id=SectionId.MACRO, items=[DailyItem(title='超长标题' * 30) for _ in range(12)])])
+        with pytest.raises(CoverLayoutError, match='原版字号'):
+            generate(issue, tmp_path / 'too-long.pptx')

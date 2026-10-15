@@ -46,3 +46,12 @@ def test_fixed_explanations_are_identical_and_not_duplicated():
 def test_incomplete_volume_is_not_a_current_day_observation():
     with pytest.raises(ValueError):normalize_volume({'data':[]},'2026-10-14')
     with pytest.raises(ValueError):normalize_volume({'data':[{'date':'2026-10-14','sh_turn':1,'sz_turn':None,'sh_vol':1,'sz_vol':1}]},'2026-10-14')
+
+
+def test_liquidity_uses_final_required_title(tmp_path):
+    from app.briefs.sources import render_liquidity
+    snapshot={'quotes':{'quote_date':'2026-10-15'},'history':{'start':'2026-07-15','end':'2026-10-15'}}
+    with patch('app.briefs.engines.liquidity.render.render_poster',return_value=(tmp_path/'poster.png',None,{})), \
+         patch('app.briefs.engines.liquidity.copy_tracks.build_copy',return_value={'title':'旧标题','body':'当日事实。'}):
+        result=render_liquidity(snapshot,tmp_path)
+    assert result['title']=='【流动性指标】质押式回购利率走势与最新行情'

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { isCollectClick } from '@/content/clickCollector';
 import { getLastContextTarget, installContextTracker } from '@/content/contextTracker';
+import { DEFAULT_CAPTURE_SHORTCUT, matchesCaptureClick } from '@/shared/shortcut';
 
 describe('采集触发', () => {
   it('记录最近一次右键的元素，元素移除后失效', () => {
@@ -19,5 +20,10 @@ describe('采集触发', () => {
     expect(isCollectClick(new MouseEvent('click', { button: 0 }))).toBe(false);
     expect(isCollectClick(new MouseEvent('click', { button: 0, ctrlKey: true, altKey: true }))).toBe(false);
     expect(isCollectClick(new MouseEvent('click', { button: 1, ctrlKey: true }))).toBe(false);
+  });
+
+  it('匹配默认鼠标采集快捷键', () => {
+    expect(matchesCaptureClick(new MouseEvent('click', { button: 0, ctrlKey: true }), DEFAULT_CAPTURE_SHORTCUT)).toBe(true);
+    expect(matchesCaptureClick(new MouseEvent('click', { button: 0, ctrlKey: true, shiftKey: true }), DEFAULT_CAPTURE_SHORTCUT)).toBe(false);
   });
 });

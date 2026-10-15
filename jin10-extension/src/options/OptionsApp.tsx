@@ -1,7 +1,8 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { useTeamSession } from '@/components/useTeamSession';
 import { sendToBackground } from '@/shared/messaging';
-import { getLastApiBaseUrl, normalizeApiBaseUrl } from '@/services/settingsStore';
+import { getCaptureShortcut, getLastApiBaseUrl, normalizeApiBaseUrl, setCaptureShortcut } from '@/services/settingsStore';
+import { DEFAULT_CAPTURE_SHORTCUT, formatCaptureShortcut, type CaptureShortcut } from '@/shared/shortcut';
 
 /** 团队服务端默认地址 */
 const DEFAULT_API_BASE_URL = 'https://plus.tlines.tech';
@@ -24,10 +25,14 @@ export function OptionsApp() {
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [captureShortcut, setCaptureShortcutState] = useState<CaptureShortcut>(DEFAULT_CAPTURE_SHORTCUT);
 
   useEffect(() => {
     void getLastApiBaseUrl().then((url) => setBaseUrl((prev) => prev || url || DEFAULT_API_BASE_URL));
+    void getCaptureShortcut().then(setCaptureShortcutState);
   }, []);
+
+  const hasModifier = captureShortcut.primary || captureShortcut.alt || captureShortcut.shift;
 
   const onLogin = async (e: FormEvent) => {
     e.preventDefault();
@@ -70,6 +75,54 @@ export function OptionsApp() {
           <h1 className="text-xl font-bold text-plus-900">PLUS Research 设置</h1>
           <p className="mt-1 text-sm text-slate-500">登录团队账号后，采集的素材会自动同步到团队素材库。</p>
         </header>
+
+        <section className="flex flex-col gap-2 rounded-lg bg-plus-50 p-4 text-sm">
+          <div>
+            <p className="font-medium text-plus-900">采集快捷键</p>
+            <p className="mt-1 text-xs text-slate-500">任意组合修饰键，再左键点击快讯即可采集。</p>
+          </div>
+          <div className="flex flex-col gap-2 rounded-lg border border-slate-200 bg-white p-3 text-sm">
+            {([
+              ['primary', /Mac/i.test(navigator.platform) ? '⌘' : 'Ctrl'],
+              ['alt', 'Alt'],
+              ['shift', 'Shift'],
+            ] as const).map(([name, label]) => (
+              <label key={name} className="flex items-center gap-2 text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={captureShortcut[name]}
+                  onChange={(event) =>
+                    setCaptureShortcutState((current) => ({ ...current, [name]: event.target.checked }))
+                  }
+                  className="accent-plus-500"
+                />
+                {label}
+              </label>
+            ))}
+            <p className="border-t border-slate-100 pt-2 text-xs text-slate-500">
+              当前：{formatCaptureShortcut(captureShortcut)}
+            </p>
+          </div>
+          <button
+            type="button"
+            disabled={!hasModifier}
+            onClick={() => void setCaptureShortcut(captureShortcut)}
+            className="rounded-lg bg-plus-500 py-2 font-medium text-white hover:bg-plus-600 disabled:bg-slate-300"
+          >
+            保存快捷键
+          </button>
+          {!hasModifier && <p className="text-xs text-rose-600">至少选择一个修饰键。</p>}
+          <button
+            type="button"
+            onClick={() => {
+              setCaptureShortcutState(DEFAULT_CAPTURE_SHORTCUT);
+              void setCaptureShortcut(DEFAULT_CAPTURE_SHORTCUT);
+            }}
+            className="self-start text-xs text-plus-600 hover:underline"
+          >
+            恢复默认
+          </button>
+        </section>
 
         {session ? (
           <section className="flex flex-col gap-3 text-sm">

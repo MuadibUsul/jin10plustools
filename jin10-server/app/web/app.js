@@ -15,7 +15,8 @@ const REFRESH_MS = 30_000;
 const BOARD_REFRESH_MS = 4_000;
 
 const $ = (sel) => document.querySelector(sel);
-const state = { token: null, me: null, materials: [], picked: new Set(), expanded: new Set(), order: {}, dragId: null, editing: null, editingTitle: null, bulk: null, presence: new Map() };
+const state = { token: null, me: null, materials: [], picked: new Set(), coverIds: null, coverSaving: false, expanded: new Set(), order: {}, dragId: null, editing: null, editingTitle: null, bulk: null, presence: new Map() };
+const COVER_LIMIT = 12;
 
 // ---------- 通用 ----------
 
@@ -155,6 +156,7 @@ function adoptBoard(board) {
   boardVersion = board.version;
   state.picked = new Set(board.picked);
   state.order = board.order;
+  state.coverIds = board.cover_ids ?? null;
 }
 
 /** 拉取选稿板；有本地操作未提交完时跳过，避免把刚做的改动闪回去 */
@@ -192,7 +194,13 @@ function boardOps(ops) {
   boardQueue = boardQueue
     .then(() => api(`/api/board/ops?day=${day}`, { method: 'POST', json: ops }))
     .then((board) => { if (boardPending === 1 && day === $('#day').value) { adoptBoard(board); render(); } })
-    .catch((err) => alert(`选稿同步失败：${err.message ?? err}`))
+    .catch(async (err) => {
+      alert(`选稿同步失败：${err.message ?? err}`);
+      if (ops.cover_add || ops.cover_remove || ops.cover_reset) {
+        const board = await api(`/api/board?day=${day}`).catch(() => null);
+        if (board && boardPending === 1 && day === $('#day').value) adoptBoard(board);
+      }
+    })
     .finally(() => { boardPending--; });
   return boardQueue;
 }
@@ -324,6 +332,38 @@ function pickedBySection() {
     ...s,
     items: sectionItems(s.id).filter((m) => state.picked.has(m.id)),
   })).filter((s) => s.items.length);
+}
+
+function coverSelection() {
+  const items = pickedBySection().flatMap((s) => s.items);
+  const chosen = new Set(state.coverIds ?? [...items].sort((a, b) =>
+    b.importance_score - a.importance_score || b.final_score - a.final_score || a.id.localeCompare(b.id)
+  ).slice(0, COVER_LIMIT).map((m) => m.id));
+  return items.filter((m) => chosen.has(m.id)).map((m) => m.id);
+}
+
+function toggleCover(id) {
+  if (!canEdit() || state.coverSaving) return;
+  const current = coverSelection();
+  const included = current.includes(id);
+  if (!included && current.length >= COVER_LIMIT) {
+    alert('首页已选满 12 条，请先取消一条再换入');
+    render();
+    return;
+  }
+  state.coverIds = included ? current.filter((mid) => mid !== id) : [...current, id];
+  state.coverSaving = true;
+  boardOps({ cover_base_ids: current, [included ? 'cover_remove' : 'cover_add']: [id] })
+    .finally(() => { state.coverSaving = false; render(); });
+  render();
+}
+
+function resetCover() {
+  if (!canEdit() || state.coverSaving) return;
+  state.coverIds = null;
+  state.coverSaving = true;
+  boardOps({ cover_reset: true }).finally(() => { state.coverSaving = false; render(); });
+  render();
 }
 
 // ---------- 编辑（不覆盖采集原文，存为编辑版本） ----------
@@ -476,7 +516,7 @@ function renderDetail(m) {
 
 // ---------- 渲染 ----------
 
-function renderItem(m) {
+function renderItem(m, cover) {
   const picked = state.picked.has(m.id);
   const expanded = state.expanded.has(m.id);
   const images = eff.images(m).length;
@@ -552,13 +592,20 @@ function renderItem(m) {
       m.edits ? el('span', { class: 'chip edited' }, '已编辑') : null,
       m.collected_by.length > 1 ? el('span', { class: 'chip' }, `${m.collected_by.length} 人收藏`) : null,
       m.ai_confidence !== null && m.ai_confidence < 0.5 && !m.category_locked ? el('span', { class: 'chip warn' }, '栏目待确认') : null,
-      select),
+      select,
+      picked && sectionOf(m) !== UNSORTED.id && !state.bulk
+        ? el('button', { class: `cover-toggle${cover.has(m.id) ? ' selected' : ''}`,
+            disabled: !canEdit() || state.coverSaving, 'aria-pressed': String(cover.has(m.id)),
+            title: '仅决定是否出现在首页目录，正文内容仍保留', onclick: () => toggleCover(m.id) },
+          cover.has(m.id) ? '★ 首页精选' : '☆ 设为首页') : null),
     expanded ? renderDetail(m) : null,
   );
   return li;
 }
 
 function render() {
+  const coverIds = coverSelection();
+  const cover = new Set(coverIds);
   const groups = [...SECTIONS, UNSORTED].map((s, idx) => {
     const items = sectionItems(s.id);
     if (s === UNSORTED && !items.length) return null;
@@ -585,15 +632,21 @@ function render() {
         state.bulk && items.length
           ? el('button', { class: 'link', onclick: () => markAll(items.map((x) => x.id)) }, items.every((x) => state.bulk.has(x.id)) ? '取消本栏' : '全选本栏')
           : s.quota ? el('span', { class: `quota${count >= s.quota ? ' full' : ''}` }, `已选 ${count} / 建议 ${s.quota}`) : null),
-      items.length ? el('ul', { class: 'items' }, items.map(renderItem)) : el('p', { class: 'empty' }, '暂无素材'));
+      items.length ? el('ul', { class: 'items' }, items.map((m) => renderItem(m, cover))) : el('p', { class: 'empty' }, '暂无素材'));
   });
   $('#sections').replaceChildren(...groups.filter(Boolean));
   renderBulkBar();
 
   const picked = pickedBySection();
   const total = picked.reduce((n, s) => n + s.items.length, 0);
-  $('#pick-summary').textContent = total ? `共 ${total} 条；目录固定 6 个栏目，未选素材的栏目生成空白页供补充` : '尚未选择素材';
-  $('#pick-list').replaceChildren(...picked.flatMap((s) => [el('li', { class: 'group' }, s.label), ...s.items.map((m) => el('li', {}, eff.title(m)))]));
+  $('#pick-summary').textContent = total ? `正文共 ${total} 条，未选素材的栏目仍保留空白页` : '尚未选择素材';
+  $('#cover-summary').textContent = `首页精选 ${coverIds.length}/${COVER_LIMIT}`;
+  $('#cover-mode').textContent = state.coverIds === null ? '系统推荐。勾选下方标题可改为人工精选。' : '人工精选已保存。未勾选的稿件仍进入正文。';
+  $('#cover-reset').disabled = !canEdit() || state.coverSaving || state.coverIds === null;
+  $('#pick-list').replaceChildren(...picked.flatMap((s) => [el('li', { class: 'group' }, s.label), ...s.items.map((m) =>
+    el('li', {}, el('label', { class: 'cover-choice' },
+      el('input', { type: 'checkbox', checked: cover.has(m.id), disabled: !canEdit() || state.coverSaving,
+        'aria-label': `首页精选：${eff.title(m)}`, onchange: () => toggleCover(m.id) }), eff.title(m))))]));
   $('#generate').disabled = total === 0;
   $('#preview').disabled = total === 0;
 }
@@ -604,6 +657,7 @@ function issueRequest() {
   return {
     issue_date: $('#day').value,
     sections: pickedBySection().map((s) => ({ id: s.id, material_ids: s.items.map((m) => m.id) })),
+    cover_material_ids: coverSelection(),
   };
 }
 
@@ -713,14 +767,14 @@ async function resetAiLayout() {
 }
 
 async function generate() {
-  const { sections } = issueRequest();
+  const request = issueRequest();
   const status = $('#gen-status');
   const button = $('#generate');
   button.disabled = true;
   status.hidden = false;
   status.replaceChildren('正在生成 PPT 并转换 PDF，通常需要十几秒…');
   try {
-    const issue = await api('/api/issues', { method: 'POST', json: { issue_date: $('#day').value, sections } });
+    const issue = await api('/api/issues', { method: 'POST', json: request });
     status.replaceChildren(
       el('strong', {}, `已生成 ${issue.page_count} 页`),
       ...issue.warnings.map((w) => el('div', { class: 'muted' }, `· ${w}`)),
@@ -772,6 +826,7 @@ function wire() {
   $('#days').addEventListener('change', () => refresh().catch(alert));
   $('#auto-pick').addEventListener('click', autoPick);
   $('#clear-pick').addEventListener('click', () => { state.picked.clear(); boardOps({ pick_set: [] }); render(); });
+  $('#cover-reset').addEventListener('click', resetCover);
   $('#generate').addEventListener('click', generate);
   $('#preview').addEventListener('click', openPreview);
   $('#preview-refresh').addEventListener('click', openPreview);

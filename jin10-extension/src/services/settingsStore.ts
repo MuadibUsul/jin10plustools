@@ -1,5 +1,6 @@
 import type { AuthSession, SyncState } from '@/types/settings';
 import { STORAGE_KEYS } from '@/shared/constants';
+import { DEFAULT_CAPTURE_SHORTCUT, type CaptureShortcut } from '@/shared/shortcut';
 
 const DEFAULT_SYNC: SyncState = {
   cursor: null,
@@ -36,6 +37,19 @@ export async function getLastApiBaseUrl(): Promise<string> {
 
 export function setLastApiBaseUrl(url: string): Promise<void> {
   return chrome.storage.local.set({ [STORAGE_KEYS.lastApiBaseUrl]: url });
+}
+
+export async function getCaptureShortcut(): Promise<CaptureShortcut> {
+  const saved = await read<Partial<CaptureShortcut>>(STORAGE_KEYS.captureShortcut);
+  return {
+    primary: saved?.primary ?? DEFAULT_CAPTURE_SHORTCUT.primary,
+    alt: saved?.alt ?? DEFAULT_CAPTURE_SHORTCUT.alt,
+    shift: saved?.shift ?? DEFAULT_CAPTURE_SHORTCUT.shift,
+  };
+}
+
+export function setCaptureShortcut(shortcut: CaptureShortcut): Promise<void> {
+  return chrome.storage.local.set({ [STORAGE_KEYS.captureShortcut]: shortcut });
 }
 
 export async function getSyncState(): Promise<SyncState> {

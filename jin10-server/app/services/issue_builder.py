@@ -26,12 +26,13 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.db.models import Asset, Issue, Material, User
-from app.ppt.generator import generate
+from app.ppt.generator import CoverLayoutError, generate
 from app.ppt.models import DailyIssue, DailyItem, DailySection, ImageRef, SectionId
 from app.ppt.pdf import PdfConversionError, pptx_to_pdf
 from app.schemas import GenerateRequest
 
 from .storage import asset_path
+from .cover_selection import recommend_cover_ids
 
 
 class IssueBuildError(ValueError):
@@ -79,6 +80,8 @@ def issue_dir(team_id: uuid.UUID, issue_id: uuid.UUID) -> Path:
 
 def _daily_issue(db: Session, user: User, req: GenerateRequest) -> DailyIssue:
     ids = [mid for s in req.sections for mid in s.material_ids]
+    if len({s.id for s in req.sections}) != len(req.sections):
+        raise IssueBuildError("同一个栏目不能出现两次")
     if len(set(ids)) != len(ids):
         raise IssueBuildError("同一条素材不能出现两次")
     rows = {
@@ -92,8 +95,15 @@ def _daily_issue(db: Session, user: User, req: GenerateRequest) -> DailyIssue:
         raise IssueBuildError(f"素材不存在或已删除：{', '.join(missing)}")
 
     asset_ids = set(db.scalars(select(Asset.id).where(Asset.team_id == user.team_id)))
+    # 与正文的固定栏目顺序一致，首页不按推荐分数重新排序。
+    ordered_ids = [mid for sid in SectionId for s in req.sections if s.id == sid for mid in s.material_ids]
+    cover_ids = ([str(mid) for mid in req.cover_material_ids] if req.cover_material_ids is not None
+                 else recommend_cover_ids(rows.values()))
+    if len(set(cover_ids)) != len(cover_ids) or not set(cover_ids) <= {str(mid) for mid in ids}:
+        raise IssueBuildError("首页精选不可重复，且必须来自本期已选素材")
     return DailyIssue(
         date=req.issue_date,
+        cover_indices=[index for index, mid in enumerate(ordered_ids) if str(mid) in cover_ids],
         sections=[
             DailySection(id=SectionId(s.id), items=[to_daily_item(rows[mid], asset_ids) for mid in s.material_ids])
             for s in req.sections
@@ -105,7 +115,10 @@ def render_issue(
     db: Session, user: User, req: GenerateRequest, out_dir: Path
 ) -> tuple[Path, Path | None, int, list[str]]:
     """生成 PPTX 与 PDF（预览与正式生成共用），返回 (pptx, pdf 或 None, 页数, 提示)"""
-    report = generate(_daily_issue(db, user, req), out_dir / f"PLUS日报-{req.issue_date:%Y-%m-%d}.pptx")
+    try:
+        report = generate(_daily_issue(db, user, req), out_dir / f"PLUS日报-{req.issue_date:%Y-%m-%d}.pptx")
+    except CoverLayoutError as err:
+        raise IssueBuildError(str(err)) from None
     warnings = list(report.warnings)
     try:
         pdf: Path | None = pptx_to_pdf(report.output, out_dir)

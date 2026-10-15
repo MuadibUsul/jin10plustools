@@ -112,7 +112,7 @@ def render_liquidity(snapshot,out):
                        f"央行当日开展{bank['awarded_yi']}亿元7天期逆回购，投标量{bank['bid_yi']}亿元，中标量{bank['awarded_yi']}亿元。")
     else:warning.append('未取得对应日期央行操作信息，仅描述DR行情')
     save(out/'chart-audit.json',audit)
-    return {'title':rule['title'],'dynamic_body':rule['body'],'images':[png.name],'data_date':snapshot['quotes']['quote_date'],
+    return {'title':'【流动性指标】质押式回购利率走势与最新行情','dynamic_body':rule['body'],'images':[png.name],'data_date':snapshot['quotes']['quote_date'],
             'facts':{'quotes':snapshot['quotes'],'central_bank':bank,'history_range':[snapshot['history']['start'],snapshot['history']['end']]},'warnings':warning}
 
 

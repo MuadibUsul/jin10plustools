@@ -134,6 +134,7 @@
           <li><a href="#login"><span class="n">2</span>登录团队</a></li>
           <li><a href="#collect"><span class="n">3</span>采集快讯</a></li>
           <li><a href="#pick"><span class="n">4</span>选稿</a></li>
+          <li><a href="#cover"><span class="n">★</span>首页精选（最多 12 条）</a></li>
           <li><a href="#arrange"><span class="n">5</span>排序、换栏目、删除</a></li>
           <li><a href="#edit"><span class="n">6</span>修改文字与配图</a></li>
           <li><a href="#generate"><span class="n">7</span>预览与生成</a></li>
@@ -145,6 +146,7 @@
       <main>
         <section class="hero" id="overview">
           <h1>从金十快讯到当天日报 PDF，十分钟上手</h1>
+          <p class="muted">2026-10-14 更新：新增首页精选操作说明及新版界面、目录预览图。</p>
           <p class="lead">
             在金十页面右键把快讯存进团队素材库，AI 自动分栏目、打分，你在选稿网页里挑选、调整、预览，最后一键导出和模板一模一样的日报 PDF。
           </p>
@@ -210,7 +212,7 @@
                 <li>团队服务端地址保持 <code>https://plus.tlines.tech</code>。</li>
                 <li>输入管理员给你的邮箱和密码，点「<b>登录</b>」。</li>
               </ol>
-              <p>登录成功后，设置页会显示「PLUS 研究组 · 你的名字」。插件只保存登录凭证，<b>不保存密码</b>；凭证 14 天有效，过期后重新登录即可。</p>
+              <p>登录成功后，设置页会显示「PLUS 研究组 · 你的名字」。插件只保存登录凭证，<b>不保存密码</b>；凭证 90 天有效，过期后重新登录即可。</p>
               <p><b>没登录也能采集</b>：素材先存在本机，登录后会自动补传到团队素材库。</p>
             </div>
           </div>
@@ -219,7 +221,7 @@
         <section class="step" id="collect">
           <div class="step-head"><span class="step-no">第 3 步</span><h2>采集快讯</h2></div>
           <p>在金十快讯的<b>正文区域</b>点右键，选「<b>PLUS Research › 加入日报素材库</b>」。</p>
-          <p>更快的方式：按住 <kbd>Ctrl</kbd> 用左键点一下快讯，效果和右键菜单一样；<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+左键 = 采集并优先 AI 分析（Mac 用 <kbd>⌘</kbd> 代替 Ctrl）。在快讯上 Ctrl+点击不会再打开新标签页。</p>
+          <p>更快的方式：点击插件弹窗右上角的「<b>设置</b>」，在「采集快捷键」中自由组合 <kbd>Ctrl/⌘</kbd>、<kbd>Alt</kbd>、<kbd>Shift</kbd>，保存后按住组合键左键点击快讯即可采集。默认是 <kbd>Ctrl</kbd>/<kbd>⌘</kbd> + 左键，也可以设置为 <kbd>Shift</kbd> + 左键或多个修饰键组合。需要优先 AI 分析时，请使用右键菜单中的「加入并 AI 分析」。</p>
 
           <figure class="ctx-demo">
             <img class="shot" src="guide/flash.webp" alt="金十网站上一条带 PLUS 注解的快讯" loading="lazy" />
@@ -249,7 +251,7 @@
 
           <div class="pair">
             <figure>
-              <img class="shot" src="guide/popup.webp" alt="插件弹窗：团队今日素材数、同步状态和最近采集列表" loading="lazy" style="width:380px" />
+            <img class="shot" src="guide/popup.webp?v=0.3.4" alt="插件弹窗：右上角有设置入口，团队今日素材数、同步状态和最近采集列表" loading="lazy" style="width:380px" />
               <figcaption>点插件图标打开弹窗：今日素材数、同步状态、最近采集。</figcaption>
             </figure>
             <div>
@@ -271,8 +273,8 @@
           <div class="step-head"><span class="step-no">第 4 步</span><h2>选稿</h2></div>
           <p>浏览器打开 <a href="./">plus.tlines.tech</a>，用同一个账号登录。</p>
           <figure>
-            <img class="shot" src="guide/overview.webp" alt="选稿网页：6 个栏目的卡片网格，每条素材显示等级、分数、时间、PLUS 解读标记；右侧是本期日报汇总" loading="lazy" />
-            <figcaption>素材按 6 个栏目分组，每个栏目内按综合分从高到低排列。勾选的素材显示在右侧「本期日报」里。</figcaption>
+            <img class="shot" src="guide/overview-cover-20261014.png" alt="新版选稿网页：卡片有首页精选按钮，右侧分别显示正文条数与首页精选 12/12" loading="lazy" />
+            <figcaption>新版实际界面（示例素材）：左侧勾选决定正文，右侧「首页精选」决定哪些标题进入封面目录。</figcaption>
           </figure>
 
           <h3>顶栏</h3>
@@ -302,6 +304,7 @@
                 <tr><td>配图 N</td><td>进入日报的配图数量</td></tr>
                 <tr><td>N 人收藏</td><td>多位同事都采集了这条</td></tr>
                 <tr><td>已编辑</td><td>文字或配图被修改过（见第 6 步）</td></tr>
+                <tr><td>★ 首页精选 / ☆ 设为首页</td><td>已入选首页目录 / 可加入首页目录；只影响首页，不删除正文稿件</td></tr>
                 <tr><td>栏目待确认</td><td>AI 对栏目把握不大，建议人工看一眼</td></tr>
                 <tr><td>AI 分析中 / 失败</td><td>还没分析完，或分析失败（不影响手动选稿）</td></tr>
               </tbody>
@@ -322,8 +325,34 @@
               </tbody>
             </table>
           </div>
-          <p>日报的目录固定为这 6 个栏目。<b>没选素材的栏目也会生成一页空白栏目页</b>，方便之后在 PPT 里补充。</p>
-          <p>勾选结果和排序保存在<b>你自己的浏览器</b>里：同事看不到你的勾选，换一台电脑需要重新选。</p>
+          <p>正文仍按这 6 个栏目编排。<b>没选素材的栏目也会生成一页空白栏目页</b>，方便之后在 PPT 里补充。</p>
+          <p>正文勾选、排序及首页人工精选按<b>团队与日期保存在服务端</b>，同事会同步看到；换电脑登录同一团队并选择同一天，也可继续编辑。</p>
+        </section>
+
+        <section class="step" id="cover">
+          <div class="step-head"><span class="step-no">首页精选</span><h2>把快讯标题选进首页目录</h2></div>
+          <p>封面「目录」不再列出 6 个栏目名称，而是展示本期快讯的<b>实际标题，最多 12 条</b>。正文仍按原来的 6 个栏目编排，正文条数不受首页 12 条上限限制。</p>
+          <div class="pair">
+            <figure>
+              <img class="shot" src="guide/home-selection-20261014.png" alt="首页精选面板：正文共 15 条、首页精选 12/12、人工精选已保存、恢复系统推荐及各标题勾选框" loading="lazy" style="width:340px" />
+              <figcaption>新版实际面板（示例素材）：正文选了 15 条，首页可以只放其中 12 条。</figcaption>
+            </figure>
+            <div>
+              <ol>
+                <li><b>先选正文稿件</b>：在左侧素材卡片勾选要进入日报的快讯，右侧汇总正文总数。</li>
+                <li><b>系统默认推荐</b>：从已选正文稿件中按重要度优先挑选最多 12 条；重要度相同时参考综合分。可用稿件不足 12 条时全部入选。</li>
+                <li><b>人工换选</b>：在右侧标题前勾选或取消，也可点击左侧卡片的「☆ 设为首页」或「★ 首页精选」。<b>满 12 条时先取消一条，再选入另一条。</b></li>
+                <li><b>查看保存状态</b>：显示「人工精选已保存」后，刷新、换电脑或同事接手都可继续；系统不会自动覆盖人工选择，也不会自动补足空位。</li>
+                <li><b>重新交给系统</b>：点击「恢复系统推荐」，按当前正文稿件重新推荐，正文选择保持不变。</li>
+              </ol>
+            </div>
+          </div>
+          <div class="note">
+            <b>右侧取消勾选，不等于删除正文</b>
+            右侧标题前的勾选框只控制首页目录。要从整份日报移除某条稿件，请取消左侧素材卡片的正文勾选；该条也会退出首页精选。
+          </div>
+          <p>首页标题按<b>正文栏目及稿件顺序</b>排列，不按推荐分数排列；修改标题后，首页和正文都使用修改后的标题。首页保留原版字体、字重及 <b>32pt</b> 标题字号，长标题自然换行，续行与标题文字对齐。</p>
+          <p>如果多条超长标题无法在原版字号下放进首页，预览或生成会提示调整：请缩短标题或减少首页精选条数，系统不会偷偷缩小首页字号。</p>
         </section>
 
         <section class="step" id="arrange">
@@ -373,18 +402,18 @@
         <section class="step" id="generate">
           <div class="step-head"><span class="step-no">第 7 步</span><h2>预览与生成</h2></div>
           <figure>
-            <img class="shot" src="guide/preview.webp" alt="日报预览窗口：封面、宏观消息、国内股市动向等页面并排显示，顶部有重新渲染、生成 PDF 和关闭按钮" loading="lazy" />
-            <figcaption>预览是在服务器上真实生成一次 PDF 再逐页显示的，看到的就是最终文件的样子。</figcaption>
+            <img class="shot" src="guide/preview-cover-20261014.png" alt="新版日报预览窗口：封面目录显示 12 条快讯标题，旁边是正文栏目页，顶部有重新渲染和生成 PDF 按钮" loading="lazy" />
+            <figcaption>新版实际预览界面，页面图片来自实际生成的 PDF（历史样例与排版示例标题，非当日新闻）。封面目录已改为快讯标题。</figcaption>
           </figure>
           <ol>
-            <li>勾选好素材后，点右侧的「<b>预览</b>」，大约 15～20 秒后显示所有页面。</li>
+            <li>确认正文稿件和「<b>首页精选</b>」后，点右侧的「<b>预览</b>」，大约 15～20 秒后显示所有页面；检查首页标题、顺序和换行。</li>
             <li>发现问题就关掉预览，回去修改文字、配图或顺序，再点「<b>重新渲染</b>」。</li>
             <li>满意后点「<b>生成 PDF</b>」，完成后自动下载，文件名如 <code>PLUS日报-2026-09-21.pdf</code>。</li>
           </ol>
           <div class="pair">
             <figure>
-              <img class="shot" src="guide/side.webp" alt="右侧栏：本期日报按栏目列出已选素材，下方是预览和生成 PDF 按钮，以及生成记录" loading="lazy" style="width:340px" />
-              <figcaption>右侧栏：本期日报清单、预览 / 生成按钮、生成记录。</figcaption>
+              <img class="shot" src="guide/side-cover-20261014.png" alt="新版右侧栏：正文条数、首页精选计数和勾选框、恢复系统推荐、预览和生成 PDF 按钮、生成记录" loading="lazy" style="width:340px" />
+              <figcaption>新版右侧栏（示例素材）：正文清单、首页精选、预览 / 生成按钮、生成记录。</figcaption>
             </figure>
             <div>
               <h3>生成之后</h3>
@@ -406,15 +435,18 @@
               <tbody>
                 <tr><td>右键看不到菜单，或点了没反应</td><td>插件刚安装或更新过，刷新金十页面（F5）</td></tr>
                 <tr><td>提示「未识别到新闻组件」</td><td>右键的位置不在快讯上，请对准快讯正文再右键</td></tr>
-                <tr><td>Ctrl+点击没反应</td><td>插件刚安装或更新过，刷新金十页面（F5）</td></tr>
+                <tr><td>设置的快捷键没反应</td><td>检查是否已在插件设置中点击「保存快捷键」；插件刚安装或更新过时，刷新金十页面（F5）</td></tr>
                 <tr><td>提示「PLUS 解读需要登录会员账号」</td><td>你的金十账号不是 PLUS 会员。素材照样采集，只是没有解读，可以在选稿页手动补写</td></tr>
                 <tr><td>素材带「VIP 锁定」</td><td>这条是 VIP 快讯，正文不完整，需要人工补充</td></tr>
                 <tr><td>采集了但同事看不到</td><td>看插件弹窗：显示「已同步」才算上传成功；显示「待同步 / 同步失败」就点「立即同步」</td></tr>
                 <tr><td>插件登录一直转圈或提示超时</td><td>去 <code>chrome://extensions</code> 刷新插件后重试；仍不行就重新下载安装最新版插件</td></tr>
                 <tr><td>素材在「待分类」里、没有分数</td><td>AI 还没分析完或分析失败（比如 AI 额度用完）。不影响使用，用下拉框或拖动给它指定栏目即可</td></tr>
                 <tr><td>「按配额自动选稿」没选到想要的</td><td>它只按当前排序取每个栏目的前几条，不会动「待分类」；手动补选即可</td></tr>
+                <tr><td>正文有某条快讯，首页却没有</td><td>首页最多 12 条，且可人工精选。在右侧选入该标题；已满时先取消另一条。未入选首页不影响正文</td></tr>
+                <tr><td>人工精选只剩 11 条，没有自动补满</td><td>系统保留人工决定，不自动补位。手动勾选另一条，或点「恢复系统推荐」</td></tr>
+                <tr><td>首页标题换行，或提示首页放不下</td><td>原版 32pt 字号下，长标题会自然换行；组合过长时请缩短标题或减少首页条数，再预览。不要按固定字数判断，中英文和标点宽度不同</td></tr>
                 <tr><td>网页没出现新功能</td><td>按 <kbd>Ctrl</kbd> + <kbd>F5</kbd> 强制刷新一次</td></tr>
-                <tr><td>插件自动退出登录</td><td>登录凭证 14 天过期，重新登录即可</td></tr>
+                <tr><td>插件自动退出登录</td><td>登录凭证 90 天过期，重新登录即可</td></tr>
               </tbody>
             </table>
           </div>
@@ -430,13 +462,14 @@ docker compose exec api python -m app.cli reset-password --email 005@jin10-inc.c
 docker compose exec api python -m app.cli list-users</code></pre>
           <ul>
             <li>角色：<code>admin</code> / <code>editor</code> 可以采集、编辑和生成；<code>viewer</code> 只能查看和预览。</li>
+            <li>快捷键配置：打开插件弹窗，点击右上角「设置」，可自由组合 <code>Ctrl/⌘</code>、<code>Alt</code>、<code>Shift</code>，保存后按组合键左键点击快讯采集。</li>
             <li>更新系统：在本机仓库根目录运行 <code>bash deploy/deploy.sh</code>，会同时更新网站和插件下载包。</li>
             <li>备份：服务器上的数据卷 <code>plus_pgdata</code>（数据库）和 <code>plus_storage</code>（图片与生成的日报）。</li>
             <li>AI 分类由 TypeSafe JEV 提供，Key 配置在服务器 <code>.env</code> 的 <code>PLUS_JEV_API_KEY</code>。额度用完不影响人工选稿和生成。</li>
           </ul>
         </section>
 
-        <footer>PLUS 日报素材系统 · 本教程截图来自线上真实界面</footer>
+        <footer>PLUS 日报素材系统 · 更新于 2026-10-14 · 新版选稿截图使用实际页面代码与示例素材，日报预览使用实际生成的 PDF</footer>
       </main>
     </div>
   </body>

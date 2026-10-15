@@ -1,0 +1,62 @@
+# Independent review site. Run from /home/deploy/plus-next; never use project plus.
+name: plus-next
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: plus_next
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set the test database password}
+      POSTGRES_DB: plus_next
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U plus_next -d plus_next"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    mem_limit: 256m
+    cpus: 0.5
+
+  api:
+    image: ${PLUS_NEXT_IMAGE:?Set the tested release image}
+    container_name: plus-next-api
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PLUS_DATABASE_URL: postgresql+psycopg://plus_next:${POSTGRES_PASSWORD}@db:5432/plus_next
+      PLUS_JWT_SECRET: ${PLUS_JWT_SECRET:?Set a separate test JWT secret}
+      PLUS_AI_WORKER_ENABLED: "false"
+    volumes:
+      - storage:/data
+    networks:
+      - default
+      - web
+    mem_limit: 512m
+    cpus: 0.5
+
+  brief-worker:
+    image: ${PLUS_NEXT_IMAGE:?Set the tested release image}
+    restart: unless-stopped
+    command: ["python", "-m", "app.briefs.worker"]
+    healthcheck:
+      disable: true
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      PLUS_DATABASE_URL: postgresql+psycopg://plus_next:${POSTGRES_PASSWORD}@db:5432/plus_next
+      PLUS_JWT_SECRET: ${PLUS_JWT_SECRET:?Set a separate test JWT secret}
+    volumes:
+      - storage:/data
+    mem_limit: 1g
+    cpus: 1.0
+
+networks:
+  web:
+    external: true
+volumes:
+  pgdata:
+  storage:

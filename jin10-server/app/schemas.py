@@ -181,6 +181,8 @@ class IssueSection(BaseModel):
 class GenerateRequest(BaseModel):
     issue_date: dt.date
     sections: list[IssueSection] = Field(min_length=1)
+    #: 不传则系统推荐；显式列表（含空列表）为人工首页精选
+    cover_material_ids: list[uuid.UUID] | None = Field(default=None, max_length=12)
 
 
 class IssueOut(BaseModel):

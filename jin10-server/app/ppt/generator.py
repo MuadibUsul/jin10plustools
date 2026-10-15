@@ -17,7 +17,7 @@ from . import layout
 from .layout import emu
 from .models import SECTION_LABELS, DailyIssue, DailySection
 from .paginate import ImageFrame, Page, Para, TextFrame, paginate
-from .textfit import Metrics
+from .textfit import Metrics, wrap
 from .pptx_xml import (
     clone_slide,
     delete_slide,
@@ -59,7 +59,24 @@ def format_cover_date(date: dt.date) -> str:
     return f"{date.year} 年 {date.month} 月 {date.day} 日"
 
 
-def _fill_cover(slide: Slide, date: dt.date, sections: list[DailySection]) -> None:
+class CoverLayoutError(ValueError):
+    pass
+
+
+def _cover_lines(title: str, width: float) -> list[str]:
+    """原版 32pt，长标题优先在标点处断行，保留完整文字。"""
+    lines = wrap(title, width, Metrics(32))
+    if len(lines) <= 1:
+        return lines
+    cuts = [i + 1 for i, ch in enumerate(title) if ch in "，、？：" and i >= 4
+            and len(wrap(title[:i + 1], width, Metrics(32))) == 1]
+    if cuts:
+        cut = cuts[-1]
+        return [title[:cut], *_cover_lines(title[cut:], width)]
+    return lines
+
+
+def _fill_cover(slide: Slide, date: dt.date, titles: list[str]) -> None:
     date_shape = require_shape(slide, Shapes.COVER_DATE)
     set_shape_text(date_shape, format_cover_date(date))
     # 日期不换行且留足宽度：不同渲染器（PowerPoint / LibreOffice）字宽略有差异
@@ -67,25 +84,54 @@ def _fill_cover(slide: Slide, date: dt.date, sections: list[DailySection]) -> No
     set_geometry(date_shape, w=8.0)
 
     toc = require_shape(slide, Shapes.COVER_TOC)
-    ps = paragraphs(toc)
-    proto = copy.deepcopy(ps[0])
-    tx_body = ps[0].getparent()
-    for p in ps:
-        tx_body.remove(p)
-    for no, section in enumerate(sections, start=1):
-        p = copy.deepcopy(proto)
-        runs = p.findall(qn("a:r"))
-        # 模板目录行由「编号」「空格」「栏目名」三个文字段组成
-        label = SECTION_LABELS[section.id]
-        runs[0].find(qn("a:t")).text = f"{no:02d}"
-        runs[-1].find(qn("a:t")).text = label
-        if label[0].isascii() and len(runs) > 2:
-            # 汉字字形左侧自带约 0.047em 留白，英文字母几乎没有（思源黑体 / Noto CJK 实测）；
-            # 以英文开头的栏目名（AI热点）补同等间距，使各行编号与栏目名的视觉间隙一致
-            r_pr = runs[1].find(qn("a:rPr"))
-            size_pt = int(r_pr.get("sz", "3200")) / 100
-            r_pr.set("spc", str(round(0.047 * size_pt * 100)))
-        tx_body.append(p)
+    proto = copy.deepcopy(toc)
+    remove(toc)
+    top, bottom, title_x, title_w = 11.372, 23.25, 2.20, 11.37
+    line_pt, slack = 48, 0.08
+    wrapped = [_cover_lines(title, title_w) for title in titles]
+    used = sum(len(lines) * line_pt / 72 for lines in wrapped)
+    if used + slack > bottom - top:
+        raise CoverLayoutError("首页精选标题过长，原版字号下无法完整放入首页，请精简标题或减少首页精选数量")
+    gap = min(14.4 / 72, (bottom - top - used - slack) / max(1, len(titles) - 1))
+    next_id = max_shape_id(slide) + 1
+    for no, lines in enumerate(wrapped, start=1):
+        for is_number in (True, False):
+            shape = copy.deepcopy(proto)
+            rename(shape, f"cover-{'number' if is_number else 'title'}-{no}")
+            set_shape_id(shape, next_id)
+            next_id += 1
+            ps = paragraphs(shape)
+            p = ps[0]
+            runs = p.findall(qn("a:r"))
+            # 复用模板编号 / 标题各自的字体、字重、字号与颜色。
+            run_proto = copy.deepcopy(runs[0] if is_number else runs[-1])
+            end_pr = p.find(qn("a:endParaRPr"))
+            if end_pr is not None:
+                p.remove(end_pr)
+            for run in runs:
+                p.remove(run)
+            for old_p in ps[1:]:
+                old_p.getparent().remove(old_p)
+            texts = [f"{no:02d}"] if is_number else lines
+            for index, text in enumerate(texts):
+                if index:
+                    br = etree.SubElement(p, qn("a:br"))
+                    br.append(copy.deepcopy(run_proto.find(qn("a:rPr"))))
+                run = copy.deepcopy(run_proto)
+                run.find(qn("a:t")).text = text
+                p.append(run)
+            if end_pr is not None:
+                p.append(end_pr)
+            # 第二行与标题文字对齐，编号使用独立文本框。
+            set_line_spacing_pts(p, line_pt)
+            set_space_after(p, 0)
+            set_insets(shape, left=0, right=0, top=0, bottom=0)
+            set_anchor(shape, "t")
+            set_geometry(shape, x=1.33 if is_number else title_x, y=top,
+                         w=0.70 if is_number else title_w,
+                         h=len(texts) * line_pt / 72 + slack)
+            slide.shapes._spTree.append(shape)
+        top += len(lines) * line_pt / 72 + gap
 
 
 # ---------- 内容页 ----------
@@ -207,7 +253,11 @@ def generate(issue: DailyIssue, output: Path, template_path: Path = DEFAULT_TEMP
     result = paginate(sections)
 
     cover = clone_slide(prs, template.cover)
-    _fill_cover(cover, issue.date, sections)
+    items = [item for section in sections for item in section.items]
+    indices = issue.cover_indices if issue.cover_indices is not None else list(range(min(12, len(items))))
+    if len(set(indices)) != len(indices) or any(i < 0 or i >= len(items) for i in indices):
+        raise ValueError("首页精选索引无效")
+    _fill_cover(cover, issue.date, [items[i].title for i in sorted(indices)])
 
     for page in result.pages:
         proto = template.section if page.is_section_first else template.cont

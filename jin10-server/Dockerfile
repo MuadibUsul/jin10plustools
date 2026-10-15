@@ -23,7 +23,8 @@ COPY alembic.ini ./
 COPY alembic ./alembic
 COPY templates ./templates
 
-RUN useradd --uid 1000 --create-home plus && mkdir -p /data/storage && chown -R plus /data
+RUN useradd --uid 1000 --create-home plus && mkdir -p /data/storage \
+    && chmod -R a+rX /srv /opt/playwright && chown -R plus /data
 USER plus
 
 EXPOSE 8000

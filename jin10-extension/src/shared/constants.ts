@@ -17,6 +17,7 @@ export const STORAGE_KEYS = {
   asset: (id: string) => `asset:${id}`,
   authSession: 'auth:session',
   lastApiBaseUrl: 'settings:lastApiBaseUrl',
+  captureShortcut: 'settings:captureShortcut',
   syncState: 'sync:state',
 } as const;
 

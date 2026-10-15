@@ -59,17 +59,22 @@ export function App() {
             <span className="ml-1.5 text-xs font-normal text-slate-400">v{chrome.runtime.getManifest().version}</span>
           </h1>
         </div>
-        <button
-          type="button"
-          onClick={() =>
-            session
-              ? void chrome.tabs.create({ url: `${session.api_base_url}/` })
-              : void chrome.runtime.openOptionsPage()
-          }
-          className="text-xs text-plus-600 hover:underline"
-        >
-          选稿网页 →
-        </button>
+        <div className="flex items-center gap-3">
+          <button type="button" onClick={() => void chrome.runtime.openOptionsPage()} className="text-xs text-plus-600 hover:underline">
+            设置
+          </button>
+          <button
+            type="button"
+            onClick={() =>
+              session
+                ? void chrome.tabs.create({ url: `${session.api_base_url}/` })
+                : void chrome.runtime.openOptionsPage()
+            }
+            className="text-xs text-plus-600 hover:underline"
+          >
+            选稿网页 →
+          </button>
+        </div>
       </header>
 
       <section className="flex items-end justify-between rounded-lg bg-white p-4">
@@ -140,7 +145,7 @@ export function App() {
       {conn.content === 'ok' && (
         <p className="text-xs text-slate-500">
           在快讯上右键 →「PLUS Research › 加入日报素材库」，
-          或按住 <kbd className="rounded border border-slate-300 bg-white px-1 font-mono">Ctrl</kbd> 点击快讯（加 Shift 同时 AI 分析）
+          或使用设置页配置的修饰键组合 + 左键点击快讯
         </p>
       )}
 

@@ -67,6 +67,8 @@ class DailySection(BaseModel):
 class DailyIssue(BaseModel):
     date: dt.date
     sections: list[DailySection]
+    #: 按 ordered_sections 展开的素材索引；None 时默认取前 12 条
+    cover_indices: list[int] | None = Field(default=None, max_length=12)
 
     def ordered_sections(self) -> list[DailySection]:
         """固定 6 个栏目、固定顺序；没有素材的栏目也保留（生成空白栏目页，供编辑自行补充）"""

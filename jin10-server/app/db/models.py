@@ -182,6 +182,8 @@ class Board(Base):
     day: Mapped[dt.date] = mapped_column(Date)
     #: 已选入日报的素材 ID
     picked: Mapped[list[str]] = mapped_column(JsonType, default=list)
+    #: None 为系统推荐；列表为人工精选（空列表表示不展示首页标题）
+    cover_ids: Mapped[list[str] | None] = mapped_column(JsonType, nullable=True)
     #: {栏目: [素材 ID, ...]}，拖拽排过序的素材顺序
     order: Mapped[dict[str, list[str]]] = mapped_column(JsonType, default=dict)
     #: 每次修改 +1，前端据此判断是否有他人改动

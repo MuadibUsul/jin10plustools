@@ -1,0 +1,10 @@
+ARG BASE_IMAGE=plus-next:review
+FROM ${BASE_IMAGE}
+USER root
+COPY jin10-server/pyproject.toml /srv/pyproject.toml
+COPY jin10-server/app /srv/app
+COPY deploy/prefix_web.py /tmp/plus-prefix-web.py
+RUN pip install --no-deps 'numpy>=2,<2.4' \
+    && python /tmp/plus-prefix-web.py /srv/app/web /test && rm /tmp/plus-prefix-web.py \
+    && chmod -R a+rX /srv /opt/playwright
+USER plus

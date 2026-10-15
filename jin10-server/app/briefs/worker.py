@@ -15,7 +15,7 @@ from app.db.models import BriefConfig,BriefIssue,BriefJob,BriefVersion,BriefSour
 from app.db.session import get_session_factory,get_engine
 from .policy import CATEGORIES,CHINA,expected_date,first_run,production_window,next_slot
 from .service import enqueue,ensure_issue,owned,append_version,root_for
-from .source_archive import archive_run
+from .source_archive import archive_run,restore_pe_capture
 
 log=logging.getLogger('plus.briefs')
 
@@ -58,6 +58,11 @@ def execute(factory,id):
         # Scheduled jobs have no requesting user; manual jobs keep their editor id.
         automatic=job.created_by is None and not preview
     root=root_for(team_id);out=root/'runs'/str(id);out.mkdir(parents=True,exist_ok=True)
+    if category=='valuation' and action=='produce':
+        with factory() as db:
+            restored=restore_pe_capture(db,db.get(BriefJob,id),out,
+                                        expected_date(category,day).isoformat())
+            if restored:log.info('Restored dated PE evidence from PostgreSQL for job %s',id)
     env=dict(os.environ);env['DEEPSEEK_API_KEY']=settings.briefs_deepseek_api_key;env['DEEPSEEK_MODEL']=settings.briefs_deepseek_model
     command=[sys.executable,'-m','app.briefs.runner','--category',category,'--date',expected_date(category,day).isoformat(),
              '--root',str(root),'--run-id',str(id),'--action',action]

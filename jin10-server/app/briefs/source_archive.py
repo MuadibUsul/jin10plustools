@@ -7,6 +7,8 @@ Images are handled separately by the image-delivery contract.
 from __future__ import annotations
 
 import hashlib
+import json
+from datetime import date
 from pathlib import Path
 
 from sqlalchemy import select
@@ -76,3 +78,59 @@ def archive_run(db, job, folder: Path, *, history_dir: Path | None = None,
     db.flush()
     return {'storage': 'postgresql', 'job_id': str(job.id), 'attempt': job.attempts,
             'file_count': count, 'total_bytes': total}
+
+
+def restore_pe_capture(db, job, folder: Path, expected_date: str) -> bool:
+    """Restore a dated, byte-verified PE capture when the live history drops it.
+
+    The provider's long history is sampled weekly. A capture made while the
+    requested session was current is still valid historical evidence, but must
+    be identified as a database reuse rather than a new network observation.
+    """
+    snapshots = db.scalars(select(BriefSourceSnapshot).where(
+        BriefSourceSnapshot.team_id == job.team_id,
+        BriefSourceSnapshot.category == 'valuation',
+        BriefSourceSnapshot.data_date == date.fromisoformat(expected_date),
+        BriefSourceSnapshot.relative_path.like('%raw/pe/%-normalized.json'),
+    ).order_by(BriefSourceSnapshot.captured_at.desc())).all()
+    for snapshot in snapshots:
+        if hashlib.sha256(snapshot.content).hexdigest() != snapshot.sha256:
+            continue
+        try:
+            parsed = json.loads(snapshot.content)
+            if (parsed.get('source') != 'snowball_fund_danjuan_public'
+                    or parsed.get('expected_date') != expected_date
+                    or {r['date'] for r in parsed['rows']} !=
+                       {expected_date, parsed['previous_date_rechecked']}):
+                continue
+            evidence = parsed['raw_evidence']
+            if not evidence:
+                continue
+            prefix = snapshot.relative_path.rsplit('/', 1)[0] + '/'
+            raws = []
+            for item in evidence:
+                name = Path(item['file']).name
+                if not name.startswith('pe-') or not name.endswith('.json'):
+                    raise ValueError('Unexpected PE evidence filename')
+                source = db.scalars(select(BriefSourceSnapshot).where(
+                    BriefSourceSnapshot.job_id == snapshot.job_id,
+                    BriefSourceSnapshot.attempt == snapshot.attempt,
+                    BriefSourceSnapshot.relative_path == prefix + name)).first()
+                if (source is None or source.sha256 != item['sha256']
+                        or hashlib.sha256(source.content).hexdigest() != item['sha256']):
+                    raise ValueError('PE evidence digest mismatch')
+                raws.append((name, source.content))
+        except (KeyError, TypeError, ValueError, UnicodeError):
+            continue
+        target = Path(folder) / 'erp' / 'raw' / 'pe'
+        target.mkdir(parents=True, exist_ok=True)
+        for name, content in raws:
+            (target / name).write_bytes(content)
+        for item in evidence:
+            item['file'] = str((target / Path(item['file']).name).resolve())
+        parsed['restored_from_database'] = True
+        parsed['database_source_job_id'] = str(snapshot.job_id)
+        (target / Path(snapshot.relative_path).name).write_text(
+            json.dumps(parsed, ensure_ascii=False, indent=2), encoding='utf-8')
+        return True
+    return False

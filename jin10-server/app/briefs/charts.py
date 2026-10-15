@@ -9,6 +9,7 @@ from matplotlib.font_manager import FontProperties
 from PIL import Image, ImageDraw, ImageFont
 
 FONT=Path(__file__).parent/'assets/PlusBriefs.ttf'
+GLYPH_FALLBACK=Path(__file__).parent/'assets/PlusGlyphFallback.ttf'
 
 
 def font(size=12):return FontProperties(fname=str(FONT),size=size)
@@ -120,6 +121,7 @@ def valuation_chart(buffett_rows,erp_rows,out):
     title_font=ImageFont.truetype(str(FONT),28)
     axis_font=ImageFont.truetype(str(FONT),16)
     legend_font=ImageFont.truetype(str(FONT),16)
+    fallback_font=ImageFont.truetype(str(GLYPH_FALLBACK),16)
     for bounds,panel in zip(VALUATION_PLOT_BOUNDS,panels):
         _,_,left_limits,left_ticks,limits,right_ticks,format_right,thresholds,title,secondary_label=panel
         left,top,right,bottom=bounds
@@ -141,7 +143,15 @@ def valuation_chart(buffett_rows,erp_rows,out):
         for value,color,label in thresholds:
             if label:
                 y=bottom-(bottom-top)*(value-limits[0])/(limits[1]-limits[0])
-                draw.text((right-10,y-9),label,font=axis_font,fill=color,anchor='rb')
+                if label.startswith('极'):
+                    # The existing small PlusBriefs subset omits this glyph.
+                    rest=label[1:]
+                    x=right-10-fallback_font.getlength('极')-axis_font.getlength(rest)
+                    draw.text((x,y-9),'极',font=fallback_font,fill=color,anchor='lb')
+                    draw.text((x+fallback_font.getlength('极'),y-9),rest,
+                              font=axis_font,fill=color,anchor='lb')
+                else:
+                    draw.text((right-10,y-9),label,font=axis_font,fill=color,anchor='rb')
         for ordinal,label in zip(ticks,labels):
             x=left+(right-left)*(ordinal-start.toordinal())/(end.toordinal()-start.toordinal())
             draw.text((x,bottom+13),label,font=axis_font,fill=ink,anchor='mt')

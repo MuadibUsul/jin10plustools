@@ -100,6 +100,10 @@ def test_unified_valuation_panels_share_plot_geometry_and_stay_legible(tmp_path)
             pixels=raw.crop((100,y-2,1300,y+3)).getdata()
             assert sum(pixel[dominant]>120 and pixel[dominant]>pixel[2]
                        for pixel in pixels)>100
+        # The bundled primary subset lacks 极; the green first character must
+        # still be visible through its licensed fallback glyph.
+        first_glyph=raw.crop((1250,458,1266,485)).getdata()
+        assert sum(pixel[1]>110 and pixel[1]>pixel[0]+20 for pixel in first_glyph)>20
     composed=compose_image(chart,notes=FIXED_NOTES['valuation'],dark=True)
     content,suffix,_=encode_image(composed)
     assert suffix=='.png' and len(content)<=MAX_BYTES

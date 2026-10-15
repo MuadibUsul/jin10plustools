@@ -118,22 +118,42 @@ def render_liquidity(snapshot,out):
 
 def oil_etf(day,out,state,refresh=False):
     from .engines.oil_etf.run import fetch
+    from .engines.oil_etf.previous import PreviousSourceError,fetch as fetch_previous
     snapshot=fetch(out,day);save(out/'oil-source.json',snapshot)
     history_path=state/'oil-history.json';history=read(history_path) if history_path.exists() else {}
     previous=previous_weekday(date.fromisoformat(day)).isoformat()
-    funds=[];warnings=['USO掉期按当前最近月期货价格折算桶等值，属于测试估算口径，尚未与金十逐值对账']
+    prior=history.get(previous,{})
+    previous_source=None
+    warnings=['USO掉期桶等值按期货价格估算；日变化仅比较期货合约，尚未覆盖掉期变化']
+    if any(not prior.get(ticker,{}).get('futures_barrels') for ticker in ('USO','BNO')):
+        try:
+            previous_source=fetch_previous(previous,state/'source-archive')
+            save(out/'oil-previous-source.json',previous_source)
+            for ticker,record in previous_source['funds'].items():
+                if not prior.get(ticker,{}).get('futures_barrels'):
+                    prior[ticker]={'futures_barrels':record['futures_barrels'],
+                                   'method':'futures_contracts_1000',
+                                   'source_url':record['source_url'],
+                                   'source_sha256':record['raw_sha256']}
+            history[previous]=prior
+        except PreviousSourceError as exc:
+            warnings.append(f'{previous}公开持仓回溯未通过日期与数量校验：{exc}')
+    if any(record.get('source_url','').startswith('https://companiesmarketcap.com/') for record in prior.values()):
+        warnings.append(f'前日持仓来源：CompaniesMarketCap（{previous}），原始网址见数据核对与来源')
+    funds=[]
     for fund in snapshot['funds']:
         futures=Decimal(fund['futures_barrels']);price=Decimal(fund['futures_contracts'][0]['reference_price_usd_per_barrel'])
         if price<=0:raise ValueError('期货参考价格无效')
         swap=Decimal(fund['swap_market_value_usd'])/price if fund['swaps'] else Decimal(0)
         total=futures+swap
-        prior=history.get(previous,{}).get(fund['ticker'])
-        comparable=prior and prior.get('method')=='nearest_future_swap_notional_v1'
-        delta=total-Decimal(prior['barrels']) if comparable else None
+        prior_fund=prior.get(fund['ticker'])
+        prior_futures=prior_fund.get('futures_barrels') if prior_fund else None
+        delta=futures-Decimal(prior_futures) if prior_futures is not None else None
         funds.append({'ticker':fund['ticker'],'barrels':str(total),'futures_barrels':str(futures),
                       'swap_barrels_estimate':str(swap),'reference_price':str(price),'change_barrels':str(delta) if delta is not None else None,
+                      'change_basis':'futures_contracts_1000' if delta is not None else None,
                       'method':'nearest_future_swap_notional_v1'})
-        if not comparable:warnings.append(f"{fund['ticker']}缺少{previous}同口径快照，暂不判断单日增减")
+        if delta is None:warnings.append(f"{fund['ticker']}缺少{previous}期货持仓快照，暂不判断单日增减")
     history[day]={f['ticker']:f for f in funds};save(history_path,history)
     def phrase(f):
         value=Decimal(f['barrels'])/10000
@@ -141,12 +161,13 @@ def oil_etf(day,out,state,refresh=False):
         part=f"{'WTI' if f['ticker']=='USO' else 'Brent'}（{f['ticker']}）{label}约{value:.2f}万桶"
         if f['change_barrels'] is not None:
             change=Decimal(f['change_barrels'])/10000
-            part+=f"，较{previous}{'增加' if change>0 else '减少' if change<0 else '持平'}"+(f'{abs(change):.2f}万桶' if change else '')
+            part+=f"，期货持仓较{previous}{'增加' if change>0 else '减少' if change<0 else '持平'}"+(f'{abs(change):.2f}万桶' if change else '')
         return part
     title='【原油ETF】美布两油ETF持仓数据更新'
     body=f"{day}，"+'；'.join(phrase(f) for f in funds)+'。'
     return {'title':title,'dynamic_body':body,'images':[],'data_date':day,
-            'facts':{'funds':funds,'official_source':snapshot,'previous_date':previous},'warnings':warnings}
+            'facts':{'funds':funds,'official_source':snapshot,'previous_date':previous,
+                     'previous_source':previous_source or prior},'warnings':warnings}
 
 
 def valuation(day,out,state,refresh=False):

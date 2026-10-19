@@ -77,6 +77,7 @@ function showPanel(name) {
   if (!(name in sections) && !(name in standalone)) name = 'team';
   panel = name;
   $('#settings-form').hidden = !(name in sections);
+  $('#save-settings').hidden = !data?.can_edit || !(name in sections);
   for (const [key, selector] of Object.entries(sections)) $(selector).hidden = key !== name;
   for (const [key, selector] of Object.entries(standalone)) $(selector).hidden = key !== name;
   for (const link of document.querySelectorAll('.settings-nav a')) {

@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>设置 · PLUS 工作台</title><link rel="stylesheet" href="/workspace.css"></head><body>
 <header><a class="brand" href="/"><span>PLUS</span>工作台</a><nav><a href="/daily/">日报选稿</a><a href="/briefs/">固定快讯</a><a href="/fresh/">Plus新鲜事</a><a href="/annotations/">Plus注解辅助</a></nav><div id="account"></div></header>
-<main class="settings-page"><div class="page-heading"><div><p class="eyebrow">WORKSPACE SETTINGS</p><h1>设置</h1><p class="muted">本团队共用的注释、自动任务与 AI 接入。</p></div><button id="reload-settings">刷新设置</button></div>
+<main class="settings-page"><div class="page-heading"><div><p class="eyebrow">WORKSPACE SETTINGS</p><h1>设置</h1><p class="muted">本团队共用的注释、自动任务与 AI 接入。</p></div><div class="heading-actions"><button id="save-settings" class="primary" type="submit" form="settings-form" hidden>保存设置</button><button id="reload-settings">刷新设置</button></div></div>
 <p id="settings-message" role="status" aria-live="polite"></p>
 <div class="settings-layout" id="settings-layout" hidden>
 <aside class="settings-nav" aria-label="设置分区">
@@ -19,7 +19,7 @@
 <section id="team-panel" class="settings-section"><h2>自动任务</h2><label class="check-row"><input id="schedule-enabled" type="checkbox"> 启用固定快讯自动生产</label><p class="muted">工作日 08:00—10:00（北京时间），到点停止自动重试。手动生成不限时。</p><p class="admin-hint muted"></p></section>
 <section id="ai-panel" class="settings-section" hidden><h2>AI接口设置</h2><p class="muted">Key 加密保存，仅管理员可以修改。留空保留现有 Key；保存配置不会自动补跑历史稿件。</p><label class="field">固定快讯 AI 引擎<select id="ai-provider"><option value="deepseek">DeepSeek</option><option value="chat2api">chat2api（ChatGPT 网页版）</option></select></label><p class="muted">选择后，后续固定快讯任务使用该引擎生成 AI 候选；未配置、停用或调用失败时保留规则稿，不影响出稿。</p><div id="ai-fields" class="ai-settings-grid"></div><p class="admin-hint muted"></p></section>
 <section id="live-panel" class="settings-section" hidden><h2>小电视直播</h2><p class="muted">北京时间 8:00—23:00 开放；始终只播放一路，快讯生成时自动停止。</p><label class="field">额外直播链接<input id="live-url" type="url" maxlength="2048" placeholder="https://…"></label><p class="muted">支持 YouTube 直播分享链接、允许嵌入的 HTTPS 播放器或公开 HLS 地址。请勿填写官网首页或多播放器目录。</p><details><summary>直播目录与地址维护</summary><p class="muted">留空使用内置地址；填写后使用本团队的地址。</p><div id="live-channel-fields"></div></details></section>
-<div class="settings-actions"><button id="save-settings" class="primary" type="submit">保存设置</button><span class="muted">修改仅作用于本团队</span></div>
+<div class="settings-actions"><span class="muted">修改仅作用于本团队</span></div>
 </form>
 <section id="database-panel" class="settings-section database-panel" hidden aria-labelledby="database-title">
 <h2 id="database-title">数据库导出</h2>

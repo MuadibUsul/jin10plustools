@@ -1,0 +1,7 @@
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
+USER root
+COPY jin10-server/app/briefs/engines/us_structure/calculate.py /srv/app/briefs/engines/us_structure/calculate.py
+COPY jin10-server/app/briefs/process_details.py /srv/app/briefs/process_details.py
+RUN chmod a+r /srv/app/briefs/engines/us_structure/calculate.py /srv/app/briefs/process_details.py
+USER plus

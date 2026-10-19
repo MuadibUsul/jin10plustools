@@ -61,6 +61,7 @@
 <h2 id="chat2api-title">chat2api</h2>
 <p class="muted">ChatGPT 网页端登录凭证池，供 Plus新鲜事与 Plus注解的 AI 调用。可直接粘贴 <code>/api/auth/session</code> 的整段 JSON、Cookie 行，或一行一个 AccessToken/RefreshToken；系统会自动提取 accessToken 或 refreshToken（加密的 sessionToken 不能用于刷新，会被忽略），凭证只保存在节点服务器上。</p>
 <p id="chat2api-state" class="muted" role="status" aria-live="polite">正在读取节点状态…</p>
+<p id="chat2api-expiry" class="muted" role="status" aria-live="polite"></p>
 <details><summary>如何获取 Token</summary>
 <p class="muted">在已登录 chatgpt.com 的浏览器新标签打开 <a href="https://chatgpt.com/api/auth/session" target="_blank" rel="noopener noreferrer">chatgpt.com/api/auth/session</a>，全选复制整段 JSON 粘贴到下方即可。也可以在 chatgpt.com 的开发者工具 Console 运行下面这行，直接复制 accessToken：</p>
 <pre class="chat2api-errors">fetch('/api/auth/session',{credentials:'include'}).then(r=>r.json()).then(j=>{const t=j.accessToken||j.sessionToken;if(!t)throw new Error('未登录或未找到 accessToken');return navigator.clipboard.writeText(t).then(()=>console.log('已复制 AccessToken，长度',t.length))})</pre>

@@ -1,9 +1,12 @@
 """Admin settings for the chat2api OpenAI-compatible node."""
 from __future__ import annotations
 
+import base64
 import json
 import os
 import re
+from datetime import datetime, timezone
+from pathlib import Path
 from urllib.parse import unquote
 
 import httpx
@@ -97,19 +100,64 @@ def extract_tokens(text: str) -> list[str]:
     return found[:100]
 
 
+def token_expiry(token: str):
+    """Read the JWT exp claim without trusting or verifying the token."""
+    parts = token.split('.')
+    if len(parts) != 3 or not parts[0].startswith('eyJ'):
+        return None
+    try:
+        payload = parts[1] + '=' * (-len(parts[1]) % 4)
+        data = json.loads(base64.urlsafe_b64decode(payload))
+        return datetime.fromtimestamp(float(data['exp']), tz=timezone.utc)
+    except (ValueError, KeyError, TypeError):
+        return None
+
+
+def pool_expiries():
+    """Earliest access-token expiry from the shared node data; never returns tokens."""
+    path = Path(os.getenv('PLUS_CHAT2API_TOKENS', '/opt/chat2api-data/token.txt'))
+    now = datetime.now(timezone.utc)
+    result = {'available': True, 'earliest': None, 'expired': 0, 'unknown': 0}
+    try:
+        lines = path.read_text(encoding='utf-8').splitlines()
+    except OSError:
+        result['available'] = False
+        return result
+    seen = set()
+    for line in lines:
+        token = line.strip()
+        if not token or token.startswith('#') or token in seen:
+            continue
+        seen.add(token)
+        expiry = token_expiry(token)
+        if expiry is None:
+            result['unknown'] += 1
+            continue
+        if expiry <= now:
+            result['expired'] += 1
+        if result['earliest'] is None or expiry < result['earliest']:
+            result['earliest'] = expiry
+    return result
+
+
 @router.get('')
 def status(user: CurrentUser):
     require_admin(user)
+    info = pool_expiries()
+    base = {'expiry_available': info['available'],
+            'earliest_expiry': info['earliest'].isoformat() if info['earliest'] else None,
+            'expired_tokens': info['expired'], 'unknown_expiry': info['unknown']}
     if not os.getenv('PLUS_CHAT2API_PREFIX', '').strip():
-        return {'configured': False, 'online': False, 'tokens_count': None}
+        return {'configured': False, 'online': False, 'tokens_count': None, **base}
     try:
         response = request('GET', '/tokens')
     except HTTPException as error:
         if error.status_code == 503:
             raise
-        return {'configured': True, 'online': False, 'tokens_count': None}
+        return {'configured': True, 'online': False, 'tokens_count': None, **base}
     match = TOKEN_COUNT.search(response.text)
-    return {'configured': True, 'online': True, 'tokens_count': int(match.group(1)) if match else None}
+    return {'configured': True, 'online': True,
+            'tokens_count': int(match.group(1)) if match else None, **base}
 
 
 @router.post('/tokens')

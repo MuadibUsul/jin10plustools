@@ -246,12 +246,38 @@ $('#feedback-form').onsubmit = async (event) => {
 };
 
 // —— chat2api 登录设置 ——
+let chat2apiExpiryAt = null, chat2apiExpiryKnown = true, chat2apiExpiryTimer = null;
 function chat2apiStatus(text, error = false) { const target = $('#chat2api-state'); target.textContent = text; target.className = error ? 'error' : 'muted'; }
 function chat2apiMessage(text, error = false) { const target = $('#chat2api-message'); target.textContent = text; target.className = error ? 'error' : 'muted'; }
+function formatRemaining(ms) {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const days = Math.floor(total / 86400), hours = Math.floor((total % 86400) / 3600);
+  const minutes = Math.floor((total % 3600) / 60), seconds = total % 60;
+  const parts = [];
+  if (days) parts.push(`${days} 天`);
+  if (days || hours) parts.push(`${hours} 小时`);
+  parts.push(`${minutes} 分`, `${seconds} 秒`);
+  return parts.join(' ');
+}
+function renderChat2apiExpiry() {
+  const target = $('#chat2api-expiry');
+  if (!target) return;
+  if (!chat2apiExpiryKnown) { target.textContent = '无法读取 Token 到期时间（节点数据目录未挂载）。'; target.className = 'muted'; return; }
+  if (!chat2apiExpiryAt) { target.textContent = '当前没有带到期时间的 AccessToken（仅有 RefreshToken 或尚未添加）。'; target.className = 'muted'; return; }
+  const left = chat2apiExpiryAt - Date.now();
+  const when = displayTime(new Date(chat2apiExpiryAt).toISOString());
+  if (left <= 0) { target.textContent = `最近一个 AccessToken 已于 ${when} 到期，请重新粘贴整段 JSON 上传。`; target.className = 'error'; return; }
+  target.textContent = `最近一个 AccessToken 将于 ${when} 到期，剩余 ${formatRemaining(left)}。`;
+  target.className = left < 24 * 3600 * 1000 ? 'warning' : 'muted';
+}
 async function loadChat2api() {
   chat2apiStatus('正在读取节点状态…');
   try {
     const info = await api('/api/chat2api');
+    chat2apiExpiryKnown = info.expiry_available !== false;
+    chat2apiExpiryAt = info.earliest_expiry ? Date.parse(info.earliest_expiry) : null;
+    renderChat2apiExpiry();
+    if (!chat2apiExpiryTimer) chat2apiExpiryTimer = setInterval(renderChat2apiExpiry, 1000);
     if (!info.configured) { chat2apiStatus('尚未配置 chat2api 节点（缺少 PLUS_CHAT2API_PREFIX）。', true); return; }
     chat2apiStatus(info.online ? `节点在线 · 当前可用 Tokens：${info.tokens_count ?? '未知'}` : '节点离线，暂时无法读取 Token 数。', !info.online);
   } catch (error) { chat2apiStatus(`读取节点状态失败：${error.message}`, true); }

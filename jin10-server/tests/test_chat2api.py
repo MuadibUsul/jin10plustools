@@ -1,3 +1,7 @@
+import base64
+import json
+from datetime import datetime, timezone
+
 from fastapi import HTTPException
 
 from app.api import chat2api
@@ -13,6 +17,12 @@ class FakeResponse:
         return self._data
 
 
+def make_jwt(exp):
+    header = base64.urlsafe_b64encode(b'{"alg":"RS256"}').rstrip(b'=').decode()
+    payload = base64.urlsafe_b64encode(json.dumps({'exp': exp}).encode()).rstrip(b'=').decode()
+    return f'{header}.{payload}.signature'
+
+
 def test_chat2api_settings_are_admin_only(client, monkeypatch):
     monkeypatch.setenv('PLUS_CHAT2API_PREFIX', 'c2a_test')
     assert client.get('/api/chat2api').status_code == 401
@@ -24,20 +34,44 @@ def test_chat2api_settings_are_admin_only(client, monkeypatch):
 
 def test_unconfigured_node_reports_itself(client, monkeypatch):
     monkeypatch.delenv('PLUS_CHAT2API_PREFIX', raising=False)
+    monkeypatch.setenv('PLUS_CHAT2API_TOKENS', '/nonexistent/plus-token.txt')
     headers = login(client, 'admin@plus.test')
-    assert client.get('/api/chat2api', headers=headers).json() == {
-        'configured': False, 'online': False, 'tokens_count': None}
+    data = client.get('/api/chat2api', headers=headers).json()
+    assert data['configured'] is False and data['online'] is False and data['tokens_count'] is None
+    assert data['expiry_available'] is False
     assert client.post('/api/chat2api/tokens', json={'text': 'eyJx'}, headers=headers).status_code == 503
 
 
-def test_status_reads_available_token_count(client, monkeypatch):
+def test_status_reads_available_token_count_and_expiry(client, monkeypatch, tmp_path):
     monkeypatch.setenv('PLUS_CHAT2API_PREFIX', 'c2a_test')
+    future = 4102444800  # 2100-01-01 UTC
+    jwt = make_jwt(future)
+    tokens = tmp_path / 'token.txt'
+    tokens.write_text(jwt + '\nv1.Mrefresh-token-value\n', encoding='utf-8')
+    monkeypatch.setenv('PLUS_CHAT2API_TOKENS', str(tokens))
     def fake(method, path, **kwargs):
         assert method == 'GET' and path == '/tokens'
         return FakeResponse(text='当前可用 Tokens 数量：<span class="text-blue-600">3</span>')
     monkeypatch.setattr(chat2api, 'request', fake)
-    assert client.get('/api/chat2api', headers=login(client, 'admin@plus.test')).json() == {
-        'configured': True, 'online': True, 'tokens_count': 3}
+    response = client.get('/api/chat2api', headers=login(client, 'admin@plus.test'))
+    data = response.json()
+    assert data['configured'] is True and data['online'] is True and data['tokens_count'] == 3
+    assert data['expiry_available'] is True
+    assert data['earliest_expiry'] == datetime.fromtimestamp(future, tz=timezone.utc).isoformat()
+    assert data['expired_tokens'] == 0 and data['unknown_expiry'] == 1
+    assert jwt not in response.text
+
+
+def test_status_marks_expired_access_tokens(client, monkeypatch, tmp_path):
+    monkeypatch.setenv('PLUS_CHAT2API_PREFIX', 'c2a_test')
+    jwt = make_jwt(1)
+    tokens = tmp_path / 'token.txt'
+    tokens.write_text(jwt + '\n', encoding='utf-8')
+    monkeypatch.setenv('PLUS_CHAT2API_TOKENS', str(tokens))
+    monkeypatch.setattr(chat2api, 'request', lambda *args, **kwargs: FakeResponse(text=''))
+    data = client.get('/api/chat2api', headers=login(client, 'admin@plus.test')).json()
+    assert data['expired_tokens'] == 1
+    assert data['earliest_expiry'] == '1970-01-01T00:00:01+00:00'
 
 
 def test_upload_clear_and_error_tokens(client, monkeypatch):
@@ -115,6 +149,6 @@ def test_offline_node_never_reports_success(client, monkeypatch):
         raise HTTPException(502, 'chat2api 节点暂不可用')
     monkeypatch.setattr(chat2api, 'request', fake)
     headers = login(client, 'admin@plus.test')
-    assert client.get('/api/chat2api', headers=headers).json() == {
-        'configured': True, 'online': False, 'tokens_count': None}
+    data = client.get('/api/chat2api', headers=headers).json()
+    assert data['configured'] is True and data['online'] is False and data['tokens_count'] is None
     assert client.post('/api/chat2api/tokens', json={'text': 'x'}, headers=headers).status_code == 502

@@ -36,6 +36,7 @@ services:
       PLUS_CHAT2API_PREFIX: ${PLUS_CHAT2API_PREFIX:-}
     volumes:
       - storage:/data
+      - /opt/chat2api/data:/opt/chat2api-data:ro
     networks:
       - default
       - web

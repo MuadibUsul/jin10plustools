@@ -59,7 +59,8 @@ def test_sample_wording_is_reproduced_exactly():
     assert result['title'] == '【美股晴雨表】美股10月14日市场结构：市场宽度依然不佳'
     assert result['body'] == (
         '美股市场结构：小盘股率先进入调整区间，但巨头也开始承压。\n'
-        '1、昨日三大股指收跌，标普500等权指数与市值加权指数之差从本月刷新的近一年低点反弹，'
+        '1、前一个交易日纳斯达克指数收跌1.88%、标普500指数收跌1.12%、道琼斯指数收跌0.09%，'
+        '标普500等权指数与市值加权指数之差从本月刷新的近一年低点反弹，'
         '暗示权重股承受压力更大，但仍处于年内偏低水平，市场宽度改善程度有限；\n'
         '2、代表小盘股的罗素2000指数也收跌1.93%，一度刷新4月以来新低，从历史高点已经回调了11%，'
         '比三大股指跌幅明显更大，表明资金持续从小盘股中流出。')
@@ -67,6 +68,20 @@ def test_sample_wording_is_reproduced_exactly():
     assert result['facts']['gap_low_date'] == '2026-10-07'
     assert result['facts']['rut_drawdown'] == '-11.04'
     assert len(result['gap_rows']) >= 60
+
+
+def test_previous_session_changes_are_recomputed_from_each_fetch():
+    """The three index changes must track the fetched closes, never a fixed copy."""
+    data = fixtures()
+    data['ndx'][-1]['close'] = 27000.0   # +1.35%
+    data['spx'][-1]['close'] = 7700.0    # -1.36%
+    data['dji'][-1]['close'] = 52049.0   # flat
+    result = structure(DAY, data)
+    assert result['body'].split('\n')[1].startswith(
+        '1、前一个交易日纳斯达克指数收涨1.35%、标普500指数收跌1.36%、道琼斯指数收平，')
+    assert result['facts']['ndx_change'] == '1.35'
+    assert result['facts']['spx_change'] == '-1.36'
+    assert result['facts']['dji_change'] == '0.00'
 
 
 @pytest.mark.parametrize('rut_close,expected', [(2800.0, '收涨'), (2600.0, '收跌')])

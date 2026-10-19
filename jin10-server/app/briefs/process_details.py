@@ -163,6 +163,7 @@ def describe(category, payload):
             calculations = ['等权−市值加权差值 = 标普500等权指数 − 标普500指数，单位为指数点；差值扩大表示上涨扩散到更多公司，收窄表示资金向权重股集中。',
                 '差值百分位 =（当日差值 − 近一年最低）÷（近一年最高 − 近一年最低），用于判断市场宽度在年内的位置。',
                 '罗素2000回撤 = 当日收盘 ÷ 近十年前高 − 1；新低判断比较当日最低点与此前每日最低点，不补造盘中数据。',
+                '前一个交易日三大股指按纳斯达克、标普500、道琼斯的顺序写入收盘涨跌幅；涨跌幅 = 当日收盘 ÷ 上一交易日收盘 − 1，每次生成都从本次抓取的日线重算。',
                 '标题与结论按差值百分位分级：低于35%为“依然不佳”，35%-65%为“中性”，高于65%为“有所改善”。',
                 f"本期：标普500 {facts.get('spx_change')}%、纳指 {facts.get('ndx_change')}%、道指 {facts.get('dji_change')}%、罗素2000 {facts.get('rut_change')}%；等权差 {facts.get('gap')} 点（百分位 {facts.get('gap_percentile')}），结论{facts.get('verdict')}。"]
     except (KeyError, TypeError, ValueError, InvalidOperation, ZeroDivisionError):

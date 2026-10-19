@@ -22,6 +22,15 @@ def change(rows, day):
     return (Decimal(str(rows[index]['close'])) / Decimal(str(rows[index - 1]['close'])) - 1) * 100
 
 
+def change_text(value):
+    """Close-to-close wording; percentages come from the fetched series, never copy."""
+    if value > 0:
+        return f'收涨{q2(abs(value)):.2f}%'
+    if value < 0:
+        return f'收跌{q2(abs(value)):.2f}%'
+    return '收平'
+
+
 def gap_series(data):
     """Equal-weight S&P 500 index minus the cap-weighted index, in index points."""
     closes = {row['date']: row['close'] for row in data['spx']}
@@ -55,9 +64,9 @@ def structure(day, data):
     improve = '市场宽度改善程度有限' if percentile < .4 else '市场宽度有所修复' if percentile < .7 else '市场宽度明显改善'
     verdict = '市场宽度依然不佳' if percentile < .35 else '市场宽度中性' if percentile < .65 else '市场宽度有所改善'
 
-    three_values = (changes['spx'], changes['ndx'], changes['dji'])
-    three = ('收跌' if all(value < 0 for value in three_values)
-             else '收涨' if all(value > 0 for value in three_values) else '涨跌互现')
+    three = (f"前一个交易日纳斯达克指数{change_text(changes['ndx'])}、"
+             f"标普500指数{change_text(changes['spx'])}、"
+             f"道琼斯指数{change_text(changes['dji'])}")
     low_month = int(low['date'][5:7])
     if low_month == target.month and gap_up:
         rebound = '从本月刷新的近一年低点反弹'
@@ -92,7 +101,7 @@ def structure(day, data):
     lead_small = '小盘股率先进入调整区间' if drawdown <= -10 else '小盘股仍在高位区间'
     lead_mega = '但巨头也开始承压' if gap_up and not spx_up else '但权重股仍相对强势'
     body = (f'美股市场结构：{lead_small}，{lead_mega}。\n'
-            f'1、昨日三大股指{three}，标普500等权指数与市值加权指数之差{rebound}，{weight}，{level}，{improve}；\n'
+            f'1、{three}，标普500等权指数与市值加权指数之差{rebound}，{weight}，{level}，{improve}；\n'
             f'2、代表小盘股的罗素2000指数也{route}{abs(changes["rut"]):.2f}%{low_clause}{drawdown_clause}，{compare}，{conclusion}。')
     return {
         'title': f'【美股晴雨表】美股{target.month}月{target.day}日市场结构：{verdict}',

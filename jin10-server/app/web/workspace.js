@@ -6,6 +6,18 @@ export function displayTime(value) {
   return `${p.year}年${p.month}月${p.day}日 ${Number(p.hour)}:${p.minute}`;
 }
 export function node(tag, text, className) { const n = document.createElement(tag); if (text !== undefined) n.textContent = text; if (className) n.className = className; return n; }
+export function toast(text, type = 'success') {
+  if (!text) return;
+  const target = [...document.querySelectorAll('dialog[open]')].pop() || document.body;
+  let host = target.querySelector('.plus-toasts');
+  if (!host) {
+    host = node('div', undefined, 'plus-toasts'); host.setAttribute('role', 'status'); host.setAttribute('aria-live', 'polite');
+    target.append(host);
+  }
+  const item = node('div', text, `plus-toast ${type}`); host.append(item);
+  requestAnimationFrame(() => item.classList.add('show'));
+  setTimeout(() => { item.classList.remove('show'); setTimeout(() => item.remove(), 220); }, 2800);
+}
 export async function api(path, { method = 'GET', json, raw = false } = {}) {
   if (method === 'POST' && path === '/api/briefs/jobs') {
     // Notify every local tab before generation is submitted, including a tab still loading a player.

@@ -34,7 +34,7 @@ async function page(): Promise<Page> {
       return value;
     },
     copyDate: (value: string) => value, displayTime: (value: string) => value, api, login: async () => ({ user: { role: 'editor' } }),
-    download: vi.fn(), copy: vi.fn(), setInterval: vi.fn(),
+    download: vi.fn(), copy: vi.fn(), toast: vi.fn(), setInterval: vi.fn(),
   }) as Promise<Page>;
 }
 

@@ -1,4 +1,4 @@
-import { $, node, api, login, download, copy, copyDate, displayTime } from '/workspace.js';
+import { $, node, api, login, download, copy, copyDate, displayTime, toast } from '/workspace.js';
 import '/pull-cord.js';
 import { computerShell } from '/retro-computer.js';
 const labels = { queued: '等待执行', running: '生成中', waiting: '等待数据更新', succeeded: '已生成', failed: '生成失败', skipped: '已跳过' };
@@ -16,7 +16,7 @@ let terminalDay = null, polling = false;
 const today = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai' }).format(new Date());
 $('#day').value = today();
 function message(text, error = false) { $('#message').textContent = text; $('#message').className = error ? 'error' : 'success'; }
-async function safe(action) { try { await action(); } catch (e) { message(e.message, true); } }
+async function safe(action) { try { await action(); } catch (e) { message(e.message, true); toast(e.message, 'error'); } }
 function canEdit() { return me.user.role !== 'viewer'; }
 
 const detailDialog = $('#detail-dialog');
@@ -178,7 +178,7 @@ async function runJob(category, action) {
   pendingCategories.add(category); renderCards();
   try {
   const result = await api('/api/briefs/jobs', { method: 'POST', json: { category, action, issue_date: $('#day').value } });
-  message(`任务已加入队列：${labels[result.status] || result.status}。不必重复点击。`); await refresh();
+  message(`任务已加入队列：${labels[result.status] || result.status}。不必重复点击。`); toast('任务已加入队列。'); await refresh();
   } finally { pendingCategories.delete(category); renderCards(); }
 }
 function clearImages() {
@@ -226,7 +226,7 @@ async function showVersion() {
       await image.decode();
       if (request !== imageRequest) return;
       const button = node('button', '下载图片');
-      button.onclick = () => safe(() => download(file.url)); children.push(image, button);
+      button.onclick = () => safe(async () => { await download(file.url); toast('图片已开始下载。'); }); children.push(image, button);
     }
     const oldBlobs = [...blobs];
     $('#images').replaceChildren(...children);
@@ -246,12 +246,12 @@ $('#day').onchange = () => safe(async () => { if (dirty && !confirm('放弃未�
 $('#version').onchange = () => safe(async () => { if (dirty && !confirm('放弃未保存的修改？')) { $('#version').value = current.number; return; } await showVersion(); });
 $('#title').oninput = $('#body').oninput = $('#fixed').oninput = () => { dirty = true; };
 $('#close-detail').onclick = () => { if (dirty && !confirm('放弃未保存的修改？')) return; hideDetail(); };
-$('#save').onclick = () => safe(() => act('revisions', { base_version: current.number, title: $('#title').value, dynamic_body: $('#body').value, fixed_notes: $('#fixed').value }));
-$('#confirm').onclick = () => safe(async () => { if (dirty) throw new Error('请先保存修改，再确认版本'); await act('confirm', { version: current.number }); message('此版本已确认为正式取稿版本。'); });
-$('#unconfirm').onclick = () => safe(() => act('unconfirm'));
-$('#copy-title').onclick = () => safe(async () => { if (dirty) throw new Error('请先保存修改后取稿'); await copy(current.title); message('标题已复制。'); });
-$('#copy-body').onclick = () => safe(async () => { if (dirty) throw new Error('请先保存修改后取稿'); await copy(current.body); message('完整正文已复制。'); });
-$('#use-ai').onclick = () => { $('#title').value = current.deepseek.title; $('#body').value = current.deepseek.body; dirty = true; message(`已采用${aiName(current.deepseek)}表达，请保存并核对。`); };
+$('#save').onclick = () => safe(async () => { await act('revisions', { base_version: current.number, title: $('#title').value, dynamic_body: $('#body').value, fixed_notes: $('#fixed').value }); toast('修改已保存。'); });
+$('#confirm').onclick = () => safe(async () => { if (dirty) throw new Error('请先保存修改，再确认版本'); await act('confirm', { version: current.number }); message('此版本已确认为正式取稿版本。'); toast('已确认此版本。'); });
+$('#unconfirm').onclick = () => safe(async () => { await act('unconfirm'); toast('已撤回确认。'); });
+$('#copy-title').onclick = () => safe(async () => { if (dirty) throw new Error('请先保存修改后取稿'); await copy(current.title); message('标题已复制。'); toast('标题已复制。'); });
+$('#copy-body').onclick = () => safe(async () => { if (dirty) throw new Error('请先保存修改后取稿'); await copy(current.body); message('完整正文已复制。'); toast('完整正文已复制。'); });
+$('#use-ai').onclick = () => { $('#title').value = current.deepseek.title; $('#body').value = current.deepseek.body; dirty = true; message(`已采用${aiName(current.deepseek)}表达，请保存并核对。`); toast('已采用AI表达，请保存。'); };
 for (const [id, action] of [['rerender', 'render'], ['retry-ai', 'ai'], ['refetch', 'refresh']]) $(`#${id}`).onclick = () => safe(async () => { if (!confirm(action === 'refresh' ? '重新请求数据源并生成新版本？现有稿件会保留。' : '创建新版本？现有人工修改和确认版本会保留。')) return; await runJob(selected.category, action); });
 window.addEventListener('beforeunload', (e) => { if (dirty) { e.preventDefault(); e.returnValue = ''; } });
 await safe(async () => { me = await login(); config = await api('/api/briefs/categories'); await refresh(); });

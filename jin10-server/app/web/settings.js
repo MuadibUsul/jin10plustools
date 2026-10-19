@@ -1,4 +1,4 @@
-import { $, node, api, login, displayTime, copyDate, download } from '/workspace.js';
+import { $, node, api, login, displayTime, copyDate, download, toast } from '/workspace.js';
 
 let data, dirty = false;
 const providers = { jev: ['日报选稿 · JEV', '栏目分类与重要度评分'], deepseek: ['固定快讯 · DeepSeek', '在规则稿基础上生成可选的 AI 表达'], chat2api: ['固定快讯 · chat2api', '通过本机 chat2api 节点使用 ChatGPT 网页版；留空则使用服务器节点密钥'] };
@@ -176,7 +176,7 @@ async function openExport() {
         if (count.count > count.max_rows) throw new Error(`本次 ${count.count} 行，超过单次上限 ${count.max_rows} 行，请缩小时间范围`);
         const params = exportQuery(); params.set('format', fmt);
         await download(`/api/export/${key}?${params}`);
-        exportStatus(`已开始下载：${start ? copyDate(start) : '最早'} 至 ${end ? copyDate(end) : '现在'}，共 ${count.count} 行。`);
+        exportStatus(`已开始下载：${start ? copyDate(start) : '最早'} 至 ${end ? copyDate(end) : '现在'}，共 ${count.count} 行。`); toast('导出文件已开始下载。');
       } catch (error) { exportStatus(error.message, true); }
       finally { button.disabled = false; }
     };
@@ -247,7 +247,7 @@ $('#feedback-form').onsubmit = async (event) => {
       throw new Error(detail);
     }
     $('#feedback-title-input').value = ''; $('#feedback-content').value = ''; $('#feedback-image').value = '';
-    feedbackStatus('已提交，感谢反馈。');
+    feedbackStatus('已提交，感谢反馈。'); toast('反馈已提交。');
     await loadFeedback();
   } catch (error) { feedbackStatus(error.message, true); }
   finally { button.disabled = false; }
@@ -301,7 +301,7 @@ $('#chat2api-upload').onclick = async () => {
   try {
     const result = await api('/api/chat2api/tokens', { method: 'POST', json: { text } });
     $('#chat2api-tokens').value = ''; $('#chat2api-error-list').hidden = true;
-    chat2apiMessage(`已识别并上传 ${result.extracted ?? '?'} 个 Token，当前可用 Tokens：${result.tokens_count ?? '未知'}。`);
+    chat2apiMessage(`已识别并上传 ${result.extracted ?? '?'} 个 Token，当前可用 Tokens：${result.tokens_count ?? '未知'}。`); toast('Token 已上传。');
     await loadChat2api();
   } catch (error) { chat2apiMessage(error.message, true); }
   finally { button.disabled = false; }
@@ -322,14 +322,14 @@ $('#chat2api-clear').onclick = async () => {
   try {
     const result = await api('/api/chat2api/clear', { method: 'POST' });
     $('#chat2api-error-list').hidden = true;
-    chat2apiMessage(`已清空，当前可用 Tokens：${result.tokens_count ?? 0}。`);
+    chat2apiMessage(`已清空，当前可用 Tokens：${result.tokens_count ?? 0}。`); toast('Tokens 已清空。');
     await loadChat2api();
   } catch (error) { chat2apiMessage(error.message, true); }
   finally { button.disabled = false; }
 };
 
 $('#settings-form').oninput = () => { dirty = true; };
-$('#reload-settings').onclick = async () => { if (dirty && !confirm('放弃未保存的设置并刷新？')) return; try { exportData = null; await load(); message('设置已刷新。'); } catch (e) { message(e.message, true); } };
+$('#reload-settings').onclick = async () => { if (dirty && !confirm('放弃未保存的设置并刷新？')) return; try { exportData = null; await load(); message('设置已刷新。'); toast('设置已刷新。'); } catch (e) { message(e.message, true); toast(e.message, 'error'); } };
 $('#settings-form').onsubmit = async (event) => {
   event.preventDefault(); const button = $('#save-settings'); button.disabled = true;
   try {
@@ -349,8 +349,8 @@ $('#settings-form').onsubmit = async (event) => {
     }
     await api('/api/settings', { method: 'PUT', json: body });
     for (const name of Object.keys(providers)) if ($(`#key-${name}`)) $(`#key-${name}`).value = '';
-    dirty = false; await load(); message('设置已保存。后续任务将使用新配置。');
-  } catch (e) { message(e.message, true); } finally { button.disabled = false; }
+    dirty = false; await load(); message('设置已保存。后续任务将使用新配置。'); toast('设置已保存。');
+  } catch (e) { message(e.message, true); toast(e.message, 'error'); } finally { button.disabled = false; }
 };
 window.addEventListener('beforeunload', (e) => { if (dirty) { e.preventDefault(); e.returnValue = ''; } });
 try { currentUser = await login(); await load(); } catch (e) { message(e.message, true); }

@@ -6,6 +6,7 @@ It appends a new version; it never edits or deletes stored versions.
 """
 import argparse
 import uuid
+from datetime import date
 
 from sqlalchemy import select
 
@@ -24,7 +25,7 @@ def main():
     with factory() as db:
         query = select(BriefIssue).where(BriefIssue.category == args.category)
         if args.issue_date:
-            query = query.where(BriefIssue.issue_date == args.issue_date)
+            query = query.where(BriefIssue.issue_date == date.fromisoformat(args.issue_date))
         issue = db.scalars(query.order_by(BriefIssue.issue_date.desc()).limit(1)).first()
         if issue is None:
             raise SystemExit(f'没有 {args.category} 的稿件')

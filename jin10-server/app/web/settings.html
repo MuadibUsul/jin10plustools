@@ -64,6 +64,7 @@
 <details><summary>如何获取 Token</summary>
 <p class="muted">在已登录 chatgpt.com 的浏览器新标签打开 <a href="https://chatgpt.com/api/auth/session" target="_blank" rel="noopener noreferrer">chatgpt.com/api/auth/session</a>，全选复制整段 JSON 粘贴到下方即可。也可以在 chatgpt.com 的开发者工具 Console 运行下面这行，直接复制 accessToken：</p>
 <pre class="chat2api-errors">fetch('/api/auth/session',{credentials:'include'}).then(r=>r.json()).then(j=>{const t=j.accessToken||j.sessionToken;if(!t)throw new Error('未登录或未找到 accessToken');return navigator.clipboard.writeText(t).then(()=>console.log('已复制 AccessToken，长度',t.length))})</pre>
+<p class="muted">如果看到 <code>__Secure-next-auth.session-token.0</code> 与 <code>.1</code>：那是同一个会话 Cookie 因超长被拆成两段，不是两个 Token，也不能用于 chat2api 刷新；直接使用上面的 accessToken 即可，不需要复制 Cookie。</p>
 </details>
 <label class="field">登录 Token<textarea id="chat2api-tokens" rows="7" maxlength="20000" placeholder="直接粘贴整段 JSON / Cookie，或 eyJ… / v1.M… 一行一个"></textarea></label>
 <div class="toolbar"><button id="chat2api-upload" class="primary" type="button">上传 Token</button><button id="chat2api-errors" type="button">查看错误 Token</button><button id="chat2api-clear" type="button">清空 Tokens</button></div>

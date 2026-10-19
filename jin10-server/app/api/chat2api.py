@@ -87,10 +87,13 @@ def extract_tokens(text: str) -> list[str]:
         for match in pattern.finditer(text):
             add(match.group(1) if match.groups() else match.group(0))
     if not found and not parsed:
-        for line in text.splitlines():
-            line = line.strip()
-            if line and not line.startswith('#'):
-                add(line)
+        lines = [line.strip() for line in text.splitlines() if line.strip() and not line.strip().startswith('#')]
+        chunked = '__Secure-next-auth.session-token.' in text or 'next-auth.session-token.' in text
+        if chunked or any(line.startswith('eyJhbGciOiJkaXIi') for line in lines):
+            # A split/encrypted session cookie (JWE) cannot refresh chat2api tokens.
+            return []
+        for line in lines:
+            add(line)
     return found[:100]
 
 
@@ -114,6 +117,8 @@ def upload(body: TokensIn, user: CurrentUser):
     require_admin(user)
     tokens = extract_tokens(body.text)
     if not tokens:
+        if 'session-token.' in body.text or 'eyJhbGciOiJkaXIi' in body.text:
+            raise HTTPException(422, '检测到加密会话 Cookie（.0/.1 分片），它不是 chat2api 可用的 Token；请改用 /api/auth/session 的 accessToken')
         raise HTTPException(422, '没有识别到 AccessToken 或 RefreshToken')
     data = request('POST', '/tokens/upload', data={'text': '\n'.join(tokens)}).json()
     return {'tokens_count': data.get('tokens_count'), 'extracted': len(tokens)}

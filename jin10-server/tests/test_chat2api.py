@@ -96,6 +96,19 @@ def test_upload_reads_cookie_lines_and_rejects_text_without_tokens(client, monke
     assert rejected.status_code == 422
 
 
+def test_chunked_session_cookies_are_rejected_with_a_hint(client, monkeypatch):
+    monkeypatch.setenv('PLUS_CHAT2API_PREFIX', 'c2a_test')
+    headers = login(client, 'admin@plus.test')
+    chunked = ('__Secure-next-auth.session-token.0=eyJhbGciOiJkaXIiLCJlbmMiOiJBMjU2R0NNIn0..abc; '
+               '__Secure-next-auth.session-token.1=vO00m3UP3vEXAMPLEvalue')
+    response = client.post('/api/chat2api/tokens', json={'text': chunked}, headers=headers)
+    assert response.status_code == 422 and '会话 Cookie' in response.json()['detail']
+    raw = client.post('/api/chat2api/tokens',
+                      json={'text': 'eyJhbGciOiJkaXIiLCJlbmMiOiJBMjU2R0NNIn0..abc.def.ghi'},
+                      headers=headers)
+    assert raw.status_code == 422
+
+
 def test_offline_node_never_reports_success(client, monkeypatch):
     monkeypatch.setenv('PLUS_CHAT2API_PREFIX', 'c2a_test')
     def fake(*args, **kwargs):

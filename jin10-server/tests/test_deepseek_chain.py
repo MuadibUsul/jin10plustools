@@ -36,6 +36,28 @@ def test_deepseek_request_and_diagnostics(monkeypatch):
         assert 'test-secret-key' not in json.dumps(failed)
 
 
+def test_chat2api_provider_uses_openai_compatible_payload(monkeypatch):
+    monkeypatch.setenv('AI_PROVIDER','chat2api')
+    monkeypatch.setenv('AI_API_KEY','sk-c2a-test')
+    monkeypatch.setenv('AI_MODEL','gpt-4o-mini')
+    monkeypatch.setenv('AI_BASE_URL','http://chat2api:5005/c2a_test/v1')
+    rule={'approved_titles':['标题'],'approved_bodies':['正文']}
+    seen=[]
+    class Reply:
+        def __enter__(self):return self
+        def __exit__(self,*args):pass
+        def read(self,size):
+            return json.dumps({'choices':[{'finish_reason':'stop','message':{'content':json.dumps({'title':'标题','body':'正文'})}}]}).encode()
+    def open_request(request,timeout):
+        seen.append(request);return Reply()
+    with patch('app.briefs.engines.liquidity.copy_tracks.urlopen',open_request):
+        result=generate_deepseek(rule)
+    assert result['status']=='ok' and result['provider']=='chat2api' and result['model']=='gpt-4o-mini'
+    assert seen[0].full_url=='http://chat2api:5005/c2a_test/v1/chat/completions'
+    payload=json.loads(seen[0].data)
+    assert 'thinking' not in payload and payload['response_format']=={'type':'json_object'}
+
+
 def test_cached_data_can_complete_ai_without_refetch(tmp_path,monkeypatch):
     monkeypatch.delenv('DEEPSEEK_API_KEY',raising=False)
     monkeypatch.delenv('DEEPSEEK_MODEL',raising=False)

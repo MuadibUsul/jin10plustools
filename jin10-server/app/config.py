@@ -41,6 +41,11 @@ class Settings(BaseSettings):
     # Fixed briefs use a separate optional provider and a separate worker.
     briefs_deepseek_api_key: str = ''
     briefs_deepseek_model: str = ''
+    # OpenAI-compatible chat2api node (internal address, prefix and API key).
+    chat2api_url: str = 'http://chat2api:5005'
+    chat2api_prefix: str = ''
+    chat2api_key: str = ''
+    chat2api_model: str = 'gpt-4o-mini'
 
 
 @lru_cache

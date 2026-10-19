@@ -225,8 +225,9 @@ def for_job(job, root):
             'reused': reused, 'available': bool(payload),
             'result': {'title': copy_dates(payload.get('title', '')), 'body': copy_dates(payload.get('dynamic_body', '')),
                        'images': payload.get('images', []), 'warnings': safe_value(payload.get('warnings', [])),
-                       'ai_status': ai.get('status', 'not_configured'), 'ai_model': ai.get('model', '')},
+                       'ai_status': ai.get('status', 'not_configured'), 'ai_model': ai.get('model', ''),
+                       'ai_provider': ai.get('provider', 'deepseek')},
             'assembly': ['先以已校验指标生成规则标题与事实正文。',
                          '图表读取同一批已校验数据；本期固定注释按栏目规则放入正文或估值图片。',
-                         '启用DeepSeek时，把规则事实交给模型生成候选表达并校验；规则稿保留，AI候选由编辑决定是否采用。',
+                         '启用AI时，把规则事实交给所选引擎生成候选表达并校验；规则稿保留，AI候选由编辑决定是否采用。',
                          '保存本期版本和来源快照；下载图片时统一加原始水印并检查266000字节上限。']}

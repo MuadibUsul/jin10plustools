@@ -1,7 +1,7 @@
 import { $, node, api, login, displayTime, copyDate, download } from '/workspace.js';
 
 let data, dirty = false;
-const providers = { jev: ['日报选稿 · JEV', '栏目分类与重要度评分'], deepseek: ['固定快讯 · DeepSeek', '在规则稿基础上生成可选的 AI 表达'] };
+const providers = { jev: ['日报选稿 · JEV', '栏目分类与重要度评分'], deepseek: ['固定快讯 · DeepSeek', '在规则稿基础上生成可选的 AI 表达'], chat2api: ['固定快讯 · chat2api', '通过本机 chat2api 节点使用 ChatGPT 网页版；留空则使用服务器节点密钥'] };
 function message(text, error = false) { const target = $('#settings-message'); target.textContent = text; target.className = error ? 'error' : 'success'; }
 function field(label, input) { const row = node('label', label, 'field'); row.append(input); return row; }
 async function load() {
@@ -34,13 +34,15 @@ async function load() {
   if (!data.note_revisions.length) $('#note-history').append(node('p', '暂无默认注释修改记录', 'muted'));
   $('#schedule-enabled').checked = data.schedule_enabled; $('#schedule-enabled').disabled = !data.can_admin;
   $('#ai-fields').replaceChildren();
+  $('#ai-provider').value = data.ai_provider || 'deepseek';
+  $('#ai-provider').disabled = !data.can_admin;
   for (const [name, [label, description]] of Object.entries(providers)) {
     const saved = data.ai[name], card = node('div', undefined, 'ai-setting');
     card.append(node('h3', label), node('p', description, 'muted'));
     card.append(node('p', `${saved.configured ? '已配置' : '未配置'}${saved.source === 'server' ? ' · 使用服务器 Key' : saved.source === 'team' ? ' · 使用团队 Key' : ''}${saved.enabled ? '' : ' · 已停用'}`, saved.configured && saved.enabled ? 'success' : 'muted'));
     if (data.can_admin) {
       const key = node('input'); key.type = 'password'; key.autocomplete = 'new-password'; key.id = `key-${name}`; key.maxLength = 2048; key.placeholder = '输入新的 Key；留空保留';
-      const model = node('input'); model.id = `model-${name}`; model.value = saved.model; model.maxLength = 100; model.placeholder = name === 'deepseek' ? '例如 deepseek-chat' : 'jev-latest';
+      const model = node('input'); model.id = `model-${name}`; model.value = saved.model; model.maxLength = 100; model.placeholder = name === 'deepseek' ? '例如 deepseek-chat' : name === 'chat2api' ? '例如 gpt-4o-mini' : 'jev-latest';
       card.append(field('API Key', key), field('模型名称', model));
       const enabled = node('input'); enabled.type = 'checkbox'; enabled.id = `enabled-${name}`; enabled.checked = saved.enabled;
       const enableLabel = node('label', ' 启用此 AI 接入', 'check-row'); enableLabel.prepend(enabled); card.append(enableLabel);
@@ -329,6 +331,7 @@ $('#settings-form').onsubmit = async (event) => {
     body.live_urls = Object.fromEntries([...document.querySelectorAll('[data-live-id]')].filter(input => input.value.trim()).map(input => [input.dataset.liveId, input.value.trim()]));
     if (data.can_admin) {
       body.schedule_enabled = $('#schedule-enabled').checked;
+      body.ai_provider = $('#ai-provider').value;
       body.ai = Object.fromEntries(Object.keys(providers).map((name) => {
         const value = { enabled: $(`#enabled-${name}`).checked };
         const model = $(`#model-${name}`).value.trim(), key = $(`#key-${name}`).value.trim();

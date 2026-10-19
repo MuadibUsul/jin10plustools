@@ -34,6 +34,8 @@ services:
       PLUS_JEV_API_KEY: ${PLUS_JEV_API_KEY:-}
       PLUS_CHAT2API_URL: ${PLUS_CHAT2API_URL:-http://chat2api:5005}
       PLUS_CHAT2API_PREFIX: ${PLUS_CHAT2API_PREFIX:-}
+      PLUS_CHAT2API_KEY: ${PLUS_CHAT2API_KEY:-}
+      PLUS_CHAT2API_MODEL: ${PLUS_CHAT2API_MODEL:-gpt-4o-mini}
     volumes:
       - storage:/data
       - /opt/chat2api/data:/opt/chat2api-data:ro
@@ -59,8 +61,15 @@ services:
       PLUS_JWT_SECRET: ${PLUS_JWT_SECRET:?请在 .env 中设置 PLUS_JWT_SECRET}
       PLUS_BRIEFS_DEEPSEEK_API_KEY: ${PLUS_BRIEFS_DEEPSEEK_API_KEY:-}
       PLUS_BRIEFS_DEEPSEEK_MODEL: ${PLUS_BRIEFS_DEEPSEEK_MODEL:-}
+      PLUS_CHAT2API_URL: ${PLUS_CHAT2API_URL:-http://chat2api:5005}
+      PLUS_CHAT2API_PREFIX: ${PLUS_CHAT2API_PREFIX:-}
+      PLUS_CHAT2API_KEY: ${PLUS_CHAT2API_KEY:-}
+      PLUS_CHAT2API_MODEL: ${PLUS_CHAT2API_MODEL:-gpt-4o-mini}
     volumes:
       - storage:/data
+    networks:
+      - default
+      - web
     mem_limit: 1g
     cpus: 1.0
 

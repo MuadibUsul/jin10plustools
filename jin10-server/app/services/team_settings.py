@@ -14,15 +14,36 @@ def cipher():
     return Fernet(base64.urlsafe_b64encode(hashlib.sha256(b'plus-team-ai-v1\0' + secret).digest()))
 
 
+AI_PROVIDERS = ('deepseek', 'chat2api')
+DEFAULT_MODELS = {'jev': 'jev-latest', 'deepseek': 'deepseek-chat', 'chat2api': 'gpt-4o-mini'}
+
+
 def provider(team, name):
     settings = get_settings()
     saved = ((team.settings or {}).get('ai', {}).get(name, {}) if team else {})
-    fallback_key = settings.jev_api_key if name == 'jev' else settings.briefs_deepseek_api_key
-    fallback_model = settings.jev_model if name == 'jev' else settings.briefs_deepseek_model
+    if name == 'jev':
+        fallback_key, fallback_model = settings.jev_api_key, settings.jev_model
+    elif name == 'chat2api':
+        fallback_key, fallback_model = settings.chat2api_key, settings.chat2api_model
+    else:
+        fallback_key, fallback_model = settings.briefs_deepseek_api_key, settings.briefs_deepseek_model
     key = cipher().decrypt(saved['token'].encode()).decode() if saved.get('token') else fallback_key
     return {'key': key if saved.get('enabled', True) else '',
             'model': saved.get('model', fallback_model), 'enabled': saved.get('enabled', True),
             'configured': bool(key), 'source': 'team' if saved.get('token') else 'server' if key else 'none'}
+
+
+def briefs_ai(team):
+    """The admin-selected engine for fixed-brief wording, with its endpoint."""
+    settings = get_settings()
+    name = (team.settings or {}).get('ai_provider', 'deepseek') if team else 'deepseek'
+    if name not in AI_PROVIDERS:
+        name = 'deepseek'
+    selected = provider(team, name)
+    prefix = settings.chat2api_prefix.strip().strip('/')
+    base_url = ('https://api.deepseek.com' if name == 'deepseek'
+                else f"{settings.chat2api_url.rstrip('/')}/{prefix}/v1" if prefix else '')
+    return {**selected, 'provider': name, 'base_url': base_url}
 
 
 def update_notes(db, team, notes, user_id):

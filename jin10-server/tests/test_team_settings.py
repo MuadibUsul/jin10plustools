@@ -62,6 +62,34 @@ def test_key_preserve_disable_reset_and_validation_redaction(client, seed, db_fa
     assert bad.status_code == 422 and key not in bad.text
 
 
+def test_briefs_ai_provider_is_selectable_and_chat2api_uses_server_node(client, seed, db_factory, monkeypatch):
+    from app.config import get_settings
+    from app.services.team_settings import briefs_ai
+    monkeypatch.setenv('PLUS_CHAT2API_URL', 'http://chat2api:5005')
+    monkeypatch.setenv('PLUS_CHAT2API_PREFIX', 'c2a_test')
+    monkeypatch.setenv('PLUS_CHAT2API_KEY', 'sk-c2a-server-key-1234')
+    monkeypatch.setenv('PLUS_CHAT2API_MODEL', 'gpt-4o-mini')
+    get_settings.cache_clear()
+    admin = login(client, seed['admin'].email)
+    initial = client.get('/api/settings', headers=admin).json()
+    assert initial['ai_provider'] == 'deepseek'
+    result = client.put('/api/settings', headers=admin,
+                        json={'revision': initial['revision'], 'ai_provider': 'chat2api'})
+    assert result.status_code == 200 and result.json()['ai_provider'] == 'chat2api'
+    with db_factory() as db:
+        ai = briefs_ai(db.get(Team, seed['admin'].team_id))
+        assert ai['provider'] == 'chat2api'
+        assert ai['base_url'] == 'http://chat2api:5005/c2a_test/v1'
+        assert ai['key'] == 'sk-c2a-server-key-1234' and ai['model'] == 'gpt-4o-mini'
+    editor = login(client, seed['editor'].email)
+    current = client.get('/api/settings', headers=editor).json()['revision']
+    assert client.put('/api/settings', headers=editor,
+                      json={'revision': current, 'ai_provider': 'deepseek'}).status_code == 403
+    assert client.put('/api/settings', headers=admin,
+                      json={'revision': current, 'ai_provider': 'nope'}).status_code == 422
+    get_settings.cache_clear()
+
+
 def test_saved_team_key_activates_daily_worker_without_restart(client, seed, db_factory, monkeypatch):
     from app.ai import worker
     from tests.test_api import material, push

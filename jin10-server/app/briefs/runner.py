@@ -118,9 +118,11 @@ def generate(category,day,root,run_id,action='produce'):
                 payload['deepseek']=previous.get('deepseek',{'status':'not_configured'})
             else:
                 import os
-                configured=bool(os.getenv('DEEPSEEK_API_KEY') and os.getenv('DEEPSEEK_MODEL'))
+                provider=os.getenv('AI_PROVIDER','deepseek')
+                model=os.getenv('AI_MODEL') or os.getenv('DEEPSEEK_MODEL','')
+                configured=bool((os.getenv('AI_API_KEY') or os.getenv('DEEPSEEK_API_KEY')) and model)
                 ai=previous.get('deepseek',{})
-                if action=='produce' and (not configured or (ai.get('status')=='ok' and ai.get('model')==os.getenv('DEEPSEEK_MODEL'))):
+                if action=='produce' and (not configured or (ai.get('status')=='ok' and ai.get('model')==model and (ai.get('provider') or 'deepseek')==provider)):
                     record(out,4,'同日期快照校验通过，复用已保存的稿件与图片')
                     explain_result(out,category,payload)
                     return payload

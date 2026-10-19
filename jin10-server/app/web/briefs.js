@@ -3,6 +3,7 @@ import '/pull-cord.js';
 import { computerShell } from '/retro-computer.js';
 const labels = { queued: '等待执行', running: '生成中', waiting: '等待数据更新', succeeded: '已生成', failed: '生成失败', skipped: '已跳过' };
 const aiLabels = { not_configured: '未配置', disabled: '已关闭', pending: '待处理', ok: '已生成', failed: '生成失败', invalid_response: '结果未通过校验', timeout: '请求超时' };
+const aiName = (info) => info?.provider === 'chat2api' ? 'chat2api' : 'DeepSeek';
 let me, config, items = [], selected = null, current = null, dirty = false;
 const blobs = new Set();
 let imageKey = null, pendingImageKey = null, imageRequest = 0;
@@ -84,7 +85,7 @@ function renderCards() {
     body.append(node('p', version ? `数据日 ${copyDate(version.data_date)}` : '尚无有效数据', 'muted'));
     if (job) body.append(node('p', `${job.status === 'failed' && version ? '最近一次任务失败；已有预览图可查看' : labels[job.status] || job.status}${job.error ? '：' + job.error : ''}`, job.status === 'failed' ? 'error' : 'muted'));
     if (version?.warnings.length) body.append(node('p', '有来源或口径说明，请核对', 'warning'));
-    if (version?.deepseek && !['not_configured','disabled'].includes(version.deepseek.status)) body.append(node('p', version.deepseek.status === 'ok' ? 'DeepSeek已完成，可在编辑区采用' : '规则稿已保存 · DeepSeek未完成，可补跑', version.deepseek.status === 'ok' ? 'success' : 'warning'));
+    if (version?.deepseek && !['not_configured','disabled'].includes(version.deepseek.status)) body.append(node('p', version.deepseek.status === 'ok' ? `${aiName(version.deepseek)}已完成，可在编辑区采用` : `规则稿已保存 · ${aiName(version.deepseek)}未完成，可补跑`, version.deepseek.status === 'ok' ? 'success' : 'warning'));
     const controls = node('div', undefined, 'toolbar');
     if (item?.versions.length) { const view = node('button', '查看与取稿'); view.onclick = () => safe(() => open(item)); controls.append(view); }
     if (canEdit()) { const run = node('button', busy ? '任务执行中' : '生成稿件'); run.disabled = busy; run.onclick = () => safe(() => runJob(category.id, 'produce')); controls.append(run); }
@@ -200,7 +201,7 @@ async function showVersion() {
   $('#fixed').value = v.fixed_notes || '';
   $('#fixed').readOnly = !canEdit();
   $('#notes-label').textContent = v.notes_placement === 'image' ? '注释（保存后显示在图片底部）' : '注释（自动加入完整正文）';
-  $('#detail-status').textContent = `数据日 ${copyDate(v.data_date)}${v.deepseek.status === 'not_configured' || v.deepseek.status === 'disabled' ? '' : ` · DeepSeek：${aiLabels[v.deepseek.status] || '未完成'}`}`;
+  $('#detail-status').textContent = `数据日 ${copyDate(v.data_date)}${v.deepseek.status === 'not_configured' || v.deepseek.status === 'disabled' ? '' : ` · ${aiName(v.deepseek)}：${aiLabels[v.deepseek.status] || '未完成'}`}`;
   $('#warnings').replaceChildren(...v.warnings.map((s) => node('p', s)));
   $('#facts').textContent = JSON.stringify(v.facts, null, 2);
   for (const id of ['save', 'confirm', 'unconfirm', 'rerender', 'retry-ai', 'refetch']) $(`#${id}`).hidden = !canEdit();
@@ -250,7 +251,7 @@ $('#confirm').onclick = () => safe(async () => { if (dirty) throw new Error('请
 $('#unconfirm').onclick = () => safe(() => act('unconfirm'));
 $('#copy-title').onclick = () => safe(async () => { if (dirty) throw new Error('请先保存修改后取稿'); await copy(current.title); message('标题已复制。'); });
 $('#copy-body').onclick = () => safe(async () => { if (dirty) throw new Error('请先保存修改后取稿'); await copy(current.body); message('完整正文已复制。'); });
-$('#use-ai').onclick = () => { $('#title').value = current.deepseek.title; $('#body').value = current.deepseek.body; dirty = true; message('已采用DeepSeek表达，请保存并核对。'); };
+$('#use-ai').onclick = () => { $('#title').value = current.deepseek.title; $('#body').value = current.deepseek.body; dirty = true; message(`已采用${aiName(current.deepseek)}表达，请保存并核对。`); };
 for (const [id, action] of [['rerender', 'render'], ['retry-ai', 'ai'], ['refetch', 'refresh']]) $(`#${id}`).onclick = () => safe(async () => { if (!confirm(action === 'refresh' ? '重新请求数据源并生成新版本？现有稿件会保留。' : '创建新版本？现有人工修改和确认版本会保留。')) return; await runJob(selected.category, action); });
 window.addEventListener('beforeunload', (e) => { if (dirty) { e.preventDefault(); e.returnValue = ''; } });
 await safe(async () => { me = await login(); config = await api('/api/briefs/categories'); await refresh(); });

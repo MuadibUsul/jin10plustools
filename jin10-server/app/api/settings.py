@@ -26,7 +26,8 @@ class Update(BaseModel):
     revision: int = Field(ge=0)
     notes: dict[Literal[*CATEGORIES], str] | None = None
     schedule_enabled: bool | None = None
-    ai: dict[Literal['jev', 'deepseek'], AIConfig] | None = None
+    ai: dict[Literal['jev', 'deepseek', 'chat2api'], AIConfig] | None = None
+    ai_provider: Literal['deepseek', 'chat2api'] | None = None
     live_url: str | None = Field(default=None, max_length=2048)
     live_urls: dict[str,str] | None = None
 
@@ -55,12 +56,13 @@ def output(db, team, user):
     config = db.get(BriefConfig, team.id)
     saved = team.settings or {}
     ai = {name: {key: value for key, value in provider(team, name).items() if key != 'key'}
-          for name in ('jev', 'deepseek')}
+          for name in ('jev', 'deepseek', 'chat2api')}
     return {'revision': saved.get('settings_revision', 0), 'can_edit': user.role != Role.VIEWER,
             'can_admin': user.role == Role.ADMIN, 'schedule_enabled': bool(config and config.enabled),
             'categories': [{'id': key, 'label': label, 'notes': (config.notes or {}).get(key, default_notes(key)) if config else default_notes(key)}
                            for key, label in CATEGORIES.items()],
             'note_revisions': saved.get('brief_note_revisions', []), 'ai': ai,
+            'ai_provider': saved.get('ai_provider', 'deepseek'),
             'live_url': saved.get('live_url', ''), 'live_catalog': catalog(team),
             'live_urls':saved.get('live_urls',{})}
 
@@ -72,7 +74,7 @@ def read(db: DbSession, user: CurrentUser):
 
 @router.put('')
 def update(body: Update, db: DbSession, user: Editor):
-    if (body.ai is not None or body.schedule_enabled is not None) and user.role != Role.ADMIN:
+    if (body.ai is not None or body.ai_provider is not None or body.schedule_enabled is not None) and user.role != Role.ADMIN:
         raise HTTPException(403, '仅管理员可修改排期和 AI 接入')
     if body.notes and any(len(value) > 2000 for value in body.notes.values()):
         raise HTTPException(422, '每个栏目注释最多2000字')
@@ -95,6 +97,8 @@ def update(body: Update, db: DbSession, user: Editor):
         saved['live_urls']=body.live_urls
     if body.live_url is not None:
         saved['live_url'] = body.live_url.strip()
+    if body.ai_provider is not None:
+        saved['ai_provider'] = body.ai_provider
     ai = dict(saved.get('ai', {}))
     for name, change in (body.ai or {}).items():
         current = dict(ai.get(name, {}))
@@ -108,7 +112,8 @@ def update(body: Update, db: DbSession, user: Editor):
                 raise HTTPException(422, 'Key 格式不正确')
             current['token'] = cipher().encrypt(key.encode()).decode()
             if not current.get('model') and not provider(team, name)['model']:
-                current['model'] = 'deepseek-chat' if name == 'deepseek' else 'jev-latest'
+                current['model'] = {'deepseek': 'deepseek-chat', 'jev': 'jev-latest',
+                                    'chat2api': 'gpt-4o-mini'}.get(name, '')
         if change.model is not None:
             current['model'] = change.model
         if change.enabled is not None:

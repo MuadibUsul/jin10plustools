@@ -1,4 +1,4 @@
-"""Rules always work offline; optional DeepSeek only chooses fact-safe wording."""
+"""Rules always work offline; the optional AI provider only chooses fact-safe wording."""
 import json
 import os
 from decimal import Decimal,ROUND_HALF_UP
@@ -32,15 +32,20 @@ def build_copy(snapshot):
 
 
 def generate_deepseek(rule):
-    key=os.getenv('DEEPSEEK_API_KEY','');model=os.getenv('DEEPSEEK_MODEL','')
-    if not key or not model:return {'status':'not_configured'}
-    diagnostics={'model':model,'thinking':'disabled','max_tokens':4096}
+    provider=os.getenv('AI_PROVIDER','deepseek')
+    key=os.getenv('AI_API_KEY') or os.getenv('DEEPSEEK_API_KEY','')
+    model=os.getenv('AI_MODEL') or os.getenv('DEEPSEEK_MODEL','')
+    base=os.getenv('AI_BASE_URL') or ('https://api.deepseek.com' if provider=='deepseek' else '')
+    if not key or not model or not base:return {'status':'not_configured','provider':provider}
+    diagnostics={'provider':provider,'model':model,'max_tokens':4096}
+    if provider=='deepseek':diagnostics['thinking']='disabled'
     def failed(status,reason,**extra):return {'status':status,'reason':reason,**diagnostics,**extra}
-    payload={'model':model,'stream':False,'max_tokens':4096,'thinking':{'type':'disabled'},'response_format':{'type':'json_object'},
+    payload={'model':model,'stream':False,'max_tokens':4096,'response_format':{'type':'json_object'},
              'messages':[{'role':'system','content':'只输出json格式title/body，必须原样选用用户提供的一条标题和一条正文，不得改动数字或增加政策判断。'},
                          {'role':'user','content':json.dumps({'titles':rule['approved_titles'],'bodies':rule['approved_bodies']},ensure_ascii=False)}]}
+    if provider=='deepseek':payload['thinking']={'type':'disabled'}
     try:
-        request=Request('https://api.deepseek.com/chat/completions',data=json.dumps(payload).encode(),
+        request=Request(base.rstrip('/')+'/chat/completions',data=json.dumps(payload).encode(),
                         headers={'Authorization':'Bearer '+key,'Content-Type':'application/json'},method='POST')
         with urlopen(request,timeout=60) as response:raw=response.read(131073)
         if len(raw)>131072:return failed('invalid_response','response_too_large')

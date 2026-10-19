@@ -12,7 +12,7 @@ from sqlalchemy import select,text,update
 
 from app.config import get_settings
 from app.db.models import BriefConfig,BriefIssue,BriefJob,BriefVersion,BriefSourceSnapshot,Team,utcnow
-from app.services.team_settings import provider
+from app.services.team_settings import briefs_ai
 from app.db.session import get_session_factory,get_engine
 from .policy import CATEGORIES,CHINA,expected_date,first_run,production_window,next_slot
 from .service import enqueue,ensure_issue,owned,append_version,root_for
@@ -59,7 +59,7 @@ def execute(factory,id):
         team_id=job.team_id;category=job.category;preview=job.preview;day=job.issue_date;action=job.action
         # Scheduled jobs have no requesting user; manual jobs keep their editor id.
         automatic=job.created_by is None and not preview
-        ai=provider(db.get(Team,team_id),'deepseek')
+        ai=briefs_ai(db.get(Team,team_id))
     root=root_for(team_id);out=root/'runs'/str(id);out.mkdir(parents=True,exist_ok=True)
     record(out,1,f'任务开始：生产日 {day}，数据日 {expected_date(category,day)}')
     if category=='valuation' and action=='produce':
@@ -68,7 +68,8 @@ def execute(factory,id):
                                         expected_date(category,day).isoformat())
             if restored:log.info('Restored dated PE evidence from PostgreSQL for job %s',id)
             if restored:record(out,1,'已恢复经过哈希核验的PE原始来源证据')
-    env=dict(os.environ);env['DEEPSEEK_API_KEY']=ai['key'];env['DEEPSEEK_MODEL']=ai['model']
+    env=dict(os.environ);env['AI_PROVIDER']=ai['provider'];env['AI_API_KEY']=ai['key']
+    env['AI_MODEL']=ai['model'];env['AI_BASE_URL']=ai['base_url']
     command=[sys.executable,'-m','app.briefs.runner','--category',category,'--date',expected_date(category,day).isoformat(),
              '--root',str(root),'--run-id',str(id),'--action',action]
     process=subprocess.Popen(command,env=env,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,start_new_session=os.name!='nt')

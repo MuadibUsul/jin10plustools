@@ -46,7 +46,7 @@ function render(data) {
     paragraph(assembly, info.result.body);
     paragraph(assembly, `配图：${info.result.images?.length ? info.result.images.join('、') : '本栏目无配图'}`);
     const ai = {ok:'候选文案已通过校验',not_configured:'未配置，使用规则稿',disabled:'已关闭',pending:'处理中',failed:'调用失败，保留规则稿',timeout:'请求超时，保留规则稿',invalid_response:'未通过校验，保留规则稿'};
-    paragraph(assembly, `DeepSeek：${ai[info.result.ai_status] || info.result.ai_status}${info.result.ai_model ? `（${info.result.ai_model}）` : ''}`);
+    paragraph(assembly, `AI（${info.result.ai_provider === 'chat2api' ? 'chat2api' : 'DeepSeek'}）：${ai[info.result.ai_status] || info.result.ai_status}${info.result.ai_model ? `（${info.result.ai_model}）` : ''}`);
     for (const warning of info.result.warnings || []) paragraph(assembly, warning, 'warning');
   }
   const evidence = section('原始证据');

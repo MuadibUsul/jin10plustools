@@ -55,18 +55,21 @@ async function load() {
   $('#save-settings').hidden = !data.can_edit;
   $('#settings-layout').hidden = false;
   $('#nav-database').hidden = false;
+  $('#nav-chat2api').hidden = !data.can_admin;
   showPanel(initialPanel());
   dirty = false;
 }
 // —— 设置分区导航 ——
-const panels = { team: '#settings-form', database: '#database-panel', feedback: '#feedback-panel' };
+const panels = { team: '#settings-form', database: '#database-panel', feedback: '#feedback-panel', chat2api: '#chat2api-panel' };
 let panel = 'team', exportData = null, exportPreset = '3m', currentUser = null;
 
 function initialPanel() {
   if (location.hash === '#feedback') return 'feedback';
+  if (location.hash === '#chat2api') return 'chat2api';
   return location.hash === '#database' ? 'database' : 'team';
 }
 function showPanel(name) {
+  if (name === 'chat2api' && !data?.can_admin) name = 'team';
   panel = name;
   for (const [key, selector] of Object.entries(panels)) $(selector).hidden = key !== name;
   for (const link of document.querySelectorAll('.settings-nav a')) {
@@ -76,6 +79,7 @@ function showPanel(name) {
   }
   if (name === 'database') openExport();
   if (name === 'feedback') openFeedback();
+  if (name === 'chat2api') openChat2api();
 }
 for (const link of document.querySelectorAll('.settings-nav a')) link.addEventListener('click', (event) => {
   event.preventDefault(); showPanel(link.dataset.panel); history.replaceState(null, '', link.getAttribute('href'));
@@ -238,6 +242,55 @@ $('#feedback-form').onsubmit = async (event) => {
     feedbackStatus('已提交，感谢反馈。');
     await loadFeedback();
   } catch (error) { feedbackStatus(error.message, true); }
+  finally { button.disabled = false; }
+};
+
+// —— chat2api 登录设置 ——
+function chat2apiStatus(text, error = false) { const target = $('#chat2api-state'); target.textContent = text; target.className = error ? 'error' : 'muted'; }
+function chat2apiMessage(text, error = false) { const target = $('#chat2api-message'); target.textContent = text; target.className = error ? 'error' : 'muted'; }
+async function loadChat2api() {
+  chat2apiStatus('正在读取节点状态…');
+  try {
+    const info = await api('/api/chat2api');
+    if (!info.configured) { chat2apiStatus('尚未配置 chat2api 节点（缺少 PLUS_CHAT2API_PREFIX）。', true); return; }
+    chat2apiStatus(info.online ? `节点在线 · 当前可用 Tokens：${info.tokens_count ?? '未知'}` : '节点离线，暂时无法读取 Token 数。', !info.online);
+  } catch (error) { chat2apiStatus(`读取节点状态失败：${error.message}`, true); }
+}
+async function openChat2api() {
+  if (!data?.can_admin) return;
+  await loadChat2api();
+}
+$('#chat2api-upload').onclick = async () => {
+  const text = $('#chat2api-tokens').value.trim();
+  if (!text) { chat2apiMessage('请先粘贴至少一个 Token。', true); return; }
+  const button = $('#chat2api-upload'); button.disabled = true; chat2apiMessage('正在上传…');
+  try {
+    const result = await api('/api/chat2api/tokens', { method: 'POST', json: { text } });
+    $('#chat2api-tokens').value = ''; $('#chat2api-error-list').hidden = true;
+    chat2apiMessage(`已上传，当前可用 Tokens：${result.tokens_count ?? '未知'}。`);
+    await loadChat2api();
+  } catch (error) { chat2apiMessage(error.message, true); }
+  finally { button.disabled = false; }
+};
+$('#chat2api-errors').onclick = async () => {
+  const button = $('#chat2api-errors'); button.disabled = true;
+  try {
+    const { error_tokens: tokens } = await api('/api/chat2api/errors');
+    const box = $('#chat2api-error-list');
+    box.textContent = tokens.length ? tokens.join('\n') : '没有错误 Token。';
+    box.hidden = false;
+  } catch (error) { chat2apiMessage(error.message, true); }
+  finally { button.disabled = false; }
+};
+$('#chat2api-clear').onclick = async () => {
+  if (!confirm('清空所有已上传和错误的 Token？此操作不可撤销。')) return;
+  const button = $('#chat2api-clear'); button.disabled = true; chat2apiMessage('正在清空…');
+  try {
+    const result = await api('/api/chat2api/clear', { method: 'POST' });
+    $('#chat2api-error-list').hidden = true;
+    chat2apiMessage(`已清空，当前可用 Tokens：${result.tokens_count ?? 0}。`);
+    await loadChat2api();
+  } catch (error) { chat2apiMessage(error.message, true); }
   finally { button.disabled = false; }
 };
 

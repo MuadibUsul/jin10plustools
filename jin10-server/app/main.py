@@ -18,7 +18,7 @@ from fastapi.exception_handlers import request_validation_exception_handler
 from app.ai.jev_client import JevClient
 from app.ai.worker import AnalysisWorker
 from app.api import assets, auth, board, collab, issues, materials
-from app.api import briefs, export, feedback, live, settings as team_settings
+from app.api import briefs, chat2api, export, feedback, live, settings as team_settings
 from app.config import get_settings
 from app.db.session import get_session_factory
 from app.services.maintenance import MaintenanceWorker
@@ -65,6 +65,7 @@ app.include_router(team_settings.router)
 app.include_router(live.router)
 app.include_router(export.router)
 app.include_router(feedback.router)
+app.include_router(chat2api.router)
 
 
 @app.get("/api/health", tags=["system"])

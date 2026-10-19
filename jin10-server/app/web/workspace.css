@@ -39,3 +39,5 @@
 .detail-dialog .detail-head{position:sticky;top:0;z-index:2;background:#fff;padding:20px 28px;border-bottom:1px solid #e8eef6}
 .detail-dialog .editor-grid{padding:0 28px 24px}
 @media(max-width:650px){.detail-dialog{width:calc(100vw - 16px);max-height:94dvh}.detail-dialog .detail-head{padding:16px}.detail-dialog .editor-grid{padding:0 16px 16px}}
+
+.chat2api-errors{white-space:pre-wrap;word-break:break-all;background:#f7f8fa;border:1px solid #e3e6ea;border-radius:10px;padding:12px;font-size:13px;max-height:240px;overflow:auto}

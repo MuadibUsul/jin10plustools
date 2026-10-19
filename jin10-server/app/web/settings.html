@@ -8,6 +8,7 @@
 <a href="#team" data-panel="team" class="active">团队设置</a>
 <a href="#database" data-panel="database" id="nav-database" hidden>数据库</a>
 <a href="#feedback" data-panel="feedback">反馈</a>
+<a href="#chat2api" data-panel="chat2api" id="nav-chat2api" hidden>chat2api</a>
 </aside>
 <div class="settings-panels">
 <form id="settings-form">
@@ -55,6 +56,15 @@
 <p id="feedback-status" class="muted" role="status" aria-live="polite"></p>
 </form>
 <details open><summary>最近的反馈</summary><div id="feedback-list" class="feedback-list"></div></details>
+</section>
+<section id="chat2api-panel" class="settings-section" hidden aria-labelledby="chat2api-title">
+<h2 id="chat2api-title">chat2api</h2>
+<p class="muted">ChatGPT 网页端登录凭证池，供 Plus新鲜事与 Plus注解的 AI 调用。AccessToken（eyJ…）或 RefreshToken（v1.M…）一行一个；凭证只保存在节点服务器上。</p>
+<p id="chat2api-state" class="muted" role="status" aria-live="polite">正在读取节点状态…</p>
+<label class="field">登录 Token<textarea id="chat2api-tokens" rows="7" maxlength="20000" placeholder="eyJhbG… 或 v1.M…，一行一个"></textarea></label>
+<div class="toolbar"><button id="chat2api-upload" class="primary" type="button">上传 Token</button><button id="chat2api-errors" type="button">查看错误 Token</button><button id="chat2api-clear" type="button">清空 Tokens</button></div>
+<p id="chat2api-message" class="muted" role="status" aria-live="polite"></p>
+<pre id="chat2api-error-list" class="chat2api-errors" hidden></pre>
 </section>
 </div>
 </div></main><script type="module" src="/settings.js"></script></body></html>

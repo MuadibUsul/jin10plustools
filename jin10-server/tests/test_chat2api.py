@@ -1,0 +1,72 @@
+from fastapi import HTTPException
+
+from app.api import chat2api
+from tests.conftest import login
+
+
+class FakeResponse:
+    def __init__(self, text='', data=None):
+        self.text = text
+        self._data = data or {}
+
+    def json(self):
+        return self._data
+
+
+def test_chat2api_settings_are_admin_only(client, monkeypatch):
+    monkeypatch.setenv('PLUS_CHAT2API_PREFIX', 'c2a_test')
+    assert client.get('/api/chat2api').status_code == 401
+    assert client.get('/api/chat2api', headers=login(client, 'editor@plus.test')).status_code == 403
+    response = client.post('/api/chat2api/tokens', json={'text': 'eyJx'},
+                           headers=login(client, 'viewer@plus.test'))
+    assert response.status_code == 403
+
+
+def test_unconfigured_node_reports_itself(client, monkeypatch):
+    monkeypatch.delenv('PLUS_CHAT2API_PREFIX', raising=False)
+    headers = login(client, 'admin@plus.test')
+    assert client.get('/api/chat2api', headers=headers).json() == {
+        'configured': False, 'online': False, 'tokens_count': None}
+    assert client.post('/api/chat2api/tokens', json={'text': 'eyJx'}, headers=headers).status_code == 503
+
+
+def test_status_reads_available_token_count(client, monkeypatch):
+    monkeypatch.setenv('PLUS_CHAT2API_PREFIX', 'c2a_test')
+    def fake(method, path, **kwargs):
+        assert method == 'GET' and path == '/tokens'
+        return FakeResponse(text='当前可用 Tokens 数量：<span class="text-blue-600">3</span>')
+    monkeypatch.setattr(chat2api, 'request', fake)
+    assert client.get('/api/chat2api', headers=login(client, 'admin@plus.test')).json() == {
+        'configured': True, 'online': True, 'tokens_count': 3}
+
+
+def test_upload_clear_and_error_tokens(client, monkeypatch):
+    monkeypatch.setenv('PLUS_CHAT2API_PREFIX', 'c2a_test')
+    calls = []
+    def fake(method, path, **kwargs):
+        calls.append((method, path, kwargs))
+        if path == '/tokens/upload':
+            return FakeResponse(data={'status': 'success', 'tokens_count': 2})
+        if path == '/tokens/clear':
+            return FakeResponse(data={'status': 'success', 'tokens_count': 0})
+        if path == '/tokens/error':
+            return FakeResponse(data={'status': 'success', 'error_tokens': ['bad']})
+        raise AssertionError(path)
+    monkeypatch.setattr(chat2api, 'request', fake)
+    headers = login(client, 'admin@plus.test')
+    assert client.post('/api/chat2api/tokens', json={'text': 'eyJx\nv1.M'},
+                       headers=headers).json() == {'tokens_count': 2}
+    assert calls[0][2] == {'data': {'text': 'eyJx\nv1.M'}}
+    assert client.post('/api/chat2api/clear', headers=headers).json() == {'tokens_count': 0}
+    assert client.get('/api/chat2api/errors', headers=headers).json() == {'error_tokens': ['bad']}
+
+
+def test_offline_node_never_reports_success(client, monkeypatch):
+    monkeypatch.setenv('PLUS_CHAT2API_PREFIX', 'c2a_test')
+    def fake(*args, **kwargs):
+        raise HTTPException(502, 'chat2api 节点暂不可用')
+    monkeypatch.setattr(chat2api, 'request', fake)
+    headers = login(client, 'admin@plus.test')
+    assert client.get('/api/chat2api', headers=headers).json() == {
+        'configured': True, 'online': False, 'tokens_count': None}
+    assert client.post('/api/chat2api/tokens', json={'text': 'x'}, headers=headers).status_code == 502

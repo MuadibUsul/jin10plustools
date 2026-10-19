@@ -6,16 +6,19 @@
 <div class="settings-layout" id="settings-layout" hidden>
 <aside class="settings-nav" aria-label="设置分区">
 <a href="#team" data-panel="team" class="active">团队设置</a>
+<a href="#notes" data-panel="notes">栏目默认注释</a>
+<a href="#ai" data-panel="ai">AI接口设置</a>
+<a href="#live" data-panel="live">小电视直播</a>
 <a href="#database" data-panel="database" id="nav-database" hidden>数据库</a>
 <a href="#feedback" data-panel="feedback">反馈</a>
 <a href="#chat2api" data-panel="chat2api" id="nav-chat2api" hidden>chat2api</a>
 </aside>
 <div class="settings-panels">
 <form id="settings-form">
-<section class="settings-section"><h2>栏目默认注释</h2><p class="muted">应用于后续新稿，已保存稿件保留各自的注释版本。本期稿件仍可在稿件编辑区单独修改。</p><div id="note-fields"></div><details><summary>默认注释修改记录</summary><div id="note-history"></div></details></section>
-<section class="settings-section"><h2>自动任务</h2><label class="check-row"><input id="schedule-enabled" type="checkbox"> 启用固定快讯自动生产</label><p class="muted">工作日 08:00—10:00（北京时间），到点停止自动重试。手动生成不限时。</p><p class="admin-hint muted"></p></section>
-<section class="settings-section"><h2>AI 接入</h2><p class="muted">Key 加密保存，仅管理员可以修改。留空保留现有 Key；保存配置不会自动补跑历史稿件。</p><label class="field">固定快讯 AI 引擎<select id="ai-provider"><option value="deepseek">DeepSeek</option><option value="chat2api">chat2api（ChatGPT 网页版）</option></select></label><p class="muted">选择后，后续固定快讯任务使用该引擎生成 AI 候选；未配置、停用或调用失败时保留规则稿，不影响出稿。</p><div id="ai-fields" class="ai-settings-grid"></div><p class="admin-hint muted"></p></section>
-<section class="settings-section"><h2>直播</h2><p class="muted">北京时间 8:00—23:00 开放；始终只播放一路，快讯生成时自动停止。</p><label class="field">额外直播链接<input id="live-url" type="url" maxlength="2048" placeholder="https://…"></label><p class="muted">支持 YouTube 直播分享链接、允许嵌入的 HTTPS 播放器或公开 HLS 地址。请勿填写官网首页或多播放器目录。</p><details><summary>直播目录与地址维护</summary><p class="muted">留空使用内置地址；填写后使用本团队的地址。</p><div id="live-channel-fields"></div></details></section>
+<section id="notes-panel" class="settings-section" hidden><h2>栏目默认注释</h2><p class="muted">应用于后续新稿，已保存稿件保留各自的注释版本。本期稿件仍可在稿件编辑区单独修改。</p><div id="note-fields"></div><details><summary>默认注释修改记录</summary><div id="note-history"></div></details></section>
+<section id="team-panel" class="settings-section"><h2>自动任务</h2><label class="check-row"><input id="schedule-enabled" type="checkbox"> 启用固定快讯自动生产</label><p class="muted">工作日 08:00—10:00（北京时间），到点停止自动重试。手动生成不限时。</p><p class="admin-hint muted"></p></section>
+<section id="ai-panel" class="settings-section" hidden><h2>AI接口设置</h2><p class="muted">Key 加密保存，仅管理员可以修改。留空保留现有 Key；保存配置不会自动补跑历史稿件。</p><label class="field">固定快讯 AI 引擎<select id="ai-provider"><option value="deepseek">DeepSeek</option><option value="chat2api">chat2api（ChatGPT 网页版）</option></select></label><p class="muted">选择后，后续固定快讯任务使用该引擎生成 AI 候选；未配置、停用或调用失败时保留规则稿，不影响出稿。</p><div id="ai-fields" class="ai-settings-grid"></div><p class="admin-hint muted"></p></section>
+<section id="live-panel" class="settings-section" hidden><h2>小电视直播</h2><p class="muted">北京时间 8:00—23:00 开放；始终只播放一路，快讯生成时自动停止。</p><label class="field">额外直播链接<input id="live-url" type="url" maxlength="2048" placeholder="https://…"></label><p class="muted">支持 YouTube 直播分享链接、允许嵌入的 HTTPS 播放器或公开 HLS 地址。请勿填写官网首页或多播放器目录。</p><details><summary>直播目录与地址维护</summary><p class="muted">留空使用内置地址；填写后使用本团队的地址。</p><div id="live-channel-fields"></div></details></section>
 <div class="settings-actions"><button id="save-settings" class="primary" type="submit">保存设置</button><span class="muted">修改仅作用于本团队</span></div>
 </form>
 <section id="database-panel" class="settings-section database-panel" hidden aria-labelledby="database-title">

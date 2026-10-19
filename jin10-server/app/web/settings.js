@@ -62,18 +62,23 @@ async function load() {
   dirty = false;
 }
 // —— 设置分区导航 ——
-const panels = { team: '#settings-form', database: '#database-panel', feedback: '#feedback-panel', chat2api: '#chat2api-panel' };
+const sections = { team: '#team-panel', notes: '#notes-panel', ai: '#ai-panel', live: '#live-panel' };
+const standalone = { database: '#database-panel', feedback: '#feedback-panel', chat2api: '#chat2api-panel' };
 let panel = 'team', exportData = null, exportPreset = '3m', currentUser = null;
 
 function initialPanel() {
-  if (location.hash === '#feedback') return 'feedback';
-  if (location.hash === '#chat2api') return 'chat2api';
-  return location.hash === '#database' ? 'database' : 'team';
+  for (const name of ['feedback', 'chat2api', 'database', 'notes', 'ai', 'live']) {
+    if (location.hash === `#${name}`) return name;
+  }
+  return 'team';
 }
 function showPanel(name) {
   if (name === 'chat2api' && !data?.can_admin) name = 'team';
+  if (!(name in sections) && !(name in standalone)) name = 'team';
   panel = name;
-  for (const [key, selector] of Object.entries(panels)) $(selector).hidden = key !== name;
+  $('#settings-form').hidden = !(name in sections);
+  for (const [key, selector] of Object.entries(sections)) $(selector).hidden = key !== name;
+  for (const [key, selector] of Object.entries(standalone)) $(selector).hidden = key !== name;
   for (const link of document.querySelectorAll('.settings-nav a')) {
     const active = link.dataset.panel === name;
     link.classList.toggle('active', active);

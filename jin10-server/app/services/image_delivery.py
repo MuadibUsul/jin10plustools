@@ -1,4 +1,5 @@
 """Shared final-image contract for briefs and future fresh/annotation renderers."""
+import functools
 import hashlib
 import io
 from datetime import date
@@ -19,6 +20,25 @@ SYSTEM_CJK = (
 )
 MAX_BYTES = 266_000  # Also satisfies a 266 KiB limit.
 POLICY_VERSION = '4'
+
+
+@functools.lru_cache(maxsize=1)
+def delivery_signature():
+    """Content hash of the delivery composition and its fonts.
+
+    Download caches key on this signature, so a changed notes band, encoder or font
+    can never serve an image composed by older code. Policy bumps stay optional.
+    """
+    digest = hashlib.sha256(POLICY_VERSION.encode())
+    files = [Path(__file__), FONT, GLYPH_FALLBACK]
+    for path in files:
+        digest.update(path.name.encode())
+        digest.update(path.read_bytes())
+    for path in SYSTEM_CJK:
+        if path.is_file():
+            stat = path.stat()
+            digest.update(f'{path}:{stat.st_size}:{stat.st_mtime_ns}'.encode())
+    return digest.hexdigest()[:16]
 
 
 def glyph_coverage(path):

@@ -3,7 +3,7 @@ from pathlib import Path
 from unittest.mock import patch
 import pytest
 
-from app.briefs.runner import generate
+from app.briefs.runner import generate, pipeline_signature
 from app.briefs.sources import save,normalize_volume
 from app.briefs.delivery import complete_body,FIXED_NOTES,OIL_CLOSING
 from app.briefs.policy import production_window,CHINA
@@ -66,7 +66,8 @@ def test_cached_valuation_copy_uses_a_share_label(tmp_path):
     save(tmp_path/'cache/valuation/2026-10-14.json',{
         'title':'估值','dynamic_body':body,'data_date':'2026-10-14',
         'images':['chart.png'],'image_sha256':{'chart.png':hashlib.sha256(b'chart').hexdigest()},
-        'artifact_dir':'runs/original','deepseek':{'status':'ok','body':body}})
+        'artifact_dir':'runs/original','deepseek':{'status':'ok','body':body},
+        'pipeline':pipeline_signature()})
     with patch.dict('app.briefs.runner.ADAPTERS',{'valuation':lambda *a,**k:pytest.fail('unexpected fetch')}):
         result=generate('valuation','2026-10-14',tmp_path,'updated')
     assert result['dynamic_body']=='巴菲特指数（A股总市值/上年度全年GDP）为87.21%。'

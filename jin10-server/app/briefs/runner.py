@@ -6,10 +6,71 @@ import shutil
 import subprocess
 import sys
 from datetime import date
+from functools import lru_cache
 from pathlib import Path
 
 from .sources import ADAPTERS, read, save
 from .progress import record
+
+HERE = Path(__file__).parent
+
+# Categories whose snapshot rebuild reproduces the full product (body plus chart).
+SNAPSHOT_REBUILDS = {'volume', 'liquidity', 'us_barometer', 'us_structure'}
+
+
+@lru_cache(maxsize=1)
+def pipeline_signature():
+    """Content hash of every rule, chart and asset that shapes a brief.
+
+    A cached payload is reused only when its stored signature matches this one, so
+    changing any render or copy rule can never leak an old body or old chart into a
+    new issue. Nothing needs to be bumped by hand.
+    """
+    digest = hashlib.sha256()
+    for path in sorted(HERE.rglob('*')):
+        if (not path.is_file() or '__pycache__' in path.parts or path.suffix == '.pyc'
+                or path.relative_to(HERE).parts[:1] == ('samples',)):
+            continue
+        digest.update(path.relative_to(HERE).as_posix().encode())
+        digest.update(path.read_bytes())
+    return digest.hexdigest()[:16]
+
+
+def rerender(category,previous,source,out,day):
+    """Rebuild images and rule copy from an already captured snapshot; never fetches."""
+    record(out,3,'正在使用原始快照重绘图片，不请求外部数据')
+    if category=='volume':
+        from .sources import render_volume
+        payload=render_volume(read(source/'plot-data.json'),out)
+        shutil.copy2(source/'plot-data.json',out/'plot-data.json')
+    elif category=='liquidity':
+        from .sources import render_liquidity
+        payload=render_liquidity(read(source/'liquidity-snapshot.json'),out)
+        shutil.copy2(source/'liquidity-snapshot.json',out/'liquidity-snapshot.json')
+    elif category=='turnover':
+        end=date.fromisoformat(day)
+        try:start=end.replace(year=end.year-10)
+        except ValueError:start=end.replace(year=end.year-10,day=28)
+        command=[sys.executable,str(Path(__file__).parent/'engines/turnover/build_turnover.py'),
+                 '--data',str(out/'source.json'),'--out-dir',str(out),'--start',start.isoformat(),'--as-of',day]
+        done=subprocess.run(command,capture_output=True,text=True,encoding='utf-8',timeout=90)
+        if done.returncode:raise ValueError('快照重绘失败，未请求外部数据')
+        payload=dict(previous);payload['images']=[next(out.glob('换手率*.png')).name]
+        payload['turnover_watermark_removed']=True
+    elif category=='valuation':
+        from .charts import valuation_chart
+        valuation_chart(read(out/'buffett-plot-data.json'),read(out/'erp-plot-data.json'),out)
+        payload=dict(previous);payload['images']=['股债性价比.png'];payload['unified_valuation']=True
+    elif category=='us_barometer':
+        from .engines.us_barometer.run import render
+        payload=render(read(out/'us-snapshot.json'),out)
+    elif category=='us_structure':
+        from .engines.us_structure.run import render
+        payload=render(read(out/'us-structure-snapshot.json'),out)
+    else:
+        payload=dict(previous)
+        for name in payload['images']:shutil.copy2(source/name,out/name)
+    return payload
 
 
 def explain_result(out, category, payload):
@@ -43,52 +104,39 @@ def generate(category,day,root,run_id,action='produce'):
             if (source/name).is_file():shutil.copy2(source/name,out/name)
         if action in ('produce','ai'):
             payload=dict(previous)
-            import os
-            configured=bool(os.getenv('DEEPSEEK_API_KEY') and os.getenv('DEEPSEEK_MODEL'))
-            ai=previous.get('deepseek',{})
-            if action=='produce' and (not configured or (ai.get('status')=='ok' and ai.get('model')==os.getenv('DEEPSEEK_MODEL'))):
-                record(out,4,'同日期快照校验通过，复用已保存的稿件与图片')
-                explain_result(out,category,payload)
-                return payload
-            record(out,4,'复用已校验数据和图片，补做AI文案处理')
-            for name in payload['images']:shutil.copy2(source/name,out/name)
-        else:
-            record(out,3,'正在使用原始快照重绘图片，不请求外部数据')
-            # All render operations read an already captured source, never fetch.
-            if category=='volume':
-                from .sources import render_volume
-                payload=render_volume(read(source/'plot-data.json'),out)
-                shutil.copy2(source/'plot-data.json',out/'plot-data.json')
-            elif category=='liquidity':
-                from .sources import render_liquidity
-                payload=render_liquidity(read(source/'liquidity-snapshot.json'),out)
-                shutil.copy2(source/'liquidity-snapshot.json',out/'liquidity-snapshot.json')
-            elif category=='turnover':
-                end=date.fromisoformat(day)
-                try:start=end.replace(year=end.year-10)
-                except ValueError:start=end.replace(year=end.year-10,day=28)
-                command=[sys.executable,str(Path(__file__).parent/'engines/turnover/build_turnover.py'),
-                         '--data',str(out/'source.json'),'--out-dir',str(out),'--start',start.isoformat(),'--as-of',day]
-                done=subprocess.run(command,capture_output=True,text=True,encoding='utf-8',timeout=90)
-                if done.returncode:raise ValueError('快照重绘失败，未请求外部数据')
-                payload=dict(previous);payload['images']=[next(out.glob('换手率*.png')).name]
-                payload['turnover_watermark_removed']=True
-            elif category=='valuation':
-                from .charts import valuation_chart
-                valuation_chart(read(out/'buffett-plot-data.json'),read(out/'erp-plot-data.json'),out)
-                payload=dict(previous);payload['images']=['股债性价比.png'];payload['unified_valuation']=True
-            elif category=='us_barometer':
-                from .engines.us_barometer.run import render
-                payload=render(read(out/'us-snapshot.json'),out)
-            elif category=='us_structure':
-                from .engines.us_structure.run import render
-                payload=render(read(out/'us-structure-snapshot.json'),out)
+            signature=pipeline_signature()
+            if previous.get('pipeline')!=signature:
+                record(out,4,'渲染或文案规则已更新，正在用已保存快照重建稿件')
+                if category in SNAPSHOT_REBUILDS:
+                    payload=rerender(category,previous,source,out,day)
+                else:
+                    # These adapters build their copy while reading sources, so only a
+                    # fresh run reflects the new rules. The request still uses the same
+                    # data date and never silently keeps the older body.
+                    record(out,3,'栏目文案需按新规则重建，正在重新读取来源')
+                    payload=ADAPTERS[category](day,out,state,refresh=action=='refresh')
+                payload['deepseek']=previous.get('deepseek',{'status':'not_configured'})
             else:
-                payload=dict(previous)
+                import os
+                configured=bool(os.getenv('DEEPSEEK_API_KEY') and os.getenv('DEEPSEEK_MODEL'))
+                ai=previous.get('deepseek',{})
+                if action=='produce' and (not configured or (ai.get('status')=='ok' and ai.get('model')==os.getenv('DEEPSEEK_MODEL'))):
+                    record(out,4,'同日期快照校验通过，复用已保存的稿件与图片')
+                    explain_result(out,category,payload)
+                    return payload
+                record(out,4,'复用已校验数据和图片，补做AI文案处理')
                 for name in payload['images']:shutil.copy2(source/name,out/name)
+        else:
+            payload=rerender(category,previous,source,out,day)
     else:
         record(out,2,f'正在获取并校验 {day} 的来源数据')
         payload=ADAPTERS[category](day,out,state,refresh=action=='refresh')
+    if action=='render' and category not in SNAPSHOT_REBUILDS and previous:
+        # These render branches redraw the chart but keep the stored copy; do not
+        # claim it was rebuilt by the current rules, or a later produce would reuse it.
+        payload['pipeline']=previous.get('pipeline','')
+    else:
+        payload['pipeline']=pipeline_signature()
     record(out,4,'来源日期、标题、正文及图片已完成基础校验')
     explain_result(out,category,payload)
     if payload['data_date']!=day:raise ValueError('来源数据日与目标日期不符')

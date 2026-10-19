@@ -149,12 +149,12 @@ def artifact_path(issue,version,name):
 
 
 def delivered_image(issue,version,name):
-    from app.services.image_delivery import POLICY_VERSION, WATERMARK, MAX_BYTES, store_image
+    from app.services.image_delivery import delivery_signature, WATERMARK, MAX_BYTES, store_image
     source=artifact_path(issue,version,name)
     notes=version.payload.get('fixed_notes',default_notes(issue.category)) if issue.category in ('valuation','turnover','us_barometer') else ''
     # Earlier us-barometer editions kept two images; notes belong only on the merged chart.
     if issue.category=='us_barometer' and name!='美股晴雨表.png':notes=''
-    policy=POLICY_VERSION + ('-turnover-notes-1' if issue.category=='turnover' else '-us-barometer-merged-1' if issue.category=='us_barometer' else '')
+    policy=delivery_signature() + ('-turnover-notes-1' if issue.category=='turnover' else '-us-barometer-merged-1' if issue.category=='us_barometer' else '')
     key=hashlib.sha256(json.dumps([version.payload['image_sha256'][name],notes,issue.category,
         version.payload.get('unified_valuation',False),
         policy,hashlib.sha256(WATERMARK.read_bytes()).hexdigest()],ensure_ascii=False).encode()).hexdigest()

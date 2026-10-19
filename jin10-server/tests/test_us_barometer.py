@@ -1,4 +1,6 @@
+import hashlib
 import io
+import json
 from datetime import date, timedelta
 from decimal import Decimal
 
@@ -89,6 +91,42 @@ def test_render_builds_payload_and_snapshot_rerenders(tmp_path, monkeypatch):
     assert body == first['dynamic_body'] and FIXED_NOTES['us_barometer'] not in body
     again = run.render(snapshot, tmp_path)
     assert again['title'] == first['title'] and again['images'] == first['images']
+
+
+def test_stale_cached_product_is_rebuilt_from_its_snapshot(tmp_path):
+    """A cache produced by older chart/copy rules must never be served unchanged."""
+    from app.briefs import runner
+    day, wilshire, gdp, erp = fixtures()
+    snapshot = {'target': day.isoformat(), 'wilshire': run.window(wilshire, day.isoformat()),
+                'gdp': gdp, 'erp': run.window(erp, day.isoformat()), 'sources': dict(run.SOURCES)}
+    artifact = tmp_path / 'runs' / 'old'
+    artifact.mkdir(parents=True)
+    (artifact / 'us-snapshot.json').write_text(json.dumps(snapshot, ensure_ascii=False), encoding='utf-8')
+    old_images = ['美股巴菲特指数.png', '美股股权风险溢价.png']
+    hashes = {}
+    for name in old_images:
+        (artifact / name).write_bytes(b'old chart')
+        hashes[name] = hashlib.sha256(b'old chart').hexdigest()
+    cache = tmp_path / 'cache' / 'us_barometer' / '2026-10-14.json'
+    cache.parent.mkdir(parents=True)
+    cache.write_text(json.dumps({
+        'title': '【美股晴雨表】美股10月14日投资性价比：较低',
+        'dynamic_body': '1、巴菲特指数：235.18%，处于严重高估水平（图）。\n2、股权风险溢价（图）。',
+        'images': old_images, 'data_date': day.isoformat(), 'artifact_dir': 'runs/old',
+        'image_sha256': hashes, 'deepseek': {'status': 'not_configured'},
+        'facts': {}, 'warnings': [],
+    }, ensure_ascii=False), encoding='utf-8')
+
+    payload = runner.generate('us_barometer', day.isoformat(), tmp_path, 'new-run')
+
+    assert payload['images'] == ['美股晴雨表.png']
+    assert '（图）' not in payload['dynamic_body']
+    assert payload['pipeline'] == runner.pipeline_signature()
+    assert (tmp_path / payload['artifact_dir'] / '美股晴雨表.png').is_file()
+    # Same pipeline again: the freshly produced product is reused as-is.
+    again = runner.generate('us_barometer', day.isoformat(), tmp_path, 'second-run')
+    assert again['artifact_dir'] == payload['artifact_dir']
+    assert again['images'] == payload['images']
 
 
 def test_notes_render_on_the_image_and_leave_the_body(client, db_factory, seed):

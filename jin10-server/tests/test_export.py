@@ -43,10 +43,11 @@ def rows(db_factory, seed):
         db.commit()
 
 
-def test_export_requires_admin(client):
-    for email in ('editor@plus.test', 'viewer@plus.test', 'out@plus.test'):
-        assert client.get('/api/export/datasets', headers=login(client, email)).status_code == 403
-    data = client.get('/api/export/datasets', headers=login(client, 'admin@plus.test')).json()
+def test_export_is_open_to_every_signed_in_member(client, rows):
+    assert client.get('/api/export/datasets').status_code == 401
+    for email in ('admin@plus.test', 'editor@plus.test', 'viewer@plus.test'):
+        assert client.get('/api/export/datasets', headers=login(client, email)).status_code == 200
+    data = client.get('/api/export/datasets', headers=login(client, 'viewer@plus.test')).json()
     assert data['max_rows'] == data_export.MAX_ROWS
     keys = [item['key'] for item in data['datasets']]
     assert keys[:2] == ['materials', 'assets'] and 'brief_versions' in keys and len(keys) == 11
@@ -54,6 +55,18 @@ def test_export_requires_admin(client):
     labels = {item['key']: item for item in data['datasets']}
     assert labels['materials']['date_label'] == '采集时间'
     assert '标题' in labels['materials']['columns']
+    editor = login(client, 'editor@plus.test')
+    body = client.get('/api/export/materials', headers=editor,
+                      params={'start': '2026-10-16', 'end': '2026-10-16', 'format': 'json'}).json()
+    assert [item['title'] for item in body] == ['甲']
+    viewer = login(client, 'viewer@plus.test')
+    assert client.get('/api/export/materials/count', headers=viewer,
+                      params={'start': '2026-10-16', 'end': '2026-10-16'}).json()['count'] == 1
+    # A member of another team can export, but only sees that team's rows.
+    outsider = login(client, 'out@plus.test')
+    other = client.get('/api/export/materials', headers=outsider,
+                       params={'start': '2026-10-16', 'end': '2026-10-16', 'format': 'json'}).json()
+    assert [item['title'] for item in other] == ['外部']
 
 
 def test_csv_filters_by_beijing_day_and_team(client, rows):

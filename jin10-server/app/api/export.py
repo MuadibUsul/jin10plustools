@@ -1,4 +1,4 @@
-"""Admin-only export of stored team data by date range."""
+"""Export of stored team data by date range for every signed-in member."""
 from __future__ import annotations
 
 from datetime import date
@@ -7,7 +7,6 @@ from urllib.parse import quote
 
 from fastapi import APIRouter, HTTPException, Query, Response
 
-from app.db.models import Role
 from app.deps import CurrentUser, DbSession
 from app.services import data_export
 
@@ -18,11 +17,6 @@ MEDIA = {
     'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     'json': 'application/json; charset=utf-8',
 }
-
-
-def require_admin(user) -> None:
-    if user.role != Role.ADMIN:
-        raise HTTPException(403, '仅管理员可以导出数据')
 
 
 def dataset_or_404(key: str) -> data_export.Dataset:
@@ -39,7 +33,6 @@ def check_range(start: date | None, end: date | None) -> None:
 
 @router.get('/datasets')
 def datasets(user: CurrentUser):
-    require_admin(user)
     return {
         'max_rows': data_export.MAX_ROWS,
         'datasets': [{
@@ -52,7 +45,6 @@ def datasets(user: CurrentUser):
 @router.get('/{key}/count')
 def count(key: str, db: DbSession, user: CurrentUser,
           start: date | None = None, end: date | None = None):
-    require_admin(user)
     dataset = dataset_or_404(key)
     check_range(start, end)
     return {'count': dataset.count(db, user.team_id, start, end), 'max_rows': data_export.MAX_ROWS}
@@ -62,7 +54,6 @@ def count(key: str, db: DbSession, user: CurrentUser,
 def export(key: str, db: DbSession, user: CurrentUser,
            start: date | None = None, end: date | None = None,
            fmt: Annotated[str, Query(alias='format')] = 'csv'):
-    require_admin(user)
     dataset = dataset_or_404(key)
     check_range(start, end)
     if fmt not in MEDIA:

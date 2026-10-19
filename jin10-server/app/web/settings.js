@@ -54,7 +54,7 @@ async function load() {
   for (const hint of document.querySelectorAll('.admin-hint')) hint.textContent = data.can_admin ? '' : '仅管理员可修改此项。';
   $('#save-settings').hidden = !data.can_edit;
   $('#settings-layout').hidden = false;
-  $('#nav-database').hidden = !data.can_admin;
+  $('#nav-database').hidden = false;
   showPanel(initialPanel());
   dirty = false;
 }
@@ -64,10 +64,9 @@ let panel = 'team', exportData = null, exportPreset = '3m', currentUser = null;
 
 function initialPanel() {
   if (location.hash === '#feedback') return 'feedback';
-  return data?.can_admin && location.hash === '#database' ? 'database' : 'team';
+  return location.hash === '#database' ? 'database' : 'team';
 }
 function showPanel(name) {
-  if (name === 'database' && !data?.can_admin) name = 'team';
   panel = name;
   for (const [key, selector] of Object.entries(panels)) $(selector).hidden = key !== name;
   for (const link of document.querySelectorAll('.settings-nav a')) {

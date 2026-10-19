@@ -23,7 +23,10 @@ def complete_body(category,body):
         body=re.split(r'\n\s*-{3,}\s*\n(?=\s*注：)',body,maxsplit=1)[0].strip()
         if note in body:body=body.replace(note,'').rstrip().rstrip('-').rstrip()
         return body+'\n\n--------\n\n'+note
-    if category=='oil_etf' and OIL_CLOSING not in body:return body+'\n\n'+OIL_CLOSING
+    if category=='oil_etf':
+        # The closing line continues the dynamic sentence instead of starting a new paragraph.
+        body=body.replace(OIL_CLOSING,'').rstrip()
+        return body+OIL_CLOSING if body else OIL_CLOSING
     return body
 
 

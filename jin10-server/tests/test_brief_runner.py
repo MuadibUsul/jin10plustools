@@ -43,6 +43,9 @@ def test_fixed_explanations_are_identical_and_not_duplicated():
         assert body=='当日事实。' if category in ('valuation','turnover','us_barometer') else body.endswith(note)
         assert complete_body(category,body)==body
     assert complete_body('oil_etf',complete_body('oil_etf','期货事实。')).count(OIL_CLOSING)==1
+    # The oil closing note continues the last sentence and never starts its own line.
+    assert complete_body('oil_etf','期货事实。')=='期货事实。'+OIL_CLOSING
+    assert complete_body('oil_etf','期货事实。\n\n'+OIL_CLOSING)=='期货事实。'+OIL_CLOSING
 
 
 def test_incomplete_volume_is_not_a_current_day_observation():

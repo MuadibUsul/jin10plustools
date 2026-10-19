@@ -30,7 +30,11 @@ def complete_body(category,body,notes=None):
     note=default_notes(category) if notes is None else notes
     if category in ('valuation','turnover','us_barometer'):
         return re.split(r'\n\s*-{3,}\s*\n(?=\s*注：)',body,maxsplit=1)[0].replace(default_notes(category),'').strip()
-    if category=='oil_etf':return body+'\n\n'+note if note and note not in body else body
+    if category=='oil_etf':
+        # The closing line continues the dynamic sentence instead of starting a new paragraph.
+        if not note:return body
+        body=body.replace(note,'').rstrip()
+        return body+note if body else note
     if note:
         # Replace any earlier edition of a fixed explanatory block, not daily facts.
         body=re.split(r'\n\s*-{3,}\s*\n(?=\s*注：)',body,maxsplit=1)[0].strip()

@@ -31,6 +31,22 @@ def build_copy(snapshot):
             'approved_titles':titles,'approved_bodies':bodies,'policy_comparison_included':False}
 
 
+def parse_answer(content):
+    """Accept plain JSON, fenced JSON, or chat2api's <escape> wrapper."""
+    text=content.strip()
+    if text.startswith('<escape>') and text.endswith('</escape>'):
+        text=text[len('<escape>'):-len('</escape>')].strip()
+    if text.startswith('```'):
+        text=text.split('\n',1)[1] if '\n' in text else text
+        if text.rstrip().endswith('```'):text=text.rstrip()[:-3]
+        text=text.strip()
+        if text.startswith('json'):text=text[4:].strip()
+    if not text.startswith('{'):
+        start,end=text.find('{'),text.rfind('}')
+        if start>=0 and end>start:text=text[start:end+1]
+    return json.loads(text)
+
+
 def generate_deepseek(rule):
     provider=os.getenv('AI_PROVIDER','deepseek')
     key=os.getenv('AI_API_KEY') or os.getenv('DEEPSEEK_API_KEY','')
@@ -54,7 +70,7 @@ def generate_deepseek(rule):
         diagnostics['usage']={k:v for k,v in (data.get('usage') or {}).items() if k in ('prompt_tokens','completion_tokens','total_tokens') and isinstance(v,int)}
         if choice.get('finish_reason')!='stop':return failed('invalid_response','output_truncated' if choice.get('finish_reason')=='length' else 'incomplete_completion')
         if not choice.get('message',{}).get('content'):return failed('invalid_response','empty_content')
-        answer=json.loads(choice['message']['content'])
+        answer=parse_answer(choice['message']['content'])
         if (set(answer)!={'title','body'} or answer['title'] not in rule['approved_titles'] or
                 answer['body'] not in rule['approved_bodies']):return failed('validation_failed','unapproved_wording')
         return {'status':'ok',**answer,**diagnostics}

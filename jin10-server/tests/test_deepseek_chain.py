@@ -36,6 +36,11 @@ def test_deepseek_request_and_diagnostics(monkeypatch):
         assert 'test-secret-key' not in json.dumps(failed)
 
 
+def test_parse_answer_accepts_fenced_json():
+    from app.briefs.engines.liquidity.copy_tracks import parse_answer
+    assert parse_answer('```json\n{"title":"标题","body":"正文"}\n```') == {'title': '标题', 'body': '正文'}
+
+
 def test_chat2api_provider_uses_openai_compatible_payload(monkeypatch):
     monkeypatch.setenv('AI_PROVIDER','chat2api')
     monkeypatch.setenv('AI_API_KEY','sk-c2a-test')
@@ -47,7 +52,8 @@ def test_chat2api_provider_uses_openai_compatible_payload(monkeypatch):
         def __enter__(self):return self
         def __exit__(self,*args):pass
         def read(self,size):
-            return json.dumps({'choices':[{'finish_reason':'stop','message':{'content':json.dumps({'title':'标题','body':'正文'})}}]}).encode()
+            inner=json.dumps({'title':'标题','body':'正文'},ensure_ascii=False)
+            return json.dumps({'choices':[{'finish_reason':'stop','message':{'content':'<escape>'+inner+'</escape>'}}]}).encode()
     def open_request(request,timeout):
         seen.append(request);return Reply()
     with patch('app.briefs.engines.liquidity.copy_tracks.urlopen',open_request):

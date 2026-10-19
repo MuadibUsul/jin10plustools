@@ -1,0 +1,6 @@
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
+USER root
+COPY jin10-server/app/briefs/engines/liquidity/copy_tracks.py /srv/app/briefs/engines/liquidity/copy_tracks.py
+RUN chmod a+r /srv/app/briefs/engines/liquidity/copy_tracks.py
+USER plus

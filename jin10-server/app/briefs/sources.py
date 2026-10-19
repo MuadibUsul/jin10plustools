@@ -12,6 +12,7 @@ from urllib.request import Request,urlopen
 
 from .policy import previous_weekday
 from . import central_bank
+from .progress import record
 
 HERE=Path(__file__).parent
 
@@ -52,6 +53,7 @@ def volume(day,out,state,refresh=False):
 
 
 def render_volume(rows,out):
+    record(out,3,'成交额数据校验通过，正在绘制历史走势')
     from .charts import volume_chart
     # Cached JSON encodes Decimal values as strings.
     for r in rows:
@@ -78,28 +80,32 @@ def url_source():return 'https://www.jin10.com/minipro/index.html#/pages_sub/huS
 
 
 def turnover(day,out,state,refresh=False):
+    record(out,2,'正在读取换手率原始数据并生成双面板走势')
     # Standalone subprocess keeps legacy chart imports isolated from other engines.
     engine=HERE/'engines/turnover'
     command=[sys.executable,str(engine/'run.py'),'--expected-date',day,'--data-dir',str(out/'turnover-state'),'--no-ai']
     result=subprocess.run(command,capture_output=True,text=True,encoding='utf-8',timeout=150)
     (out/'engine.log').write_text((result.stdout+'\n'+result.stderr)[-32000:],encoding='utf-8')
     if result.returncode:raise ValueError('换手率来源未更新、访问受限或制图失败；详情见任务原始日志')
+    record(out,3,'换手率曲线与日期校验完成，正在整理图文')
     manifest=next((out/'turnover-state/outputs').glob('*/manifest.json'));data=read(manifest)
     folder=manifest.parent;rule=read(folder/'rules.json');chart=folder/data['chart'];shutil.copy2(chart,out/chart.name)
     raw=read(folder/'source.json');save(out/'source.json',raw)
     return {'title':rule['title'],'dynamic_body':rule['body'],'images':[chart.name],'data_date':day,
-        'facts':read(folder/'facts.json'),'warnings':[]}
+        'facts':read(folder/'facts.json'),'warnings':[],'turnover_watermark_removed':True}
 
 
 def liquidity(day,out,state,refresh=False):
     from .engines.liquidity.fetch_data import fetch_snapshot
     snapshot=fetch_snapshot(out,day)
+    record(out,2,f"中国货币网行情已读取，源数据时间 {snapshot['quotes']['updated_at']}；正在核对央行公告")
     snapshot['central_bank']=central_bank.fetch(day,out)
     save(out/'liquidity-snapshot.json',snapshot)
     return render_liquidity(snapshot,out)
 
 
 def render_liquidity(snapshot,out):
+    record(out,3,'行情与历史序列已校验，正在绘制流动性图片')
     from .engines.liquidity.render import render_poster
     from .engines.liquidity.copy_tracks import build_copy
     png,svg,audit=render_poster(snapshot,out,logo_path=HERE/'engines/liquidity/assets/plus-original.png')
@@ -117,6 +123,7 @@ def render_liquidity(snapshot,out):
 
 
 def oil_etf(day,out,state,refresh=False):
+    record(out,2,'正在读取USO与BNO发行方持仓及前日持仓证据')
     from .engines.oil_etf.run import fetch
     from .engines.oil_etf.previous import PreviousSourceError,fetch as fetch_previous
     snapshot=fetch(out,day);save(out/'oil-source.json',snapshot)
@@ -129,12 +136,12 @@ def oil_etf(day,out,state,refresh=False):
         try:
             previous_source=fetch_previous(previous,state/'source-archive')
             save(out/'oil-previous-source.json',previous_source)
-            for ticker,record in previous_source['funds'].items():
+            for ticker,prior_record in previous_source['funds'].items():
                 if not prior.get(ticker,{}).get('futures_barrels'):
-                    prior[ticker]={'futures_barrels':record['futures_barrels'],
+                    prior[ticker]={'futures_barrels':prior_record['futures_barrels'],
                                    'method':'futures_contracts_1000',
-                                   'source_url':record['source_url'],
-                                   'source_sha256':record['raw_sha256']}
+                                   'source_url':prior_record['source_url'],
+                                   'source_sha256':prior_record['raw_sha256']}
             history[previous]=prior
         except PreviousSourceError as exc:
             warnings.append(f'{previous}公开持仓回溯未通过日期与数量校验：{exc}')
@@ -155,6 +162,7 @@ def oil_etf(day,out,state,refresh=False):
                       'method':'nearest_future_swap_notional_v1'})
         if delta is None:warnings.append(f"{fund['ticker']}缺少{previous}期货持仓快照，暂不判断单日增减")
     history[day]={f['ticker']:f for f in funds};save(history_path,history)
+    record(out,3,'持仓单位和前日变化已核对')
     def phrase(f):
         value=Decimal(f['barrels'])/10000
         label='名义敞口估算' if f['ticker']=='USO' else '期货持仓'
@@ -177,7 +185,8 @@ def valuation(day,out,state,refresh=False):
     erp_history=state/'erp-history.json';bond_history=state/'bond-history.json'
     if not erp_history.exists():shutil.copy2(HERE/'seed/erp-history.json',erp_history)
     if not bond_history.exists():shutil.copy2(HERE/'seed/bond-history.json',bond_history)
-    erp_out=out/'erp';result=run_erp(erp_history,erp_out,mode='free-official',expected_date=day,bond_history=bond_history,force_refresh=refresh)
+    erp_out=out/'erp';result=run_erp(erp_history,erp_out,mode='free-official',expected_date=day,bond_history=bond_history,force_refresh=refresh,
+                                  progress=lambda message:record(out,2,message))
     if not result.get('release_ready'):raise ValueError('ERP当前数据不足或制图失败')
     rows=read(erp_out/'数据快照.json');current,prior=rows[-1],rows[-2]
     # Preserve the full growing history; never restart daily updates from a fixed seed.
@@ -186,6 +195,7 @@ def valuation(day,out,state,refresh=False):
     updated_bond=erp_out/'raw/bond/official-rolling-normalized.json'
     if updated_bond.exists():shutil.copy2(updated_bond,bond_history)
     prior_day=previous_weekday(date.fromisoformat(day)).isoformat()
+    record(out,2,'ERP数据已核验，正在读取A股总市值及GDP分母')
     cap=fetch_all_a(day,prior_day,out/'all-a')
     originals=read(HERE/'seed/buffett-history.json')
     history_path=state/'buffett-history.json'
@@ -204,6 +214,7 @@ def valuation(day,out,state,refresh=False):
     visible=[r for r in history if r['date']<=day]
     save(out/'buffett-plot-data.json',visible);save(out/'erp-plot-data.json',rows)
     erp_image=Path(result['image_path']);shutil.copy2(erp_image,out/erp_image.name)
+    record(out,3,'估值输入数据已核验，正在按冻结模板绘制双面板')
     valuation_chart(visible,rows,out)
     ratio=Decimal(updated[day]['market_cap_yi'])/Decimal(gdp['value_yi'])*100
     erp=Decimal(current['erp_percent']);change=erp-Decimal(prior['erp_percent'])
@@ -218,4 +229,27 @@ def valuation(day,out,state,refresh=False):
                     'ERP采用免费市值加权PE候选源和中债国债收益率曲线，已记录与原模板的来源差异']}
 
 
-ADAPTERS={'volume':volume,'turnover':turnover,'valuation':valuation,'liquidity':liquidity,'oil_etf':oil_etf}
+def us_barometer(day,out,state,refresh=False):
+    """US barometer: Wilshire 5000 / quarterly GDP and StreetStats ERP."""
+    record(out,2,'正在获取美股总市值、季度GDP与股权风险溢价')
+    from .engines.us_barometer.run import SNAPSHOT,fetch,render
+    snapshot=fetch(day,out)
+    save(out/SNAPSHOT,snapshot)
+    payload=render(snapshot,out)
+    record(out,3,'三项指标与分级已核对，两张图表已生成')
+    return payload
+
+
+def us_structure(day,out,state,refresh=False):
+    """US market structure: index changes, equal-weight gap and Russell 2000."""
+    record(out,2,'正在获取美股指数与市场宽度数据')
+    from .engines.us_structure.run import SNAPSHOT,fetch,render
+    snapshot=fetch(day,out)
+    save(out/SNAPSHOT,snapshot)
+    payload=render(snapshot,out)
+    record(out,3,'市场结构与小盘股数据已核对，图表已生成')
+    return payload
+
+
+ADAPTERS={'volume':volume,'turnover':turnover,'valuation':valuation,'liquidity':liquidity,'oil_etf':oil_etf,
+          'us_barometer':us_barometer,'us_structure':us_structure}

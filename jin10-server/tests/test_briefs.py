@@ -1,9 +1,9 @@
-from datetime import date,datetime,timezone
+from datetime import date,datetime,time,timezone
 import hashlib
 from sqlalchemy import select
 import pytest
 
-from app.briefs.policy import CHINA,previous_weekday,expected_date,production_window,next_slot
+from app.briefs.policy import CATEGORIES,CHINA,first_run,previous_weekday,expected_date,production_window,next_slot
 from app.briefs.service import ensure_issue,append_version,root_for
 from app.briefs.worker import schedule,claim
 from app.briefs.central_bank import parse_article
@@ -93,14 +93,18 @@ def test_duplicate_job_clicks_share_one_active_job(client):
     assert client.get('/api/briefs/issues?date=2026-10-15',headers=headers).json()['items']
 
 
-def test_disabled_schedule_and_late_jobs(db_factory,seed):
+def test_disabled_schedule_and_late_jobs(db_factory,seed,monkeypatch):
     now=datetime(2026,10,15,8,10,tzinfo=CHINA)
+    # Queue timestamps come from this clock; freezing it keeps the later claim below
+    # deterministic instead of depending on when the suite runs.
+    monkeypatch.setattr('app.db.models.utcnow',lambda:now.astimezone(timezone.utc))
     assert schedule(db_factory,now)==0
     with db_factory() as db:
         db.add(BriefConfig(team_id=seed['editor'].team_id,enabled=True));db.commit()
     schedule(db_factory,now);schedule(db_factory,now)
-    with db_factory() as db:assert len(db.scalars(select(BriefJob)).all())==4
-    # Queue timestamps are real; use a later publication day to exercise the expired-window branch.
+    with db_factory() as db:assert len(db.scalars(select(BriefJob)).all())==sum(
+        1 for category in CATEGORIES if first_run(category)<=time(8,10))
+    # A later publication day exercises the expired-window branch.
     assert claim(db_factory,datetime(2026,10,16,10,0,tzinfo=CHINA)) is None
     with db_factory() as db:assert db.scalars(select(BriefJob).where(BriefJob.status=='skipped')).first().active_key is None
 
@@ -119,3 +123,15 @@ def test_daily_material_cleanup_does_not_touch_brief_files(db_factory,seed):
         purge(db,7,datetime(2027,1,1,tzinfo=timezone.utc))
         assert db.scalars(select(BriefVersion)).first() is not None
     assert (root_for(seed['editor'].team_id)/'runs/test/test.png').exists()
+
+
+def test_new_us_categories_accept_jobs(client):
+    headers=login(client,'editor@plus.test')
+    categories=[c['id'] for c in client.get('/api/briefs/categories',headers=headers).json()['categories']]
+    assert categories[-2:]==['us_barometer','us_structure']
+    for category in ('us_barometer','us_structure'):
+        response=client.post('/api/briefs/jobs',headers=headers,
+                             json={'category':category,'issue_date':'2026-10-16'})
+        assert response.status_code==202, response.text
+    assert client.post('/api/briefs/jobs',headers=headers,
+                       json={'category':'unknown','issue_date':'2026-10-16'}).status_code==422

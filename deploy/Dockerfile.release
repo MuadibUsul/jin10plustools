@@ -1,0 +1,12 @@
+# Reuse the validated runtime, replacing all prefixed preview application files.
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
+USER root
+RUN pip install --no-cache-dir 'cryptography>=44,<47'
+COPY jin10-server/pyproject.toml /srv/pyproject.toml
+COPY jin10-server/app /srv/app
+COPY jin10-server/alembic /srv/alembic
+COPY jin10-server/alembic.ini /srv/alembic.ini
+COPY jin10-server/templates /srv/templates
+RUN chmod -R a+rX /srv
+USER plus

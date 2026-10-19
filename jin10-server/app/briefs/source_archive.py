@@ -49,7 +49,7 @@ def archive_run(db, job, folder: Path, *, history_dir: Path | None = None,
     total = count = 0
     for prefix, root in roots:
         for path in sorted(root.rglob('*')):
-            if not path.is_file() or path.suffix.lower() not in DATA_EXTENSIONS:
+            if not path.is_file() or path.suffix.lower() not in DATA_EXTENSIONS or path.name == 'progress.json':
                 continue
             if path.is_symlink() or not path.resolve().is_relative_to(root):
                 raise ValueError('来源快照路径不安全')
@@ -90,18 +90,19 @@ def restore_pe_capture(db, job, folder: Path, expected_date: str) -> bool:
     snapshots = db.scalars(select(BriefSourceSnapshot).where(
         BriefSourceSnapshot.team_id == job.team_id,
         BriefSourceSnapshot.category == 'valuation',
-        BriefSourceSnapshot.data_date == date.fromisoformat(expected_date),
+        BriefSourceSnapshot.data_date <= date.fromisoformat(expected_date),
         BriefSourceSnapshot.relative_path.like('%raw/pe/%-normalized.json'),
-    ).order_by(BriefSourceSnapshot.captured_at.desc())).all()
+    ).order_by(BriefSourceSnapshot.data_date.desc(),BriefSourceSnapshot.captured_at.desc()).limit(64)).all()
+    restored = 0
     for snapshot in snapshots:
         if hashlib.sha256(snapshot.content).hexdigest() != snapshot.sha256:
             continue
         try:
             parsed = json.loads(snapshot.content)
             if (parsed.get('source') != 'snowball_fund_danjuan_public'
-                    or parsed.get('expected_date') != expected_date
+                    or parsed.get('expected_date', '9999') > expected_date
                     or {r['date'] for r in parsed['rows']} !=
-                       {expected_date, parsed['previous_date_rechecked']}):
+                       {parsed['expected_date'], parsed['previous_date_rechecked']}):
                 continue
             evidence = parsed['raw_evidence']
             if not evidence:
@@ -124,6 +125,8 @@ def restore_pe_capture(db, job, folder: Path, expected_date: str) -> bool:
             continue
         target = Path(folder) / 'erp' / 'raw' / 'pe'
         target.mkdir(parents=True, exist_ok=True)
+        if any((target/name).exists() and (target/name).read_bytes() != content for name,content in raws):
+            continue
         for name, content in raws:
             (target / name).write_bytes(content)
         for item in evidence:
@@ -132,5 +135,33 @@ def restore_pe_capture(db, job, folder: Path, expected_date: str) -> bool:
         parsed['database_source_job_id'] = str(snapshot.job_id)
         (target / Path(snapshot.relative_path).name).write_text(
             json.dumps(parsed, ensure_ascii=False, indent=2), encoding='utf-8')
-        return True
-    return False
+        restored += 1
+        if restored >= 8:
+            break
+    return bool(restored)
+
+
+def import_pe_capture(db, job, normalized_path):
+    """Import only verified PE evidence into an existing matching failed job."""
+    from app.briefs.engines.valuation.fetch_free_pe import verified_capture
+    normalized_path = Path(normalized_path)
+    capture = verified_capture(normalized_path)
+    if capture is None or job.category != 'valuation' or expected_date(job.category, job.issue_date).isoformat() != capture['expected_date']:
+        raise ValueError('PE快照未通过原始证据校验，或与目标任务的数据日期不匹配')
+    original = normalized_path.read_bytes()
+    prefix = 'recovered-pe/' + hashlib.sha256(original).hexdigest()[:16] + '/erp/raw/pe/'
+    files = [(normalized_path.name, original)] + [(Path(item['file']).name, Path(item['file']).read_bytes())
+                                                for item in capture['raw_evidence']]
+    for name, content in files:
+        path = prefix + name
+        prior = db.scalar(select(BriefSourceSnapshot).where(BriefSourceSnapshot.job_id == job.id,
+                          BriefSourceSnapshot.attempt == job.attempts, BriefSourceSnapshot.relative_path == path))
+        if prior is not None:
+            if prior.content != content:
+                raise ValueError('已导入的PE证据发生变化')
+            continue
+        db.add(BriefSourceSnapshot(team_id=job.team_id, job_id=job.id, attempt=job.attempts,
+            category='valuation', data_date=date.fromisoformat(capture['expected_date']), relative_path=path,
+            sha256=hashlib.sha256(content).hexdigest(), byte_count=len(content), content=content))
+    db.flush()
+    return len(files)

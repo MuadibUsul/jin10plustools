@@ -1,0 +1,17 @@
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
+USER root
+COPY jin10-server/app/api/briefs.py /srv/app/api/briefs.py
+COPY jin10-server/app/api/live.py /srv/app/api/live.py
+COPY jin10-server/app/assets/live-catalog.json /srv/app/assets/live-catalog.json
+COPY jin10-server/app/briefs/process_details.py /srv/app/briefs/process_details.py
+COPY jin10-server/app/briefs/runner.py /srv/app/briefs/runner.py
+COPY jin10-server/app/db/models.py /srv/app/db/models.py
+COPY jin10-server/app/services/live_catalog.py /srv/app/services/live_catalog.py
+COPY jin10-server/app/web/briefs.js /srv/app/web/briefs.js
+COPY jin10-server/app/web/computer-live.js /srv/app/web/computer-live.js
+COPY jin10-server/app/web/generation-process.css /srv/app/web/generation-process.css
+COPY jin10-server/app/web/generation-process.js /srv/app/web/generation-process.js
+COPY jin10-server/app/web/retro-terminal.css /srv/app/web/retro-terminal.css
+RUN chmod a+r /srv/app/api/briefs.py /srv/app/api/live.py /srv/app/assets/live-catalog.json /srv/app/briefs/process_details.py /srv/app/briefs/runner.py /srv/app/db/models.py /srv/app/services/live_catalog.py /srv/app/web/briefs.js /srv/app/web/computer-live.js /srv/app/web/generation-process.css /srv/app/web/generation-process.js /srv/app/web/retro-terminal.css
+USER plus

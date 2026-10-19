@@ -1,0 +1,9 @@
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
+USER root
+COPY jin10-server/app/services/live_catalog.py /srv/app/services/live_catalog.py
+COPY jin10-server/app/assets/live-catalog.json /srv/app/assets/live-catalog.json
+COPY jin10-server/app/web/computer-live.js /srv/app/web/computer-live.js
+COPY jin10-server/app/web/retro-terminal.css /srv/app/web/retro-terminal.css
+RUN chmod a+r /srv/app/services/live_catalog.py /srv/app/assets/live-catalog.json /srv/app/web/computer-live.js /srv/app/web/retro-terminal.css
+USER plus

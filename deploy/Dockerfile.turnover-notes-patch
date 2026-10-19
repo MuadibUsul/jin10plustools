@@ -1,0 +1,7 @@
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
+USER root
+COPY jin10-server/app/briefs/delivery.py /srv/app/briefs/delivery.py
+COPY jin10-server/app/briefs/service.py /srv/app/briefs/service.py
+RUN chmod a+r /srv/app/briefs/delivery.py /srv/app/briefs/service.py
+USER plus

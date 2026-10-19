@@ -34,20 +34,25 @@ def build_copy(snapshot):
 def generate_deepseek(rule):
     key=os.getenv('DEEPSEEK_API_KEY','');model=os.getenv('DEEPSEEK_MODEL','')
     if not key or not model:return {'status':'not_configured'}
-    payload={'model':model,'stream':False,'max_tokens':768,'response_format':{'type':'json_object'},
+    diagnostics={'model':model,'thinking':'disabled','max_tokens':4096}
+    def failed(status,reason,**extra):return {'status':status,'reason':reason,**diagnostics,**extra}
+    payload={'model':model,'stream':False,'max_tokens':4096,'thinking':{'type':'disabled'},'response_format':{'type':'json_object'},
              'messages':[{'role':'system','content':'只输出json格式title/body，必须原样选用用户提供的一条标题和一条正文，不得改动数字或增加政策判断。'},
                          {'role':'user','content':json.dumps({'titles':rule['approved_titles'],'bodies':rule['approved_bodies']},ensure_ascii=False)}]}
     try:
         request=Request('https://api.deepseek.com/chat/completions',data=json.dumps(payload).encode(),
                         headers={'Authorization':'Bearer '+key,'Content-Type':'application/json'},method='POST')
-        with urlopen(request,timeout=30) as response:raw=response.read(131073)
-        if len(raw)>131072:return {'status':'invalid_response'}
+        with urlopen(request,timeout=60) as response:raw=response.read(131073)
+        if len(raw)>131072:return failed('invalid_response','response_too_large')
         data=json.loads(raw);choice=data['choices'][0]
-        if choice.get('finish_reason')!='stop':return {'status':'invalid_response'}
+        diagnostics['finish_reason']=choice.get('finish_reason')
+        diagnostics['usage']={k:v for k,v in (data.get('usage') or {}).items() if k in ('prompt_tokens','completion_tokens','total_tokens') and isinstance(v,int)}
+        if choice.get('finish_reason')!='stop':return failed('invalid_response','output_truncated' if choice.get('finish_reason')=='length' else 'incomplete_completion')
+        if not choice.get('message',{}).get('content'):return failed('invalid_response','empty_content')
         answer=json.loads(choice['message']['content'])
         if (set(answer)!={'title','body'} or answer['title'] not in rule['approved_titles'] or
-                answer['body'] not in rule['approved_bodies']):return {'status':'validation_failed'}
-        return {'status':'ok',**answer}
-    except HTTPError as exc:return {'status':'api_error','http_status':exc.code}
-    except (TimeoutError,URLError,OSError):return {'status':'network_error'}
-    except (ValueError,KeyError,IndexError,TypeError):return {'status':'invalid_response'}
+                answer['body'] not in rule['approved_bodies']):return failed('validation_failed','unapproved_wording')
+        return {'status':'ok',**answer,**diagnostics}
+    except HTTPError as exc:return failed('api_error','provider_http_error',http_status=exc.code)
+    except (TimeoutError,URLError,OSError):return failed('network_error','request_failed')
+    except (ValueError,KeyError,IndexError,TypeError):return failed('invalid_response','invalid_json_or_schema')

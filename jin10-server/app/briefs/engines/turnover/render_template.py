@@ -37,6 +37,13 @@ def render_template(rows, output_dir):
     image = original.copy()
     edited = Image.new('1', original.size, 0)
     edited_draw = ImageDraw.Draw(edited)
+    # The supplied plate embeds branding across the lower plot/axis. Rebuild that
+    # area before drawing data and dates; final branding belongs to image_delivery.
+    ImageDraw.Draw(image).rectangle((765,1318,1067,1360),fill=BG)
+    image.paste(original.crop((1035,1290,1039,1310)),(1035,1318))
+    image.paste(original.crop((765,630,1037,633)),(765,1337))
+    image.paste(original.crop((1039,620,1090,646)),(1039,1327))
+    edited_draw.rectangle((765,1318,1089,1360),fill=1)
     x = np.arange(len(rows))
     closes = np.array([float(r['index_close']) for r in rows])
     if closes.max() > 6000 or closes.min() < 0:
@@ -94,18 +101,9 @@ def render_template(rows, output_dir):
                             'threshold':threshold,'threshold_fraction_from_bottom':expected,
                             'date_labels':labels,'extra_smoothing':False})
 
-    # The logo belongs to the supplied template. Restore its pixels as a static layer.
-    # Blue logo pixels and the PLUS button remain exact; gray axis/date glyphs are excluded.
+    # Branding is added once by the shared final-image delivery service.
     source=np.asarray(original)
     result=np.asarray(image).copy()
-    crop=source[1318:1361,765:1068].astype(int)
-    yy,xx=np.indices(crop.shape[:2])
-    logo=((crop[:,:,2]>25)&(crop[:,:,2]>crop[:,:,0]*1.6)&(crop[:,:,2]>crop[:,:,1]*1.3))
-    # Restore low-saturation antialiasing before the original date glyphs begin.
-    logo|=(yy<40)&(crop[:,:,2]>25)&(crop[:,:,2]-crop[:,:,0]>12)&(crop[:,:,2]-crop[:,:,1]>5)
-    logo|=(xx>=220)&(xx<=300)&(yy>=1)&(yy<=38)&(crop.max(axis=2)>60)
-    result[1318:1361,765:1068][logo]=crop.astype(np.uint8)[logo]
-    image=Image.fromarray(result)
     # Static pixels (titles, legends, borders, axis labels) must not change.
     different=np.any(result!=source,axis=2)
     outside=int(np.count_nonzero(different & ~np.asarray(edited,dtype=bool)))

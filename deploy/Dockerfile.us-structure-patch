@@ -1,0 +1,24 @@
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
+USER root
+COPY jin10-server/app/briefs/charts.py /srv/app/briefs/charts.py
+COPY jin10-server/app/briefs/delivery.py /srv/app/briefs/delivery.py
+COPY jin10-server/app/briefs/policy.py /srv/app/briefs/policy.py
+COPY jin10-server/app/briefs/process_details.py /srv/app/briefs/process_details.py
+COPY jin10-server/app/briefs/runner.py /srv/app/briefs/runner.py
+COPY jin10-server/app/briefs/sources.py /srv/app/briefs/sources.py
+COPY jin10-server/app/briefs/engines/us_barometer/__init__.py /srv/app/briefs/engines/us_barometer/__init__.py
+COPY jin10-server/app/briefs/engines/us_barometer/fetch_data.py /srv/app/briefs/engines/us_barometer/fetch_data.py
+COPY jin10-server/app/briefs/engines/us_barometer/calculate.py /srv/app/briefs/engines/us_barometer/calculate.py
+COPY jin10-server/app/briefs/engines/us_barometer/run.py /srv/app/briefs/engines/us_barometer/run.py
+COPY jin10-server/app/briefs/engines/us_structure/__init__.py /srv/app/briefs/engines/us_structure/__init__.py
+COPY jin10-server/app/briefs/engines/us_structure/fetch_data.py /srv/app/briefs/engines/us_structure/fetch_data.py
+COPY jin10-server/app/briefs/engines/us_structure/calculate.py /srv/app/briefs/engines/us_structure/calculate.py
+COPY jin10-server/app/briefs/engines/us_structure/run.py /srv/app/briefs/engines/us_structure/run.py
+COPY jin10-server/app/web/briefs.js /srv/app/web/briefs.js
+COPY jin10-server/app/web/retro-terminal.css /srv/app/web/retro-terminal.css
+RUN chmod -R a+r /srv/app/briefs/engines/us_barometer /srv/app/briefs/engines/us_structure \
+    && chmod a+r /srv/app/briefs/charts.py /srv/app/briefs/delivery.py /srv/app/briefs/policy.py \
+       /srv/app/briefs/process_details.py /srv/app/briefs/runner.py /srv/app/briefs/sources.py \
+       /srv/app/web/briefs.js /srv/app/web/retro-terminal.css
+USER plus

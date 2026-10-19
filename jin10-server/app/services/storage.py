@@ -25,3 +25,7 @@ def write_atomic(path: Path, data: bytes) -> None:
     except BaseException:
         Path(tmp).unlink(missing_ok=True)
         raise
+
+
+def feedback_path(team_id: uuid.UUID, feedback_id: uuid.UUID, extension: str) -> Path:
+    return get_settings().storage_dir / str(team_id) / "feedback" / f"{feedback_id}.{extension}"

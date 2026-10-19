@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.config import get_settings
 from app.db.models import Material, Team, utcnow
+from app.services.team_settings import provider
 
 from .analysis import QUESTIONS, ScoringConfig, apply_answers, build_state
 from .jev_client import JevClient, JevError
@@ -30,13 +31,15 @@ def reset_interrupted(db: Session) -> None:
     db.commit()
 
 
-def claim_batch(db: Session, limit: int) -> list[uuid.UUID]:
+def claim_batch(db: Session, limit: int, team_ids=None) -> list[uuid.UUID]:
     query = (
         select(Material)
         .where(Material.ai_status == "pending", Material.deleted_at.is_(None))
         .order_by(Material.analyze_requested.desc(), Material.collect_time.desc())
         .limit(limit)
     )
+    if team_ids is not None:
+        query = query.where(Material.team_id.in_(team_ids))
     if db.get_bind().dialect.name == "postgresql":
         query = query.with_for_update(skip_locked=True)
     rows = list(db.scalars(query))
@@ -46,19 +49,37 @@ def claim_batch(db: Session, limit: int) -> list[uuid.UUID]:
     return [m.id for m in rows]
 
 
-def analyze_one(factory: sessionmaker[Session], client: JevClient, material_id: uuid.UUID, max_attempts: int) -> str:
+def analyze_one(factory: sessionmaker[Session], client: JevClient | None, material_id: uuid.UUID, max_attempts: int) -> str:
     """分析单条素材，返回最终 ai_status"""
     with factory() as db:
         m = db.get(Material, material_id)
         if m is None or m.ai_status != "analyzing":
             return "skipped"
         state = build_state(m)
+        team = db.get(Team, m.team_id)
+        config = provider(team, 'jev')
+        override = bool((team.settings or {}).get('ai', {}).get('jev'))
+
+    owned_client = None
+    if override or client is None:
+        if not config['key']:
+            with factory() as db:
+                m = db.get(Material, material_id)
+                if m and m.ai_status == 'analyzing':
+                    m.ai_status = 'pending'
+                    db.commit()
+            return 'pending'
+        owned_client = JevClient(config['key'], model=config['model'], base_url=get_settings().jev_base_url)
+        client = owned_client
 
     try:
         answers = client.evaluate(state, QUESTIONS)
         error: JevError | None = None
     except JevError as err:
         answers, error = None, err
+    finally:
+        if owned_client:
+            owned_client.close()
 
     with factory() as db:
         m = db.get(Material, material_id)
@@ -81,17 +102,19 @@ def analyze_one(factory: sessionmaker[Session], client: JevClient, material_id: 
         return m.ai_status
 
 
-def run_once(factory: sessionmaker[Session], client: JevClient) -> int:
+def run_once(factory: sessionmaker[Session], client: JevClient | None) -> int:
     settings = get_settings()
     with factory() as db:
-        ids = claim_batch(db, settings.ai_worker_batch)
+        eligible = [team.id for team in db.scalars(select(Team))
+                    if provider(team, 'jev')['key'] or (client is not None and not (team.settings or {}).get('ai', {}).get('jev'))]
+        ids = claim_batch(db, settings.ai_worker_batch, eligible)
     for mid in ids:
         analyze_one(factory, client, mid, settings.ai_max_attempts)
     return len(ids)
 
 
 class AnalysisWorker(threading.Thread):
-    def __init__(self, factory: sessionmaker[Session], client: JevClient, interval: float) -> None:
+    def __init__(self, factory: sessionmaker[Session], client: JevClient | None, interval: float) -> None:
         super().__init__(name="plus-ai-worker", daemon=True)
         self._factory = factory
         self._client = client
@@ -101,7 +124,7 @@ class AnalysisWorker(threading.Thread):
     def run(self) -> None:
         with self._factory() as db:
             reset_interrupted(db)
-        log.info("AI worker started (JEV model %s)", self._client.model)
+        log.info("AI worker started (team configuration enabled)")
         while not self._stop_event.is_set():
             try:
                 processed = run_once(self._factory, self._client)
@@ -114,4 +137,5 @@ class AnalysisWorker(threading.Thread):
     def stop(self) -> None:
         self._stop_event.set()
         self.join(timeout=10)
-        self._client.close()
+        if self._client:
+            self._client.close()

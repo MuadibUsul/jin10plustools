@@ -68,7 +68,7 @@ class JevClient:
                         raise JevError("JEV 返回格式异常：缺少 answers", retryable=False)
                     return answers
                 error = JevError(
-                    f"JEV 返回 HTTP {res.status_code}：{res.text[:200]}",
+                    f"JEV 返回 HTTP {res.status_code}",
                     retryable=res.status_code in _RETRY_STATUS,
                 )
             if not error.retryable or attempt == self.max_retries:

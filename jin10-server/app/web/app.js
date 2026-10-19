@@ -1,5 +1,7 @@
 // PLUS 日报选稿页：待选素材按栏目分组、按综合分排序；勾选后生成 PDF。
 // 同源调用 /api，登录令牌只保存在本浏览器。
+import { account, copyDate, displayTime } from '/workspace.js';
+import '/pull-cord.js';
 
 const SECTIONS = [
   { id: 'macro', label: '宏观消息', quota: 3 },
@@ -70,7 +72,7 @@ function fmtTime(iso) {
   if (!iso) return '';
   // 不带时区的时间按 UTC 解析（SQLite 开发环境）
   const utc = /([zZ]|[+-]\d{2}:?\d{2})$/.test(iso) ? iso : `${iso}Z`;
-  return new Date(utc).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+  return displayTime(utc);
 }
 /** 同事正在编辑这条时先提醒，避免后保存的覆盖先保存的 */
 function confirmEditing(m) {
@@ -247,6 +249,7 @@ function logout() {
   store(TOKEN_KEY, null);
   $('#app-view').hidden = true;
   $('#login-view').hidden = false;
+  $('#account').replaceChildren();
 }
 
 // ---------- 数据 ----------
@@ -283,7 +286,7 @@ async function loadHistory(page = historyPage) {
     ...(issues.length
       ? issues.map((i) =>
           el('li', {},
-            el('span', {}, `${i.issue_date} · ${i.page_count} 页`, el('br'), el('span', { class: 'muted' }, fmtTime(i.created_at))),
+            el('span', {}, `${copyDate(i.issue_date)} · ${i.page_count} 页`, el('br'), el('span', { class: 'muted' }, fmtTime(i.created_at))),
             el('span', {},
               i.has_pdf ? el('button', { class: 'link', onclick: () => download(i, 'pdf') }, 'PDF') : null,
               el('button', { class: 'link', onclick: () => download(i, 'pptx') }, 'PPT'))))
@@ -794,7 +797,7 @@ async function generate() {
 
 async function enterApp() {
   state.me = await api('/api/auth/me');
-  $('#whoami').textContent = `${state.me.team.name} · ${state.me.user.name}`;
+  account(state.me);
   $('#login-view').hidden = true;
   $('#app-view').hidden = false;
   const editable = canEdit();
@@ -820,7 +823,6 @@ function wire() {
       error.hidden = false;
     }
   });
-  $('#logout').addEventListener('click', logout);
   $('#refresh').addEventListener('click', () => refresh().catch(alert));
   $('#day').addEventListener('change', () => { boardVersion = -1; refresh().catch(alert); });
   $('#days').addEventListener('change', () => refresh().catch(alert));

@@ -22,6 +22,8 @@ class Settings(BaseSettings):
     storage_dir: Path = Path("data/storage")
     #: 单张图片上限
     max_asset_bytes: int = 15 * 1024 * 1024
+    #: 反馈示意图上限
+    max_feedback_bytes: int = 5 * 1024 * 1024
     #: 单次同步最多条数
     max_sync_batch: int = 50
 

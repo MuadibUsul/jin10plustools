@@ -7,9 +7,9 @@ method family, not equal-weight PE or static PE. It is NOT asserted to be
 numerically identical to Lixinger. Caller must record a source change explicitly
 before combining it with a pre-existing history.
 
-The public ``day=all`` response is downsampled. It currently contains the latest
-two sessions, which are required here; this module never interpolates missing
-dates and must not be used to reconstruct a complete daily history.
+The public ``day=all`` response is downsampled and does not guarantee consecutive
+sessions. Missing prior-session values may only come from byte-verified captured
+responses. This module never interpolates or fills from workbook values.
 """
 from __future__ import annotations
 
@@ -141,11 +141,45 @@ def normalize_pe(history_raw, detail_raw, expected_date, previous_date):
     }
 
 
+def verified_capture(path):
+    """Validate portable captured values against their original provider bytes."""
+    try:
+        cached = json.loads(Path(path).read_text(encoding='utf-8'))
+        if cached.get('source') != 'snowball_fund_danjuan_public':
+            return None
+        expected, previous = _day(cached['expected_date']), _day(cached['previous_date_rechecked'])
+        if previous >= expected or {r['date'] for r in cached['rows']} != {expected, previous}:
+            return None
+        evidence = cached.get('raw_evidence', [])
+        if not evidence:
+            return None
+        observed = {}
+        portable = []
+        for item in evidence:
+            raw_path = Path(path).parent / Path(item['file']).name
+            if not raw_path.name.startswith('pe-') or raw_path.suffix != '.json':
+                return None
+            raw = raw_path.read_bytes()
+            if hashlib.sha256(raw).hexdigest() != item['sha256']:
+                return None
+            records = _parse_json(raw).get('index_eva_pe_growths', [])
+            for row in records:
+                observed.setdefault(_timestamp_day(row['ts']), set()).add(_number(row['pe']))
+            portable.append({**item, 'file': str(raw_path.resolve())})
+        if any(_number(row['pe_ttm_mcw_raw']) not in observed.get(row['date'], set()) for row in cached['rows']):
+            return None
+        return {**cached, 'raw_evidence': portable}
+    except (OSError, ValueError, KeyError, TypeError, FetchPEError):
+        return None
+
+
 def _completed_cache(output, expected_date, previous_date, verify_detail):
     """Reuse an already completed exact-date capture, never a failed fetch fallback."""
     for path in sorted(output.glob('pe-*-normalized.json'), reverse=True):
         try:
-            cached = json.loads(path.read_text(encoding='utf-8'))
+            cached = verified_capture(path)
+            if cached is None:
+                continue
             if (cached.get('source') != 'snowball_fund_danjuan_public'
                     or cached.get('expected_date') != expected_date
                     or cached.get('previous_date_rechecked') != previous_date
@@ -197,7 +231,40 @@ def fetch_pe(expected_date, previous_date, output_dir, *, verify_detail=False, u
         evidence.append({'url': url, 'file': str(path.resolve()),
                          'sha256': hashlib.sha256(raw).hexdigest(), 'bytes': len(raw)})
         bodies.append(raw)
-    result = normalize_pe(bodies[0], bodies[1] if verify_detail else None, expected_date, previous_date)
+    detail = bodies[1] if verify_detail else None
+    try:
+        result = normalize_pe(bodies[0], detail, expected_date, previous_date)
+    except FetchPEError as error:
+        if error.code != 'missing_session' or not use_completed_cache:
+            raise
+        live = _parse_json(bodies[0])['index_eva_pe_growths']
+        live_dates = {_timestamp_day(row['ts']) for row in live}
+        # A missing current session must never be disguised as a fresh fetch.
+        if expected_date not in live_dates or previous_date in live_dates:
+            raise
+        recovery = None
+        for path in sorted(output.glob('pe-*-normalized.json'), reverse=True):
+            capture = verified_capture(path)
+            if not capture or previous_date not in {row['date'] for row in capture['rows']}:
+                continue
+            value = next(_number(row['pe_ttm_mcw_raw']) for row in capture['rows'] if row['date'] == previous_date)
+            for item in capture['raw_evidence']:
+                records = _parse_json(Path(item['file']).read_bytes()).get('index_eva_pe_growths', [])
+                recovery = next((row for row in records if _timestamp_day(row['ts']) == previous_date
+                                 and _number(row['pe']) == value), None)
+                if recovery is not None:
+                    break
+            if recovery is not None:
+                combined = json.dumps({'result_code': 0, 'data': {'index_eva_pe_growths': live + [recovery]}}, default=str).encode()
+                result = normalize_pe(combined, detail, expected_date, previous_date)
+                result['source_history_points'] = len(live)
+                result['previous_session_recovered'] = {'date': previous_date,
+                    'original_fetched_at': capture.get('fetched_at'),
+                    'database_source_job_id': capture.get('database_source_job_id')}
+                evidence.extend(item for item in capture['raw_evidence'] if item['sha256'] not in {e['sha256'] for e in evidence})
+                break
+        if recovery is None:
+            raise
     result.update({'fetched_at': fetched_at, 'raw_evidence': evidence,
                    'completed_date_cache_reused': False, 'network_requests_this_call': len(requests),
                    'access': {'account_required': False, 'api_key_required': False,

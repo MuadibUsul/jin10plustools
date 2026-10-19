@@ -6,6 +6,8 @@ CHINA = ZoneInfo('Asia/Shanghai')
 CATEGORIES = {
     'volume': '沪深两市成交额', 'turnover': 'A股换手率',
     'valuation': '市场估值指标', 'liquidity': '流动性指标', 'oil_etf': '原油ETF持仓',
+    'us_barometer': '美股晴雨表',
+    'us_structure': '美股市场结构',
 }
 
 

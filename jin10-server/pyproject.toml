@@ -16,10 +16,13 @@ dependencies = [
   "pydantic>=2.7",
   "pydantic-settings>=2.3",
   "pyjwt>=2.8",
+  "cryptography>=44,<47",
+  "openpyxl>=3.1,<4",
   "python-pptx>=1.0",
   "lxml>=5",
   "pillow>=10",
   "httpx>=0.27",
+  "python-multipart>=0.0.9",
   "pymupdf>=1.24",
   "matplotlib>=3.9,<4",
   # NumPy 2.4+ wheels require x86-64-v2, unavailable on the shared VPS.

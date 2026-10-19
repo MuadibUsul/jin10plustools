@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>设置 · PLUS 工作台</title><link rel="stylesheet" href="/workspace.css"></head><body>
+<header><a class="brand" href="/"><span>PLUS</span>工作台</a><nav><a href="/daily/">日报选稿</a><a href="/briefs/">固定快讯</a><a href="/fresh/">Plus新鲜事</a><a href="/annotations/">Plus注解辅助</a></nav><div id="account"></div></header>
+<main class="settings-page"><div class="page-heading"><div><p class="eyebrow">WORKSPACE SETTINGS</p><h1>设置</h1><p class="muted">本团队共用的注释、自动任务与 AI 接入。</p></div><button id="reload-settings">刷新设置</button></div>
+<p id="settings-message" role="status" aria-live="polite"></p>
+<div class="settings-layout" id="settings-layout" hidden>
+<aside class="settings-nav" aria-label="设置分区">
+<a href="#team" data-panel="team" class="active">团队设置</a>
+<a href="#database" data-panel="database" id="nav-database" hidden>数据库</a>
+<a href="#feedback" data-panel="feedback">反馈</a>
+</aside>
+<div class="settings-panels">
+<form id="settings-form">
+<section class="settings-section"><h2>栏目默认注释</h2><p class="muted">应用于后续新稿，已保存稿件保留各自的注释版本。本期稿件仍可在稿件编辑区单独修改。</p><div id="note-fields"></div><details><summary>默认注释修改记录</summary><div id="note-history"></div></details></section>
+<section class="settings-section"><h2>自动任务</h2><label class="check-row"><input id="schedule-enabled" type="checkbox"> 启用固定快讯自动生产</label><p class="muted">工作日 08:00—10:00（北京时间），到点停止自动重试。手动生成不限时。</p><p class="admin-hint muted"></p></section>
+<section class="settings-section"><h2>AI 接入</h2><p class="muted">Key 加密保存，仅管理员可以修改。留空保留现有 Key；保存配置不会自动补跑历史稿件。</p><div id="ai-fields" class="ai-settings-grid"></div><p class="admin-hint muted"></p></section>
+<section class="settings-section"><h2>直播</h2><p class="muted">北京时间 8:00—23:00 开放；始终只播放一路，快讯生成时自动停止。</p><label class="field">额外直播链接<input id="live-url" type="url" maxlength="2048" placeholder="https://…"></label><p class="muted">支持 YouTube 直播分享链接、允许嵌入的 HTTPS 播放器或公开 HLS 地址。请勿填写官网首页或多播放器目录。</p><details><summary>直播目录与地址维护</summary><p class="muted">留空使用内置地址；填写后使用本团队的地址。</p><div id="live-channel-fields"></div></details></section>
+<div class="settings-actions"><button id="save-settings" class="primary" type="submit">保存设置</button><span class="muted">修改仅作用于本团队</span></div>
+</form>
+<section id="database-panel" class="settings-section database-panel" hidden aria-labelledby="database-title">
+<h2 id="database-title">数据库导出</h2>
+<p class="muted">导出本团队已存入数据库的结构化数据，按时间范围筛选，可选 CSV、Excel 或 JSON。账号、密钥、原始网页 HTML 与来源快照文件本体不在导出范围。</p>
+<div class="export-fields">
+<label class="field">数据集<select id="export-dataset"></select></label>
+<label class="field">导出格式<select id="export-format"><option value="xlsx">Excel（.xlsx）</option><option value="csv">CSV（Excel 可直接打开）</option><option value="json">JSON</option></select></label>
+</div>
+<p id="export-dataset-note" class="muted"></p>
+<div class="field">时间范围<div id="export-presets" class="export-presets" role="group" aria-label="时间范围">
+<button type="button" data-range="3m" aria-pressed="true">最近三个月</button>
+<button type="button" data-range="year" aria-pressed="false">年内</button>
+<button type="button" data-range="1y" aria-pressed="false">近一年</button>
+<button type="button" data-range="all" aria-pressed="false">全部已存</button>
+<button type="button" data-range="custom" aria-pressed="false">自定义</button>
+</div></div>
+<div id="export-custom" class="export-fields" hidden>
+<label class="field">开始日期<input id="export-start" type="date"></label>
+<label class="field">结束日期<input id="export-end" type="date"></label>
+</div>
+<p id="export-range" class="muted"></p>
+<div class="toolbar"><button id="export-count" type="button">预览条数</button><button id="export-download" class="primary" type="button">导出下载</button></div>
+<p id="export-status" class="muted" role="status" aria-live="polite"></p>
+<details><summary>可导出的数据集</summary><div id="export-datasets" class="export-datasets"></div></details>
+</section>
+<section id="feedback-panel" class="settings-section feedback-panel" hidden aria-labelledby="feedback-title">
+<h2 id="feedback-title">反馈</h2>
+<p class="muted">提交改进意见或遇到的问题，可附一张示意图。提交人姓名用于后续对接；反馈按团队保存，所有成员都可以查看。</p>
+<form id="feedback-form">
+<label class="field">标题<input id="feedback-title-input" maxlength="200" placeholder="一句话说明要改进什么"></label>
+<label class="field">内容<textarea id="feedback-content" rows="6" maxlength="5000" placeholder="具体场景、期望的做法、现在的困扰"></textarea></label>
+<div class="export-fields">
+<label class="field">提交人姓名<input id="feedback-name" maxlength="100" autocomplete="name"></label>
+<label class="field">示意图（PNG / JPEG / WebP，≤5MB）<input id="feedback-image" type="file" accept="image/png,image/jpeg,image/webp"></label>
+</div>
+<div class="toolbar"><button id="feedback-submit" class="primary" type="submit">提交反馈</button></div>
+<p id="feedback-status" class="muted" role="status" aria-live="polite"></p>
+</form>
+<details open><summary>最近的反馈</summary><div id="feedback-list" class="feedback-list"></div></details>
+</section>
+</div>
+</div></main><script type="module" src="/settings.js"></script></body></html>

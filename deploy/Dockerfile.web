@@ -1,0 +1,7 @@
+# Frontend-only releases inherit the current validated API runtime.
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
+USER root
+COPY jin10-server/app/web /srv/app/web
+RUN chmod -R a+rX /srv/app/web
+USER plus

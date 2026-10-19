@@ -9,6 +9,7 @@ from sqlalchemy import select
 
 from app.db.models import Team
 from app.db.session import get_session_factory
+from .policy import CATEGORIES
 from .service import ensure_issue,owned,append_version,root_for
 
 
@@ -17,7 +18,7 @@ def import_samples(team_name):
     with get_session_factory()() as db:
         team=db.scalars(select(Team).where(Team.name==team_name)).one_or_none()
         if not team:raise ValueError('团队不存在，请先按现有项目说明创建团队与用户')
-        for category in ('volume','turnover','valuation','liquidity','oil_etf'):
+        for category in CATEGORIES:
             source=samples/category
             if not (source/'result.json').is_file():continue
             payload=json.loads((source/'result.json').read_text(encoding='utf-8'))

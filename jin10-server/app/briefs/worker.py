@@ -11,11 +11,13 @@ from datetime import datetime,timedelta,time as clock
 from sqlalchemy import select,text,update
 
 from app.config import get_settings
-from app.db.models import BriefConfig,BriefIssue,BriefJob,BriefVersion,BriefSourceSnapshot,utcnow
+from app.db.models import BriefConfig,BriefIssue,BriefJob,BriefVersion,BriefSourceSnapshot,Team,utcnow
+from app.services.team_settings import provider
 from app.db.session import get_session_factory,get_engine
 from .policy import CATEGORIES,CHINA,expected_date,first_run,production_window,next_slot
 from .service import enqueue,ensure_issue,owned,append_version,root_for
 from .source_archive import archive_run,restore_pe_capture
+from .progress import record,read
 
 log=logging.getLogger('plus.briefs')
 
@@ -57,13 +59,16 @@ def execute(factory,id):
         team_id=job.team_id;category=job.category;preview=job.preview;day=job.issue_date;action=job.action
         # Scheduled jobs have no requesting user; manual jobs keep their editor id.
         automatic=job.created_by is None and not preview
+        ai=provider(db.get(Team,team_id),'deepseek')
     root=root_for(team_id);out=root/'runs'/str(id);out.mkdir(parents=True,exist_ok=True)
+    record(out,1,f'任务开始：生产日 {day}，数据日 {expected_date(category,day)}')
     if category=='valuation' and action=='produce':
         with factory() as db:
             restored=restore_pe_capture(db,db.get(BriefJob,id),out,
                                         expected_date(category,day).isoformat())
             if restored:log.info('Restored dated PE evidence from PostgreSQL for job %s',id)
-    env=dict(os.environ);env['DEEPSEEK_API_KEY']=settings.briefs_deepseek_api_key;env['DEEPSEEK_MODEL']=settings.briefs_deepseek_model
+            if restored:record(out,1,'已恢复经过哈希核验的PE原始来源证据')
+    env=dict(os.environ);env['DEEPSEEK_API_KEY']=ai['key'];env['DEEPSEEK_MODEL']=ai['model']
     command=[sys.executable,'-m','app.briefs.runner','--category',category,'--date',expected_date(category,day).isoformat(),
              '--root',str(root),'--run-id',str(id),'--action',action]
     process=subprocess.Popen(command,env=env,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,start_new_session=os.name!='nt')
@@ -82,6 +87,8 @@ def execute(factory,id):
         report=json.loads((out/'error.json').read_text(encoding='utf-8'));error=report['message']
     with factory() as db:
         job=db.get(BriefJob,id);job.lease_until=None;job.updated_at=utcnow()
+        stopped_step=read(out).get('step',1)
+        record(out,5 if payload and payload.get('valid') else stopped_step,'正在归档原始数据、图片快照与本次运行结果')
         try:
             source_dir=None
             if payload and payload.get('artifact_dir'):
@@ -96,11 +103,12 @@ def execute(factory,id):
             job.status='failed';job.active_key=None;job.lease_until=None
             job.error=f'来源数据入库失败：{exc}'
             job.updated_at=utcnow();db.commit()
+            record(out,5,'来源归档失败，任务已停止')
             log.exception('Brief source archive failed for job %s',id)
             return
         if payload and payload.get('valid'):
             if automatic and not production_window(datetime.now(CHINA)):
-                job.status='skipped';job.active_key=None;job.error='超过10:00，快照保留但未生成当天稿';db.commit();return
+                job.status='skipped';job.active_key=None;job.error='超过10:00，快照保留但未生成当天稿';db.commit();record(out,5,job.error);return
             issue=ensure_issue(db,team_id,day,category);issue=owned(db,team_id,issue.id,True)
             if action!='produce' and issue.version:
                 previous=db.scalars(select(BriefVersion).where(BriefVersion.issue_id==issue.id,BriefVersion.number==issue.version)).first()
@@ -119,6 +127,8 @@ def execute(factory,id):
                 job.status='waiting';job.next_attempt_at=slot
             else:job.status='failed';job.active_key=None
         db.commit()
+        record(out,6 if job.status=='succeeded' else stopped_step,
+               '生成完成，稿件与快照已保存，可查看与取稿' if job.status=='succeeded' else job.error)
 
 
 def main():

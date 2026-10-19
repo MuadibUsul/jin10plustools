@@ -1,0 +1,32 @@
+/* 全局拉绳：页头下沿中央，点击拉绳掉出复古电脑（/briefs/ 的实时终端挂在这里），点其它位置缩回。 */
+body > header{position:relative;z-index:20}
+.pull-cord{
+  position:absolute;top:var(--pull-cord-top,76px);left:50%;transform:translateX(-50%);
+  z-index:15;width:min(340px,calc(100vw - 24px));display:flex;flex-direction:column;align-items:center;
+  pointer-events:none;
+}
+.pull-cord-rope{
+  pointer-events:auto;display:block;width:64px;height:84px;padding:0;border:0;background:none;
+  cursor:grab;filter:drop-shadow(0 2px 2px #00000014);transition:transform .2s ease;
+}
+.pull-cord-rope:active{cursor:grabbing}
+.pull-cord-swing{transform-origin:32px 6px;animation:pull-cord-sway 4.6s ease-in-out infinite}
+.pull-cord-rope:hover .pull-cord-swing{animation-duration:1.6s}
+.pull-cord[data-open="true"] .pull-cord-rope{transform:translateY(4px)}
+.pull-cord-slot{position:relative;width:100%;padding-bottom:6px;overflow:hidden}
+.pull-cord-slot>.retro-panel{
+  margin:0;width:100%;visibility:hidden;opacity:0;transform:translateY(-106%);pointer-events:none;
+  transition:transform .3s cubic-bezier(.6,0,.7,.2),opacity .2s ease,visibility 0s .3s;
+}
+.pull-cord[data-open="true"] .pull-cord-slot>.retro-panel{
+  visibility:visible;opacity:1;transform:translateY(0);pointer-events:auto;
+  transition:transform .55s cubic-bezier(.18,1.45,.35,1),opacity .16s ease,visibility 0s;
+}
+.pull-cord-slot .retro-panel[data-idle] .computer-mouse{display:none}
+@keyframes pull-cord-sway{0%,100%{transform:rotate(-1.8deg)}50%{transform:rotate(1.8deg)}}
+@media(prefers-reduced-motion:reduce){
+  .pull-cord-swing{animation:none}
+  .pull-cord-slot>.retro-panel,
+  .pull-cord[data-open="true"] .pull-cord-slot>.retro-panel{transition:opacity .15s linear}
+}
+@media(max-width:650px){.pull-cord{width:min(300px,calc(100vw - 16px))}}

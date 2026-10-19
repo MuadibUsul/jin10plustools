@@ -260,7 +260,7 @@ class BriefJob(Base):
     active_key: Mapped[str | None] = mapped_column(String(180), unique=True)
     status: Mapped[str] = mapped_column(String(20), default='queued')
     attempts: Mapped[int] = mapped_column(Integer, default=0)
-    next_attempt_at: Mapped[dt.datetime] = mapped_column(default=utcnow)
+    next_attempt_at: Mapped[dt.datetime] = mapped_column(default=lambda: utcnow())
     lease_until: Mapped[dt.datetime | None]
     error: Mapped[str | None] = mapped_column(Text)
     created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey('users.id', ondelete='SET NULL'))
@@ -294,3 +294,22 @@ class BriefAudit(Base):
     version: Mapped[int] = mapped_column(Integer)
     user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey('users.id', ondelete='SET NULL'))
     created_at: Mapped[dt.datetime] = mapped_column(default=utcnow)
+
+
+class Feedback(Base):
+    """使用者提交的改进意见；图片保存在数据卷，表内只登记元数据与校验值。"""
+    __tablename__ = 'feedback'
+    __table_args__ = (Index('ix_feedback_team_created', 'team_id', 'created_at'),)
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    team_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('teams.id', ondelete='CASCADE'))
+    user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey('users.id', ondelete='SET NULL'))
+    #: 提交人填写的姓名（与账号名分开保存，便于后续对接）
+    name: Mapped[str] = mapped_column(String(100))
+    title: Mapped[str] = mapped_column(String(200))
+    content: Mapped[str] = mapped_column(Text)
+    image_path: Mapped[str | None] = mapped_column(String(1024))
+    image_mime: Mapped[str | None] = mapped_column(String(50))
+    image_bytes: Mapped[int] = mapped_column(Integer, default=0)
+    image_sha256: Mapped[str | None] = mapped_column(String(64))
+    created_at: Mapped[dt.datetime] = mapped_column(default=lambda: utcnow())

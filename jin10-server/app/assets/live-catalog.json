@@ -1,0 +1,321 @@
+{
+  "categories": [
+    {
+      "id": "news",
+      "label": "环球新闻",
+      "hint": "此刻，世界正在发生",
+      "image": "/assets/live/news.webp"
+    },
+    {
+      "id": "markets",
+      "label": "财经市场",
+      "hint": "看见市场的脉搏",
+      "image": "/assets/live/markets.webp"
+    },
+    {
+      "id": "cities",
+      "label": "城市漫游",
+      "hint": "沿着镜头去旅行",
+      "image": "/assets/live/cities.webp"
+    },
+    {
+      "id": "nature",
+      "label": "自然太空",
+      "hint": "把目光交给自然",
+      "image": "/assets/live/nature.webp"
+    }
+  ],
+  "channels": [
+    {
+      "id": "news-02",
+      "category": "news",
+      "name": "Sky News 英国天空新闻",
+      "source_url": "https://news.sky.com/watch-live",
+      "url": "https://linear901-oo-hls0-prd-gtm.delivery.skycdp.com/17501/sde-fast-skynews/master.m3u8",
+      "note": "",
+      "verified_from": "https://news.sky.com/watch-live"
+    },
+    {
+      "id": "news-04",
+      "category": "news",
+      "name": "DW News 德国之声",
+      "source_url": "https://www.dw.com/en/live-tv/s-100825",
+      "url": "https://dwamdstream102.akamaized.net/hls/live/2015525/dwstream102/master.m3u8",
+      "note": "",
+      "verified_from": "https://www.dw.com/en/live-tv/channel-english"
+    },
+    {
+      "id": "news-08",
+      "category": "news",
+      "name": "TRT World",
+      "source_url": "https://www.trtworld.com/live",
+      "url": "https://tv-trtworld.medya.trt.com.tr/master.m3u8",
+      "note": "",
+      "verified_from": "https://www.trtworld.com/live"
+    },
+    {
+      "id": "news-09",
+      "category": "news",
+      "name": "CGTN 中国国际电视台",
+      "source_url": "https://www.cgtn.com/tv",
+      "url": "https://english-livebkali.cgtn.com/live/encgtn.m3u8",
+      "note": "",
+      "verified_from": "https://news.cgtn.com/tv/channel-en.json"
+    },
+    {
+      "id": "markets-02",
+      "category": "markets",
+      "name": "Bloomberg Originals",
+      "source_url": "https://www.bloomberg.com/tv",
+      "url": "",
+      "note": "Bloomberg Originals官网访问受限，尚未核实获准嵌入的独立播放器。"
+    },
+    {
+      "id": "markets-04",
+      "category": "markets",
+      "name": "Schwab Network",
+      "source_url": "https://schwabnetwork.com/",
+      "url": "https://content.uplynk.com/channel/5cac132069e64365b98eb4e6c23c1324.m3u8?tc=1",
+      "note": "",
+      "verified_from": "https://schwabnetwork.com/"
+    },
+    {
+      "id": "markets-06",
+      "category": "markets",
+      "name": "BFM Business（电台）",
+      "source_url": "https://www.bfmtv.com/economie/en-direct/bfmbusiness-radio/",
+      "url": "https://hls-bfmbusiness.nextradiotv.com/ssai/master.m3u8",
+      "note": "官网提供的BFM Business视听直播。",
+      "verified_from": "https://www.bfmtv.com/economie/en-direct/bfmbusiness-radio/"
+    },
+    {
+      "id": "markets-07",
+      "category": "markets",
+      "name": "CNBC Arabia",
+      "source_url": "https://www.cnbcarabia.com/",
+      "url": "https://cnbc-live.akamaized.net/cnbc/master.m3u8",
+      "note": "",
+      "verified_from": "https://www.cnbcarabia.com/tv"
+    },
+    {
+      "id": "markets-09",
+      "category": "markets",
+      "name": "CGTN Global Business",
+      "source_url": "https://www.cgtn.com/tv",
+      "url": "https://english-livebkali.cgtn.com/live/encgtn.m3u8",
+      "note": "CGTN综合频道中的财经时段，非独立全天财经频道。",
+      "verified_from": "https://news.cgtn.com/tv/channel-en.json"
+    },
+    {
+      "id": "markets-10",
+      "category": "markets",
+      "name": "ausbiz",
+      "source_url": "https://ausbiz.com.au/",
+      "url": "",
+      "note": "官方有试看及订阅限制，需提供获准嵌入的播放器地址。"
+    },
+    {
+      "id": "cities-01",
+      "category": "cities",
+      "name": "洛杉矶港",
+      "source_url": "https://portoflosangeles.org/references/2022-news-releases/news_110122_earthcam",
+      "url": "https://share.earthcam.net/public/tJ90CoLmq7TzrY396Yd88Lx5olcAdpf_G2QebkU-inY/port_of_los_angeles/camera_1_-_san_pedro",
+      "note": "洛杉矶港官网发布的EarthCam公开分享播放器。",
+      "verified_from": "https://portoflosangeles.org/news/livestream"
+    },
+    {
+      "id": "cities-05",
+      "category": "cities",
+      "name": "纽约百老汇第49街",
+      "source_url": "https://www.skylinewebcams.com/en/webcam/united-states/new-york/new-york/new-york-city.html",
+      "url": "",
+      "note": "此机位官网禁止跨站嵌入，需补充获准使用的独立播放器。"
+    },
+    {
+      "id": "cities-08",
+      "category": "cities",
+      "name": "雷克雅未克市中心",
+      "source_url": "https://livefromiceland.is/webcams/",
+      "url": "https://g0.ipcamlive.com/player/player.php?alias=68496eb622c0a",
+      "note": "",
+      "verified_from": "https://livefromiceland.is/webcam/reykjavikurtjorn/"
+    },
+    {
+      "id": "cities-09",
+      "category": "cities",
+      "name": "阿克雷里城市及港湾",
+      "source_url": "https://livefromiceland.is/webcams/",
+      "url": "https://g0.ipcamlive.com/player/player.php?alias=6931a5bf6bf3f",
+      "note": "",
+      "verified_from": "https://livefromiceland.is/webcam/akureyri/"
+    },
+    {
+      "id": "cities-10",
+      "category": "cities",
+      "name": "Svartsengi 地热设施周边",
+      "source_url": "https://livefromiceland.is/webcams/",
+      "url": "https://g0.ipcamlive.com/player/player.php?alias=67cdc04c157e8",
+      "note": "",
+      "verified_from": "https://livefromiceland.is/webcam/svartsengi/"
+    },
+    {
+      "id": "nature-07",
+      "category": "nature",
+      "name": "冰岛 Hagafell 火山区",
+      "source_url": "https://livefromiceland.is/webcams/",
+      "url": "https://g0.ipcamlive.com/player/player.php?alias=6741e80c85135",
+      "note": "",
+      "verified_from": "https://livefromiceland.is/webcam/hagafell/"
+    },
+    {
+      "id": "nature-08",
+      "category": "nature",
+      "name": "冰岛 Hekla 火山",
+      "source_url": "https://livefromiceland.is/webcams/",
+      "url": "https://g0.ipcamlive.com/player/player.php?alias=684daa021140c",
+      "note": "",
+      "verified_from": "https://livefromiceland.is/webcam/hekla/"
+    },
+    {
+      "id": "news-11",
+      "category": "news",
+      "name": "CBS News 美国哥伦比亚新闻",
+      "source_url": "https://www.cbsnews.com/live/",
+      "url": "https://news20e7hhcb.airspace-cdn.cbsivideo.com/index.m3u8",
+      "note": "",
+      "verified_from": "https://www.cbsnews.com/live/"
+    },
+    {
+      "id": "news-12",
+      "category": "news",
+      "name": "CNA 新加坡亚洲新闻台",
+      "source_url": "https://www.channelnewsasia.com/watch",
+      "url": "https://players.brightcove.net/6057994443001/jC4rfpFdV4_default/index.html?videoId=6379472319112",
+      "note": "",
+      "verified_from": "https://www.channelnewsasia.com/watch"
+    },
+    {
+      "id": "markets-11",
+      "category": "markets",
+      "name": "Bloomberg TV 彭博财经美国台",
+      "source_url": "https://www.bloomberg.com/live/us",
+      "url": "https://www.bloomberg.com/media-manifest/streams/us.m3u8",
+      "note": "",
+      "verified_from": "https://www.bloomberg.com/live/us"
+    },
+    {
+      "id": "markets-12",
+      "category": "markets",
+      "name": "Bloomberg TV 彭博财经欧洲台",
+      "source_url": "https://www.bloomberg.com/live/europe",
+      "url": "https://www.bloomberg.com/media-manifest/streams/eu.m3u8",
+      "note": "",
+      "verified_from": "https://www.bloomberg.com/live/europe"
+    },
+    {
+      "id": "cities-11",
+      "category": "cities",
+      "name": "德国杜塞尔多夫机场 · 航班起降",
+      "source_url": "https://www.dus.com/en/enjoy/webcams",
+      "url": "https://stream-5gw.1000eyes.de/cupertino/dusfcae.stream/playlist.m3u8",
+      "note": "",
+      "verified_from": "https://www.dus.com/en/enjoy/webcams"
+    },
+    {
+      "id": "cities-12",
+      "category": "cities",
+      "name": "德国杜塞尔多夫机场 · 停机坪",
+      "source_url": "https://www.dus.com/en/enjoy/webcams",
+      "url": "https://stream-5gw.1000eyes.de/cupertino/dused0c.stream/playlist.m3u8",
+      "note": "",
+      "verified_from": "https://www.dus.com/en/enjoy/webcams"
+    },
+    {
+      "id": "cities-13",
+      "category": "cities",
+      "name": "美国哥伦比亚机场 · 跑道",
+      "source_url": "https://flycae.com/web-cam/",
+      "url": "https://share.earthcam.net/public/tJ90CoLmq7TzrY396Yd88BI-64HOG2OpZtrM5fx512M/columbia_metropolitan_airport/camera",
+      "note": "",
+      "verified_from": "https://flycae.com/web-cam/"
+    },
+    {
+      "id": "nature-11",
+      "category": "nature",
+      "name": "美国国家动物园 · 大象",
+      "source_url": "https://nationalzoo.si.edu/webcams/elephants",
+      "url": "https://nzp-wowza01.si.edu/live_edge_elephant_zixi/elephant_zixi.smil/playlist.m3u8",
+      "note": "官方动物观察镜头；部分频道在美国夜间回放白天画面。",
+      "verified_from": "https://nationalzoo.si.edu/webcams/elephants",
+      "select_variant": "first"
+    },
+    {
+      "id": "nature-12",
+      "category": "nature",
+      "name": "美国国家动物园 · 狮子",
+      "source_url": "https://nationalzoo.si.edu/webcams/lion-cam",
+      "url": "https://nzp-wowza01.si.edu/live_edge_lion/smil:lion01_all.smil/playlist.m3u8",
+      "note": "官方动物观察镜头；部分频道在美国夜间回放白天画面。",
+      "verified_from": "https://nationalzoo.si.edu/webcams/lion-cam",
+      "select_variant": "first"
+    },
+    {
+      "id": "nature-13",
+      "category": "nature",
+      "name": "美国国家动物园 · 猎豹",
+      "source_url": "https://nationalzoo.si.edu/webcams/cheetah-cub-cam",
+      "url": "https://nzp-wowza01.si.edu/live_edge_cheetah_03/cheetah_y14_01_1080_all.smil/playlist.m3u8",
+      "note": "官方动物观察镜头；部分频道在美国夜间回放白天画面。",
+      "verified_from": "https://nationalzoo.si.edu/webcams/cheetah-cub-cam",
+      "select_variant": "first"
+    },
+    {
+      "id": "nature-14",
+      "category": "nature",
+      "name": "美国国家动物园 · 大熊猫",
+      "source_url": "https://nationalzoo.si.edu/webcams/panda-cam",
+      "url": "https://nzp-wowza01.si.edu/live_edge_panda25/smil:panda125_02.smil/playlist.m3u8",
+      "note": "官方动物观察镜头；部分频道在美国夜间回放白天画面。",
+      "verified_from": "https://nationalzoo.si.edu/webcams/panda-cam",
+      "select_variant": "first"
+    },
+    {
+      "id": "nature-15",
+      "category": "nature",
+      "name": "美国国家动物园 · 裸鼹鼠",
+      "source_url": "https://nationalzoo.si.edu/webcams/naked-mole-rat-cam",
+      "url": "https://nzp-wowza02.si.edu/live_edge_nmr_02/nmr_02_1080_all.smil/playlist.m3u8",
+      "note": "官方动物观察镜头；部分频道在美国夜间回放白天画面。",
+      "verified_from": "https://nationalzoo.si.edu/webcams/naked-mole-rat-cam",
+      "select_variant": "first"
+    },
+    {
+      "id": "nature-16",
+      "category": "nature",
+      "name": "美国国家水族馆 · 鲨鱼",
+      "source_url": "https://aqua.org/explore/livestreams",
+      "url": "https://share.earthcam.net/public/tJ90CoLmq7TzrY396Yd88GpgGYD9IoZYsZY8b7_4Sn0/national_aquarium_cam/shark_cam",
+      "note": "",
+      "verified_from": "https://aqua.org/explore/livestreams"
+    },
+    {
+      "id": "nature-17",
+      "category": "nature",
+      "name": "美国国家水族馆 · 水母",
+      "source_url": "https://aqua.org/explore/livestreams",
+      "url": "https://share.earthcam.net/public/tJ90CoLmq7TzrY396Yd88GpgGYD9IoZYsZY8b7_4Sn0/national_aquarium_cam/jellyfish_cam",
+      "note": "",
+      "verified_from": "https://aqua.org/explore/livestreams"
+    },
+    {
+      "id": "nature-18",
+      "category": "nature",
+      "name": "美国国家水族馆 · 热带鱼",
+      "source_url": "https://aqua.org/explore/livestreams",
+      "url": "https://share.earthcam.net/public/tJ90CoLmq7TzrY396Yd88GpgGYD9IoZYsZY8b7_4Sn0/national_aquarium_cam/tropical_fish_cam",
+      "note": "",
+      "verified_from": "https://aqua.org/explore/livestreams"
+    }
+  ],
+  "checked_on": "2026-10-16"
+}

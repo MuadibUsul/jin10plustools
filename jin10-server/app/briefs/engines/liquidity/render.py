@@ -16,6 +16,7 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import numpy as np
 from PIL import Image,ImageDraw,ImageFont
+from app.services.copy_dates import copy_dates
 
 HERE=Path(__file__).resolve().parent
 TITLE='【流动性指标】质押式回购利率走势与最新行情'
@@ -24,8 +25,8 @@ NAVY='#18385F';TEXT='#30465E';MUTED='#7B8C9D';BG='#F3F6FA';BORDER='#E7EDF4'
 EXPLANATION=(
     '短期货币市场利率如DR007，反映的是市场资金充裕程度。除了实体经济贷款利率，股市、债市等金融市场很多交易本质上是靠“贷款”加杠杆，贷款成本取决于短期资金利率。DR007通常被视为中国短端利率锚。',
     'DR007与央行7天逆回购利率（政策利率）之间的差距，可以用来判断市场是否缺钱：',
-    '● DR007明显高于政策利率：说明资金偏紧，央行可能投放流动性；',
-    '● DR007低于或接近政策利率：说明市场资金较为宽松。',
+    'DR007明显高于政策利率： 说明资金偏紧，央行可能投放流动性；',
+    'DR007低于或接近政策利率：说明市场资金宽松。',
 )
 
 
@@ -60,6 +61,10 @@ class Poster:
     def line(self,xy,color=BORDER,width=2):
         self.draw.line(xy,fill=color,width=width)
         self.svg.append(f'<line x1="{xy[0]}" y1="{xy[1]}" x2="{xy[2]}" y2="{xy[3]}" stroke="{color}" stroke-width="{width}"/>')
+
+    def circle(self,x,y,radius,fill):
+        self.draw.ellipse((x-radius,y-radius,x+radius,y+radius),fill=fill)
+        self.svg.append(f'<circle cx="{x}" cy="{y}" r="{radius}" fill="{fill}"/>')
 
     def paragraph(self,text,x,y,width,*,size=44,line_height=72,color=TEXT):
         font=self.font(size);line=''
@@ -152,16 +157,18 @@ def plot_history(history):
 def render_poster(snapshot,out_dir,*,logo_path=None,logo_kind='original_user_file'):
     quote=snapshot['quotes'];history=snapshot['history'];out=Path(out_dir);out.mkdir(parents=True,exist_ok=True)
     # Estimate the required explanation height using actual glyph widths.
-    measuring=Poster(4000);body_end=2480
-    for paragraph in EXPLANATION:body_end=measuring.paragraph(paragraph,152,body_end,1856,size=44)+38
-    height=max(3520,body_end+280)
+    explanation_top=1464+320+len(quote['rows'])*126+52
+    measuring=Poster(5000);body_end=explanation_top+164
+    for paragraph in EXPLANATION[:2]:body_end=measuring.paragraph(paragraph,152,body_end,1856,size=44)+34
+    explanation_bottom=body_end+2*82+32
+    height=explanation_bottom+210
     poster=Poster(height)
     poster.text((96,96),TITLE,76,NAVY,True)
     curve_names=' / '.join(history['series'])
     extras=[r['product'] for r in quote['rows'] if r['product'] not in history['series']]
     products='涉及品种：'+curve_names+('；行情另含 '+' / '.join(extras) if extras else '')
     poster.text((100,224),products,42,MUTED)
-    poster.text((100,290),f"历史：{history['start']} — {history['end']}   ｜   行情：{quote['updated_at']}",38,MUTED)
+    poster.text((100,290),copy_dates(f"历史：{history['start']} — {history['end']}"),38,MUTED)
     # History card.
     poster.rectangle((80,396,2080,1412),'white',40,BORDER)
     poster.text((136,450),'历史走势',60,NAVY,True)
@@ -176,11 +183,11 @@ def render_poster(snapshot,out_dir,*,logo_path=None,logo_kind='original_user_fil
     table_top=1464;table_bottom=table_top+320+len(quote['rows'])*126
     poster.rectangle((80,table_top,2080,table_bottom),'white',40,BORDER)
     poster.text((136,table_top+54),'最新成交行情',60,NAVY,True)
-    poster.text((2024,table_top+72),'截至 '+quote['updated_at'],34,MUTED,anchor='rt')
+    poster.text((2024,table_top+72),'行情时间 '+copy_dates(quote['updated_at']),34,MUTED,anchor='rt')
     header_y=table_top+174
     poster.rectangle((128,header_y,2032,header_y+116),'#F0F6FD',20)
-    centers=[249,580,985,1410,1826]
-    headers=['品种','加权利率（%）','最新利率（%）','平均回购期限（天）','数据更新时间']
+    centers=[340,800,1260,1750]
+    headers=['品种','加权利率（%）','最新利率（%）','平均回购期限（天）']
     for x,text in zip(centers,headers):poster.text((x,header_y+36),text,34,NAVY,True,'mt')
     values_audit=[]
     for i,row in enumerate(quote['rows']):
@@ -190,31 +197,31 @@ def render_poster(snapshot,out_dir,*,logo_path=None,logo_kind='original_user_fil
             display=row[key] if row[key] is not None else '—'
             poster.text((x,y+12),display,52,'#1677FF' if key=='weighted_rate' else TEXT,key=='weighted_rate','mt')
             values_audit.append({'product':row['product'],'field':key,'source':row[key],'display':display})
-        day,hour=row['updated_at'].split(' ')
-        poster.text((centers[4],y),day,34,MUTED,anchor='mt')
-        poster.text((centers[4],y+47),hour,34,MUTED,anchor='mt')
         if i<len(quote['rows'])-1:poster.line((136,y+103,2024,y+103),BORDER,2)
     # Explanation card: verbatim supplied paragraphs; no current policy judgement.
-    explanation_top=table_bottom+52
+    poster.rectangle((80,explanation_top,2080,explanation_bottom),'#F2F9FF',28,'#DDEDF8')
+    cx,cy=174,explanation_top+86
+    poster.circle(cx,cy,43,'#1677FF');poster.circle(cx,cy-3,13,'white')
+    poster.rectangle((cx-7,cy+6,cx+7,cy+23),'white',3)
+    for dx,dy in ((0,-27),(-23,-16),(23,-16),(-27,7),(27,7)):
+        poster.line((cx+dx*.78,cy+dy*.78,cx+dx,cy+dy),'white',3)
+    poster.text((252,explanation_top+52),'指标解读',60,NAVY,True)
     y=explanation_top+164
-    measuring=Poster(6000)
-    for index,paragraph in enumerate(EXPLANATION):
-        if index>=2:y+=90
-        y=measuring.paragraph(paragraph,152,y,1856,size=44)+34
-    explanation_bottom=y+40
-    required_height=explanation_bottom+210
-    if required_height>poster.height:
-        extension=Image.new('RGB',(2160,required_height),BG);extension.paste(poster.image,(0,0))
-        poster.image=extension;poster.draw=ImageDraw.Draw(extension);poster.height=required_height
-    poster.rectangle((80,explanation_top,2080,explanation_bottom),'white',40,BORDER)
-    poster.text((136,explanation_top+52),'指标解读',60,NAVY,True)
-    y=explanation_top+164
-    for index,paragraph in enumerate(EXPLANATION):
-        if index>=2:
-            label='资金偏紧' if index==2 else '资金宽松';color='#CA6470' if index==2 else '#0F9C91'
-            poster.rectangle((152,y,152+266,y+65),'#FFF0F2' if index==2 else '#E9F8F5',18)
-            poster.text((182,y+8),label,40,color,True);y+=90
-        y=poster.paragraph(paragraph,152,y,1856,size=44)+34
+    for paragraph in EXPLANATION[:2]:y=poster.paragraph(paragraph,152,y,1856,size=44)+34
+    inline_audit=[]
+    for index,paragraph in enumerate(EXPLANATION[2:]):
+        label='资金偏紧' if index==0 else '资金宽松';color='#F23D62' if index==0 else '#0BA98D'
+        prefix,suffix=paragraph.split(label)
+        poster.circle(154,y+25,12,color)
+        x=194;poster.text((x,y),prefix,44,NAVY)
+        x+=poster.font(44).getlength(prefix)+8
+        pill_width=poster.font(44,True).getlength(label)+44
+        poster.rectangle((x,y-7,x+pill_width,y+58),'#FFE9EE' if index==0 else '#DDF6F0',28)
+        poster.text((x+22,y),label,44,color,True)
+        poster.text((x+pill_width+8,y),suffix,44,NAVY)
+        assert x+pill_width+8+poster.font(44).getlength(suffix)<=2008
+        inline_audit.append({'label':label,'text_y':y,'pill_y':y,'inline':True})
+        y+=82
     footer_y=explanation_bottom+78
     poster.text((104,footer_y),'数据来源：中国货币网',34,MUTED)
     poster.text((104,footer_y+50),'利率单位：%   平均回购期限单位：天',30,MUTED)
@@ -238,6 +245,8 @@ def render_poster(snapshot,out_dir,*,logo_path=None,logo_kind='original_user_fil
     poster.image.save(png,dpi=(200,200));svg_path.write_text(poster.svg_string(plot_svg,plot_box,logo_svg),encoding='utf-8')
     audit={'title':TITLE,'size':list(poster.image.size),'source_range':[history['start'],history['end']],
            'quote_updated_at':quote['updated_at'],'chart_series':history['series'],
+           'quote_time_basis':'ChinaMoney overall quote timestamp; not fetch time or individual instrument update time',
+           'table_columns':headers,'explanation_inline_labels':inline_audit,
            'quotation_products':[r['product'] for r in quote['rows']],
            'curves':plot_audit,'table_cells':values_audit,'original_instructions_paragraphs':list(EXPLANATION),
            'policy_rate_supplied':False,'current_liquidity_conclusion':False,

@@ -1,0 +1,21 @@
+{
+  "tool": "built-in image_gen",
+  "assets": [
+    {
+      "path": "jin10-server/app/web/assets/live/news.webp",
+      "prompt": "Create ONE polished cartoon illustration for a retro computer's live-channel selector card. A friendly miniature globe with a satellite dish, microphone and paper news sheets, suggesting international live news broadcasts. Consistent art direction: charming soft clay-like 3D cartoon miniature, rounded tactile forms, subtle 1990s computer nostalgia, cream/beige objects with emerald and mint green accents, deep almost-black forest green background, soft warm key light from upper left, ambient occlusion, clean uncluttered central composition, no lettering, no logos, no UI border, no watermark. Landscape 3:2 aspect ratio, subject readable at tiny thumbnail size, generous empty dark margin. This is one card illustration, not a sprite sheet or collage of cards."
+    },
+    {
+      "path": "jin10-server/app/web/assets/live/markets.webp",
+      "prompt": "Create ONE polished cartoon illustration for a retro computer's live-channel selector card. A miniature financial trading desk with a simple rising and falling candlestick screen, coins and a tiny bull figurine, suggesting business and markets. Consistent art direction: charming soft clay-like 3D cartoon miniature, rounded tactile forms, subtle 1990s computer nostalgia, cream/beige objects with emerald and mint green accents, deep almost-black forest green background, soft warm key light from upper left, ambient occlusion, clean uncluttered central composition, no lettering, no logos, no UI border, no watermark. Landscape 3:2 aspect ratio, subject readable at tiny thumbnail size, generous empty dark margin. This is one card illustration, not a sprite sheet or collage of cards."
+    },
+    {
+      "path": "jin10-server/app/web/assets/live/cities.webp",
+      "prompt": "Create ONE polished cartoon illustration for a retro computer's live-channel selector card. A miniature coastal port with container ship, lighthouse, small airport control tower and colorful city buildings, suggesting urban live webcams. Consistent art direction: charming soft clay-like 3D cartoon miniature, rounded tactile forms, subtle 1990s computer nostalgia, cream/beige objects with emerald and mint green accents, deep almost-black forest green background, soft warm key light from upper left, ambient occlusion, clean uncluttered central composition, no lettering, no logos, no UI border, no watermark. Landscape 3:2 aspect ratio, subject readable at tiny thumbnail size, generous empty dark margin. This is one card illustration, not a sprite sheet or collage of cards."
+    },
+    {
+      "path": "jin10-server/app/web/assets/live/nature.webp",
+      "prompt": "Create ONE polished cartoon illustration for a retro computer's live-channel selector card. A miniature forest diorama with a bear, elephant, bird, jellyfish in a bubble, and a tiny space station above a blue planet, suggesting nature and space live webcams. Consistent art direction: charming soft clay-like 3D cartoon miniature, rounded tactile forms, subtle 1990s computer nostalgia, cream/beige objects with emerald and mint green accents, deep almost-black forest green background, soft warm key light from upper left, ambient occlusion, clean uncluttered central composition, no lettering, no logos, no UI border, no watermark. Landscape 3:2 aspect ratio, subject readable at tiny thumbnail size, generous empty dark margin. This is one card illustration, not a sprite sheet or collage of cards."
+    }
+  ]
+}

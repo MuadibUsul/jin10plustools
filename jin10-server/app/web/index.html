@@ -5,8 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>PLUS 日报选稿</title>
     <link rel="stylesheet" href="/style.css" />
-  </head>
-  <body>
+    <link rel="stylesheet" href="/workspace.css" />
+    <link rel="stylesheet" href="/daily.css" />
+  <link rel="stylesheet" href="/retro-terminal.css"><link rel="stylesheet" href="/pull-cord.css"></head>
+  <body class="daily-page">
+    <header><a class="brand" href="/"><span>PLUS</span>工作台</a><nav><a class="active" href="/daily/">日报选稿</a><a href="/briefs/">固定快讯</a><a href="/fresh/">Plus新鲜事</a><a href="/annotations/">Plus注解辅助</a></nav><div id="account"></div></header>
     <section id="login-view" class="login" hidden>
       <form id="login-form" class="card login-card">
         <h1>PLUS 日报选稿</h1>
@@ -29,8 +32,8 @@
     </section>
 
     <section id="app-view" hidden>
-      <header class="topbar">
-        <a class="guide-link" href="/">← 工作台</a><div class="brand"><span class="tag">PLUS</span><strong>日报选稿</strong></div>
+      <div class="daily-heading"><p class="eyebrow">DAILY REPORT</p><h1>日报选稿</h1><p class="muted">团队协作选稿，核对后生成日报。</p></div>
+      <div class="daily-toolbar">
         <div class="controls">
           <label>日期 <input id="day" type="date" /></label>
           <label>范围
@@ -49,8 +52,8 @@
           <button id="bulk-delete" title="勾选多条素材一次删除">批量删除</button>
           <button id="clear-pool" class="danger" title="删除当前显示的全部素材，开始新一期">一键清空素材</button>
         </div>
-        <div class="user"><button id="parse-alert" class="parse-alert" hidden></button><a class="guide-link" href="/guide.html" target="_blank" rel="noopener">使用教程</a><span id="whoami"></span><button id="logout" class="link">退出</button></div>
-      </header>
+        <div class="user"><button id="parse-alert" class="parse-alert" hidden></button><a class="guide-link" href="/guide.html" target="_blank" rel="noopener">使用教程</a></div>
+      </div>
 
       <main>
         <div id="sections" class="sections"></div>

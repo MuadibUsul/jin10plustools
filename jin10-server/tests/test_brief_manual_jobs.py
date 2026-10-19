@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import json
 
 import pytest
@@ -17,6 +17,10 @@ def freeze(monkeypatch, now):
             return now.astimezone(tz) if tz else now.replace(tzinfo=None)
     monkeypatch.setattr('app.api.briefs.datetime', FrozenDatetime)
     monkeypatch.setattr('app.briefs.worker.datetime', FrozenDatetime)
+    # Job rows take next_attempt_at from this clock. Without freezing it, the claim below
+    # compares a real-clock timestamp with the frozen one and only passes before
+    # 15:00 Beijing on the frozen date.
+    monkeypatch.setattr('app.db.models.utcnow', lambda: now.astimezone(timezone.utc))
 
 
 @pytest.mark.parametrize('now', [datetime(2026,10,16,7,tzinfo=CHINA),

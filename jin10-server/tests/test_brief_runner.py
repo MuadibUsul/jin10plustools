@@ -39,7 +39,8 @@ def test_cached_rules_reuse_sources_and_render_repairs_without_fetch(tmp_path):
 def test_fixed_explanations_are_identical_and_not_duplicated():
     for category,note in FIXED_NOTES.items():
         body=complete_body(category,'当日事实。')
-        assert body=='当日事实。' if category=='valuation' else body.endswith(note)
+        # Valuation, turnover and the US barometer keep notes on the delivered image only.
+        assert body=='当日事实。' if category in ('valuation','turnover','us_barometer') else body.endswith(note)
         assert complete_body(category,body)==body
     assert complete_body('oil_etf',complete_body('oil_etf','期货事实。')).count(OIL_CLOSING)==1
 

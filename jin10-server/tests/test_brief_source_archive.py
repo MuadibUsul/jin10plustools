@@ -50,7 +50,11 @@ def test_dated_pe_capture_can_be_restored_from_database(db_factory, seed, tmp_pa
     original = tmp_path / 'old-run'
     source = original / 'erp' / 'raw' / 'pe'
     source.mkdir(parents=True)
-    raw = b'{"provider":"original"}'
+    from datetime import datetime, timezone
+    raw = json.dumps({'result_code': 0, 'data': {'index_eva_pe_growths': [
+        {'ts': int(datetime(2026, 10, 13, tzinfo=timezone.utc).timestamp()*1000), 'pe': '13.1697'},
+        {'ts': int(datetime(2026, 10, 14, tzinfo=timezone.utc).timestamp()*1000), 'pe': '13.0883'},
+    ]}}).encode()
     raw_path = source / 'pe-original-history.json'
     raw_path.write_bytes(raw)
     normalized = {

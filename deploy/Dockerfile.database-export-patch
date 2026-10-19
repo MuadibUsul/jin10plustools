@@ -1,0 +1,14 @@
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
+USER root
+COPY jin10-server/app/api/export.py /srv/app/api/export.py
+COPY jin10-server/app/main.py /srv/app/main.py
+COPY jin10-server/app/services/data_export.py /srv/app/services/data_export.py
+COPY jin10-server/app/web/settings.html /srv/app/web/settings.html
+COPY jin10-server/app/web/settings.js /srv/app/web/settings.js
+COPY jin10-server/app/web/workspace.css /srv/app/web/workspace.css
+COPY jin10-server/pyproject.toml /srv/pyproject.toml
+RUN pip install --no-cache-dir "openpyxl>=3.1,<4" \
+    && chmod a+r /srv/app/api/export.py /srv/app/main.py /srv/app/services/data_export.py \
+       /srv/app/web/settings.html /srv/app/web/settings.js /srv/app/web/workspace.css /srv/pyproject.toml
+USER plus

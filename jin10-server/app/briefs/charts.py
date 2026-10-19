@@ -7,6 +7,7 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from matplotlib.font_manager import FontProperties
 from PIL import Image, ImageDraw, ImageFont
+from app.services.copy_dates import copy_dates
 
 FONT=Path(__file__).parent/'assets/PlusBriefs.ttf'
 GLYPH_FALLBACK=Path(__file__).parent/'assets/PlusGlyphFallback.ttf'
@@ -22,7 +23,7 @@ def volume_chart(rows,out):
     def text(x,y,s,size=15,color=ink):fig.text(x,y,s,fontproperties=font(size),color=color)
     text(.07,.96,'PLUS 快讯 / A股温度计',15,muted);text(.07,.905,'沪深两市成交额',32)
     text(.07,.81,f"{float(last['turn'])/10000:.2f}",82,blue);text(.36,.82,'万亿元',23)
-    text(.07,.77,f"数据日：{last['date']}    20日均线：{float(last['ma20'])/10000:.2f}万亿元",16,muted)
+    text(.07,.77,f"数据日：{copy_dates(last['date'])}    20日均线：{float(last['ma20'])/10000:.2f}万亿元",16,muted)
     ax=fig.add_axes([.1,.34,.82,.34]);av=fig.add_axes([.1,.16,.82,.12],sharex=ax)
     ax.bar(x,[float(r['turn']) for r in rows],color='#F3BA4B',width=.68)
     ax.plot(x,[float(r['ma20']) for r in rows],color=green,lw=2.5,label='20日均线')
@@ -67,6 +68,18 @@ def buffett_chart(rows,out):
 VALUATION_PLOT_BOUNDS=((80,105,1324,493),(80,700,1324,1088))
 
 
+def erp_index_limits(close):
+    """Fit the ERP panel's CSI 300 axis to the observed range.
+
+    The index has never traded near zero, so a fixed 0 bottom wastes the lower band.
+    Keep 500-point ticks, a round bottom with >=250 points of headroom, and the
+    approved 6,000 floor for the top.
+    """
+    low=max(0,math.floor((min(close)-250)/500)*500)
+    high=max(6000,math.ceil(max(close)/500)*500)
+    return low,high
+
+
 def valuation_chart(buffett_rows,erp_rows,out):
     """Draw both valuation panels on one canvas with identical plot geometry."""
     end=date.fromisoformat(erp_rows[-1]['date'])
@@ -85,12 +98,15 @@ def valuation_chart(buffett_rows,erp_rows,out):
     close=[float(r['close']) for r in buffett_rows]
     top_left=(min(2500,math.floor(min(close)/500)*500),max(6000,math.ceil(max(close)/500)*500))
     top_left_ticks=list(range(top_left[0],top_left[1]+1,500))
+    erp_close=[float(r['close']) for r in erp_rows]
+    erp_left=erp_index_limits(erp_close)
+    erp_left_ticks=list(range(erp_left[0],erp_left[1]+1,500))
     panels=(
         (buffett_rows,ratio,top_left,top_left_ticks,top_limits,top_ticks,lambda value:f'{value:.1f}',
          ((1.0,'#FF6B6B','高估'),(.7,'#FFC000','低估'),(.5,'#4ECB71','极度低估')),
          '巴菲特指数（A股总市值/上年度全年GDP）','A股总市值/GDP'),
         (erp_rows,[float(r['erp_percent']) for r in erp_rows],
-         (0,6000),list(range(0,6001,1000)),
+         erp_left,erp_left_ticks,
          (1.4,8.0),[1.4,2.5,3.6,4.7,5.8,6.9,8.0],lambda value:f'{value:.1f}%',((6,'#FFC000',''),),
          '沪深300股债性价比','沪深300风险溢价'),
     )
@@ -157,3 +173,93 @@ def valuation_chart(buffett_rows,erp_rows,out):
             draw.text((x,bottom+13),label,font=axis_font,fill=ink,anchor='mt')
     image.save(path)
     return path
+
+
+def us_line_chart(rows,out,*,filename,title,y_limits,y_ticks,thresholds,tick_format,
+                  value_key='pct',years=10,mark_last=False):
+    """Single dark panel for the US barometer family; typography and grid follow the other brief charts."""
+    from matplotlib.ticker import FuncFormatter
+    end=date.fromisoformat(rows[-1]['date'])
+    try:start=end.replace(year=end.year-years)
+    except ValueError:start=end.replace(year=end.year-years,day=28)
+    rows=[r for r in rows if start.isoformat()<=r['date']<=end.isoformat()]
+    if len(rows)<2:raise ValueError('美股图表缺少有效历史数据')
+    x=list(range(len(rows)))
+    fig=plt.figure(figsize=(14.08,7.0),dpi=100,facecolor='black')
+    ax=fig.add_axes([.075,.16,.85,.68]);ax.set_facecolor('black')
+    ax.plot(x,[float(r[value_key]) for r in rows],color='#22A1D6',lw=1.4)
+    for value,color,label in thresholds:
+        if y_limits[0]<value<y_limits[1]:
+            ax.axhline(value,color=color,lw=1.05,ls=(0,(5,4)))
+            ax.annotate(label,xy=(1,value),xycoords=('axes fraction','data'),xytext=(-6,4),
+                        textcoords='offset points',ha='right',va='bottom',fontproperties=font(11),color=color)
+    if mark_last:
+        last=float(rows[-1][value_key])
+        ax.axhline(last,color='#22A1D6',lw=1.0,ls=(0,(1.5,3)))
+        ax.annotate(tick_format(last),xy=(1,last),xycoords=('axes fraction','data'),xytext=(-6,-14),
+                    textcoords='offset points',ha='right',va='bottom',fontproperties=font(12),color='white',
+                    bbox=dict(boxstyle='round,pad=0.25',facecolor='#22A1D6',edgecolor='none'))
+    ticks=[round((len(rows)-1)*i/7) for i in range(8)]
+    ax.set_xlim(0,len(rows)-1);ax.set_ylim(*y_limits);ax.set_yticks(y_ticks)
+    ax.yaxis.set_major_formatter(FuncFormatter(lambda value,_:tick_format(value)))
+    ax.set_xticks(ticks,[rows[i]['date'] for i in ticks])
+    ax.set_title(title,fontproperties=font(19),color='white',loc='center',pad=20)
+    ax.grid(color='#333333',axis='y',ls='--')
+    ax.tick_params(colors='#B6B6B6',labelsize=10)
+    for spine in ax.spines.values():spine.set_color('#666666')
+    path=Path(out)/filename;fig.savefig(path,dpi=100,facecolor='black');plt.close(fig);return path
+
+
+def us_barometer_chart(buffett_rows,erp_rows,out):
+    """Both US barometer panels on one canvas, mirroring the valuation composite geometry."""
+    from matplotlib.ticker import FuncFormatter
+    end=date.fromisoformat(erp_rows[-1]['date'])
+    try:start=end.replace(year=end.year-10)
+    except ValueError:start=end.replace(year=end.year-10,day=28)
+    buffett=[r for r in buffett_rows if start.isoformat()<=r['date']<=end.isoformat()]
+    erp=[r for r in erp_rows if start.isoformat()<=r['date']<=end.isoformat()]
+    if len(buffett)<2 or len(erp)<2:raise ValueError('美股晴雨表缺少有效历史数据')
+    values=[float(r['pct']) for r in buffett]
+    low=math.floor(min(values)/50)*50;high=math.ceil(max(values)/50)*50
+    if high-low<100:high=low+100
+    fig=plt.figure(figsize=(14.08,11.90),dpi=100,facecolor='black')
+    panels=(
+        (buffett,(low,high),list(range(low,high+1,50)),
+         ((100,'#FFC000','上限'),(150,'#FF9F43','高估'),(200,'#FF6B6B','很高')),
+         '美股巴菲特指数（总市值 / GDP）','美股巴菲特指数',lambda value:f'{value:.0f}%'),
+        (erp,(3.5,7.5),[3.5+0.5*i for i in range(9)],
+         ((7.0,'#FF6B6B','高位'),(6.0,'#FFC000','均值'),(5.5,'#FF9F43','低位'),(4.5,'#FF6B6B','很低')),
+         '美股标普500股权风险溢价（ERP）','标普500股权风险溢价',lambda value:f'{value:.1f}%'),
+    )
+    for bounds,panel in zip(VALUATION_PLOT_BOUNDS,panels):
+        rows,ylim,yticks,thresholds,title,label,tick_format=panel
+        left,top,right,bottom=bounds
+        ax=fig.add_axes([left/1408,(1190-bottom)/1190,(right-left)/1408,(bottom-top)/1190],facecolor='black')
+        x=[date.fromisoformat(r['date']).toordinal() for r in rows]
+        ax.plot(x,[float(r['pct']) for r in rows],color='#22A1D6',lw=1.4,label=label)
+        for value,color,text in thresholds:
+            if ylim[0]<value<ylim[1]:
+                ax.axhline(value,color=color,lw=1.05,ls=(0,(5,4)))
+                ax.annotate(text,xy=(1,value),xycoords=('axes fraction','data'),xytext=(-6,4),
+                            textcoords='offset points',ha='right',va='bottom',fontproperties=font(11),color=color)
+        ticks=[start.toordinal()+round((end.toordinal()-start.toordinal())*i/7) for i in range(8)]
+        ax.set_xlim(start.toordinal(),end.toordinal());ax.set_ylim(*ylim);ax.set_yticks(yticks)
+        ax.yaxis.set_major_formatter(FuncFormatter(lambda value,_:tick_format(value)))
+        ax.set_xticks(ticks,[date.fromordinal(value).strftime('%Y-%m-%d') for value in ticks])
+        ax.set_title(title,fontproperties=font(20),color='white',pad=30)
+        ax.legend(prop=font(11),labelcolor='white',loc='lower center',bbox_to_anchor=(0.5,1.0),
+                  frameon=False,borderaxespad=0.1)
+        ax.grid(color='#333333',axis='y',ls='--')
+        ax.tick_params(colors='#B6B6B6',labelsize=10)
+        for spine in ax.spines.values():spine.set_color('#777777')
+    path=Path(out)/'美股晴雨表.png';fig.savefig(path,dpi=100,facecolor='black');plt.close(fig);return path
+
+
+def us_structure_chart(rows,out):
+    values=[float(r['value']) for r in rows]
+    low=math.floor(min(values)/100)*100;high=math.ceil(max(values)/100)*100
+    if high-low<200:high=low+200
+    return us_line_chart(rows,out,filename='美股市场结构.png',value_key='value',years=1,
+        title='标普500等权指数 − 市值加权指数（点）',y_limits=(low,high),
+        y_ticks=list(range(low,high+1,100)),thresholds=(),
+        tick_format=lambda value:f'{value:,.1f}',mark_last=True)

@@ -212,7 +212,8 @@ def _completed_run(output, expected, mode, input_hash, bond_input_hash, window_y
         return None
 
 
-def run_erp(workbook, out_dir, *, mode, expected_date, bond_history=None, force_refresh=False, window_years=10):
+def run_erp(workbook, out_dir, *, mode, expected_date, bond_history=None, force_refresh=False, window_years=10, progress=None):
+    notify = progress or (lambda message: None)
     expected = _day(expected_date)
     if isinstance(window_years, bool) or not isinstance(window_years, int) or window_years < 1:
         raise ERPWorkflowError('invalid_window', 'Chart window years must be a positive integer.')
@@ -278,8 +279,12 @@ def run_erp(workbook, out_dir, *, mode, expected_date, bond_history=None, force_
         source_report['note'] = 'Faithful calculation replay only; no claim that uploaded figures are current online observations.'
     else:
         # No old workbook close or PE can serve as a live acquisition fallback.
+        notify(f'正在获取沪深300收盘点位：{previous}、{expected}')
         close = fetch_close(expected, previous, output / 'raw' / 'close')
+        notify('正在获取PE，并核验当前日与前一交易日的原始证据')
         pe = fetch_pe(expected, previous, output / 'raw' / 'pe', use_completed_cache=not force_refresh)
+        if pe.get('completed_date_cache_reused'):notify('PE完整日期快照已恢复，原始响应哈希校验通过')
+        if pe.get('previous_session_recovered'):notify(f'已从校验通过的来源快照补回 {previous} 的PE，当前日数据来自本次响应')
         close_rows = {r['date']: r for r in close['rows']}
         pe_rows = {r['date']: r for r in pe['rows']}
         gaps['missing_close_dates'] = sorted({expected, previous} - close_rows.keys())
@@ -302,6 +307,7 @@ def run_erp(workbook, out_dir, *, mode, expected_date, bond_history=None, force_
                                 'new_pe_input': str(pe_input), 'new_pe_raw': str(pe_raw),
                                 'new_pe_source': pe_rows[day].get('source', pe['source'])})
         if bond_history is None:
+            notify('正在获取中债国债收益率曲线并检查历史日期覆盖')
             capture = fetch_bond_history(HISTORY_START, expected, output / 'raw' / 'bond')
             bond_history = capture['normalized_path']
         bonds, bond_evidence = _load_bond_rows(bond_history, expected)

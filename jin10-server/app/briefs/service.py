@@ -5,11 +5,12 @@ import uuid
 from datetime import date, datetime, timezone
 from pathlib import Path
 
-from sqlalchemy import select
+from sqlalchemy import select,update
 from sqlalchemy.exc import IntegrityError
 
 from app.config import get_settings
-from app.db.models import BriefAudit, BriefConfig, BriefIssue, BriefJob, BriefVersion, utcnow
+from app.services.copy_dates import copy_dates
+from app.db.models import BriefAudit, BriefConfig, BriefIssue, BriefJob, BriefVersion, BriefSourceSnapshot, Team, utcnow
 from .delivery import complete_body, default_notes
 from .policy import CATEGORIES, expected_date
 
@@ -75,20 +76,44 @@ def append_version(db,issue,payload,*,user_id=None,kind='generated',title=None,b
         payload['fixed_notes']=(config.notes or {}).get(issue.category,default_notes(issue.category)) if config else default_notes(issue.category)
     issue.version+=1;issue.updated_at=utcnow()
     item=BriefVersion(issue_id=issue.id,number=issue.version,kind=kind,
-        title=title or payload['title'],dynamic_body=body if body is not None else payload['dynamic_body'],
+        title=copy_dates(title or payload['title']),dynamic_body=copy_dates(body if body is not None else payload['dynamic_body']),
         payload=payload,created_by=user_id)
     db.add(item);db.add(BriefAudit(issue_id=issue.id,action=kind,version=issue.version,user_id=user_id))
-    db.flush();return item
+    db.flush();prune_versions(db,issue);return item
+
+
+def prune_versions(db,issue):
+    """Keep two deliverable revisions; retain original evidence and note revision history."""
+    versions=list(db.scalars(select(BriefVersion).where(BriefVersion.issue_id==issue.id).order_by(BriefVersion.number.desc())))
+    for old in versions[2:]:
+        # Notes remain reproducible without retaining extra downloadable editions.
+        team=db.get(Team,issue.team_id,with_for_update=True)
+        saved=dict(team.settings or {})
+        notes=list(saved.get('retired_issue_notes',[]))
+        notes.append({'issue_id':str(issue.id),'version':old.number,'notes':(old.payload or {}).get('fixed_notes',''),'created_at':old.created_at.isoformat()})
+        team.settings={**saved,'retired_issue_notes':notes}
+        db.add(BriefAudit(issue_id=issue.id,action='retired_notes',version=old.number,user_id=old.created_by))
+        db.execute(update(BriefSourceSnapshot).where(BriefSourceSnapshot.version_id==old.id).values(version_id=None))
+        if issue.confirmed_version==old.number:
+            issue.confirmed_version=None;issue.confirmed_by=None;issue.confirmed_at=None
+        db.delete(old)
 
 
 def version_out(issue,version):
     data=version.payload or {}
     notes=data.get('fixed_notes',default_notes(issue.category))
-    return {'number':version.number,'kind':version.kind,'title':version.title,
-        'dynamic_body':version.dynamic_body,'body':complete_body(issue.category,version.dynamic_body,notes),
-        'fixed_notes':notes,'notes_placement':'image' if issue.category=='valuation' else 'body','created_at':version.created_at,
+    ai=dict(data.get('deepseek',{'status':'not_configured'}))
+    for key in ('title','body'):
+        if key in ai:ai[key]=copy_dates(ai[key])
+    # Valuation and turnover keep their notes on the image; their body stays dynamic-only,
+    # including earlier editions that still stored the appended note block.
+    image_notes=issue.category in ('valuation','turnover','us_barometer')
+    body=complete_body(issue.category,copy_dates(version.dynamic_body),notes)
+    return {'number':version.number,'kind':version.kind,'title':copy_dates(version.title),
+        'dynamic_body':body if image_notes else copy_dates(version.dynamic_body),'body':body,
+        'fixed_notes':notes,'notes_placement':'image' if image_notes else 'body','created_at':version.created_at,
         'data_date':data.get('data_date'),'warnings':data.get('warnings',[]),
-        'facts':data.get('facts',{}),'deepseek':data.get('deepseek',{'status':'not_configured'}),
+        'facts':data.get('facts',{}),'deepseek':ai,
         'images':[{'name':x,'url':f'/api/briefs/issues/{issue.id}/files/{version.number}/{x}'} for x in data.get('images',[])],
         'preview':data.get('preview',True),'valid':data.get('valid',False)}
 
@@ -100,14 +125,16 @@ def issue_out(db,issue):
     return {'id':str(issue.id),'category':issue.category,'label':CATEGORIES[issue.category],
         'issue_date':issue.issue_date,'expected_date':expected_date(issue.category,issue.issue_date),
         'version':issue.version,'confirmed_version':issue.confirmed_version,'confirmed_at':issue.confirmed_at,
-        'versions':[version_out(issue,v) for v in versions],
+        'versions':[version_out(issue,v) for v in versions[:1]],
         'jobs':[job_out(j) for j in jobs[:15]]}
 
 
 def job_out(item):
+    from .progress import for_job
     return {'id':str(item.id),'category':item.category,'issue_date':item.issue_date,'action':item.action,
         'preview':item.preview,'status':item.status,'attempts':item.attempts,'error':item.error,
-        'next_attempt_at':item.next_attempt_at,'updated_at':item.updated_at}
+        'next_attempt_at':item.next_attempt_at,'created_at':item.created_at,'updated_at':item.updated_at,
+        'progress':for_job(item,root_for(item.team_id))}
 
 
 def artifact_path(issue,version,name):
@@ -124,14 +151,19 @@ def artifact_path(issue,version,name):
 def delivered_image(issue,version,name):
     from app.services.image_delivery import POLICY_VERSION, WATERMARK, MAX_BYTES, store_image
     source=artifact_path(issue,version,name)
-    notes=version.payload.get('fixed_notes',default_notes(issue.category)) if issue.category=='valuation' else ''
+    notes=version.payload.get('fixed_notes',default_notes(issue.category)) if issue.category in ('valuation','turnover','us_barometer') else ''
+    # Earlier us-barometer editions kept two images; notes belong only on the merged chart.
+    if issue.category=='us_barometer' and name!='美股晴雨表.png':notes=''
+    policy=POLICY_VERSION + ('-turnover-notes-1' if issue.category=='turnover' else '-us-barometer-merged-1' if issue.category=='us_barometer' else '')
     key=hashlib.sha256(json.dumps([version.payload['image_sha256'][name],notes,issue.category,
         version.payload.get('unified_valuation',False),
-        POLICY_VERSION,hashlib.sha256(WATERMARK.read_bytes()).hexdigest()],ensure_ascii=False).encode()).hexdigest()
+        policy,hashlib.sha256(WATERMARK.read_bytes()).hexdigest()],ensure_ascii=False).encode()).hexdigest()
     target=root_for(issue.team_id)/'delivery'/str(version.id)/key
     for suffix,media in (('.png','image/png'),('.jpg','image/jpeg')):
         cached=target.with_suffix(suffix)
         if cached.is_file() and 0<cached.stat().st_size<=MAX_BYTES:return cached,media
-    return store_image(source,target,notes=notes,dark=issue.category in ('valuation','turnover'),
+    return store_image(source,target,notes=notes,dark=issue.category in ('valuation','turnover','us_barometer'),
                        remove_valuation_source=issue.category=='valuation' and not version.payload.get('unified_valuation'),
-                       reuse_footer=issue.category=='liquidity')
+                       reuse_footer=issue.category=='liquidity',
+                       turnover_snapshot=source.with_name('source.json') if issue.category=='turnover'
+                       and not version.payload.get('turnover_watermark_removed') else None)

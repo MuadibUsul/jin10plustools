@@ -1,0 +1,16 @@
+/* Daily editing keeps its existing layout and controls inside the shared workspace shell. */
+:root{--bg:#f5f7fb;--ink:#173153;--muted:#7b8da5;--line:#e2e9f3;--brand:#477ae2;--brand-dark:#3567cd}
+.daily-page{font-size:14px;background:var(--bg)}
+.daily-page>header .brand{display:block;font-size:18px}
+.daily-heading{max-width:1380px;margin:auto;padding:32px 38px 10px}
+.daily-toolbar{max-width:1304px;margin:0 auto 4px;padding:14px 18px;display:flex;flex-wrap:wrap;gap:14px;align-items:center;justify-content:space-between;background:#fff;border:1px solid var(--line);border-radius:12px}
+.daily-toolbar .controls{gap:10px}.daily-toolbar .user{font-size:12px}
+.daily-page main{display:grid;grid-template-columns:minmax(0,1fr) 320px;padding-top:20px;gap:20px}
+.daily-page .card{border:1px solid var(--line);border-radius:16px;box-shadow:none;padding:20px}
+.daily-page .side{top:20px}.daily-page .side h2{font-size:17px}
+.daily-page .section-head h2{font-size:16px}.daily-page .item{background:#fff}.daily-page .item.picked{background:#f2f6fe}
+.daily-page button.link{color:#476382}.daily-page .guide-link:hover{text-decoration:underline}
+.daily-page .login{min-height:calc(100vh - 80px)}
+@media(max-width:1380px){.daily-toolbar{margin-left:38px;margin-right:38px}}
+@media(max-width:1000px){.daily-page main{grid-template-columns:1fr}.daily-page .side{position:static}}
+@media(max-width:650px){.daily-heading{padding:22px 16px 8px}.daily-toolbar{margin-left:16px;margin-right:16px;padding:14px}.daily-page main{padding:16px}.daily-page .sections{grid-template-columns:minmax(0,1fr)}}

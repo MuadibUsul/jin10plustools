@@ -1,4 +1,5 @@
 import { $, login, api } from '/workspace.js';
+import '/pull-cord.js';
 const path = location.pathname;
 if (path.startsWith('/fresh/') || path.startsWith('/annotations/')) {
   $('#page-title').textContent = path.startsWith('/fresh/') ? 'Plus新鲜事' : 'Plus注解辅助';

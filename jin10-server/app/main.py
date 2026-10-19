@@ -11,11 +11,14 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
+from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
+from fastapi.exception_handlers import request_validation_exception_handler
 
 from app.ai.jev_client import JevClient
 from app.ai.worker import AnalysisWorker
 from app.api import assets, auth, board, collab, issues, materials
-from app.api import briefs
+from app.api import briefs, export, feedback, live, settings as team_settings
 from app.config import get_settings
 from app.db.session import get_session_factory
 from app.services.maintenance import MaintenanceWorker
@@ -28,8 +31,8 @@ log = logging.getLogger("plus")
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
     worker: AnalysisWorker | None = None
-    if settings.ai_worker_enabled and settings.jev_api_key:
-        worker = AnalysisWorker(get_session_factory(), JevClient.from_settings(), settings.ai_worker_interval_seconds)
+    if settings.ai_worker_enabled:
+        worker = AnalysisWorker(get_session_factory(), JevClient.from_settings() if settings.jev_api_key else None, settings.ai_worker_interval_seconds)
         worker.start()
     else:
         log.warning("AI 分析未启用（未配置 PLUS_JEV_API_KEY 或 PLUS_AI_WORKER_ENABLED=false）")
@@ -42,6 +45,15 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title="PLUS Research API", version="0.2.0", lifespan=lifespan)
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_error(request, exc):
+    if request.url.path == '/api/settings':
+        return JSONResponse(status_code=422, content={'detail': '设置格式不正确，请检查字段长度与格式'})
+    return await request_validation_exception_handler(request, exc)
+
+
 app.include_router(auth.router)
 app.include_router(materials.router)
 app.include_router(assets.router)
@@ -49,6 +61,10 @@ app.include_router(issues.router)
 app.include_router(board.router)
 app.include_router(collab.router)
 app.include_router(briefs.router)
+app.include_router(team_settings.router)
+app.include_router(live.router)
+app.include_router(export.router)
+app.include_router(feedback.router)
 
 
 @app.get("/api/health", tags=["system"])
@@ -89,4 +105,9 @@ def briefs_page():
 
 
 # Legacy script, guide and extension-download URLs remain available.
+@app.get('/settings/',include_in_schema=False)
+def settings_page():
+    return FileResponse(_WEB/'settings.html',headers={'Cache-Control':'no-cache'})
+
+
 app.mount("/", _WebFiles(directory=Path(__file__).parent / "web", html=True), name="web")

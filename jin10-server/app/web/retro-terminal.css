@@ -1,0 +1,75 @@
+.brief-workspace{position:relative}
+/* Six categories fill the card grid, so the computer docks below the grid instead of
+   covering the last card; it still never affects card or grid row heights. */
+.retro-panel{
+  position:relative;width:min(340px,100%);margin:24px auto 0;padding:0;border:0;
+  background:none;box-shadow:none;isolation:isolate;perspective:900px;
+}
+.retro-panel::before{content:"";position:absolute;left:15%;bottom:5%;width:65%;height:5%;border-radius:50%;background:#17315335;filter:blur(7px);pointer-events:none}
+.computer-float{position:relative;width:min(100%,340px,calc(var(--dock-height,320px) + 16px));margin-inline:auto;transform-style:preserve-3d}
+.computer-float,.retro-computer{pointer-events:none}
+.terminal-screen,.computer-mouse{pointer-events:auto}
+.retro-computer:has(.show-live){transform:rotateX(-2deg) rotateY(-7deg)}
+.retro-computer{position:relative;container-type:inline-size;width:100%;aspect-ratio:1;filter:drop-shadow(0 14px 8px #17315330) drop-shadow(2px 3px 1px #29261e40);transform:rotateX(calc(-2deg + var(--tilt-x,0deg))) rotateY(calc(-7deg + var(--tilt-y,0deg)));transition:transform .24s cubic-bezier(.23,1,.32,1);transform-style:preserve-3d}
+.retro-computer::before{content:"";position:absolute;inset:0;background:url('/assets/retro-computer-frame.png') center/contain no-repeat;filter:brightness(.62) saturate(.65);transform:translate3d(5px,2px,-8px);pointer-events:none}
+.computer-mouse{position:absolute;left:84%;top:77%;width:14%;height:16%;z-index:7;border:0;border-radius:45%;background:transparent;box-shadow:none;padding:0;cursor:pointer;transform:translateZ(2px)}
+.computer-mouse:hover{background:#fff1;border:0}.computer-mouse:active{transform:translateY(1px) translateZ(2px);background:#0001}.computer-mouse:focus-visible{outline:2px solid #408c65;outline-offset:2px}
+.computer-frame{position:absolute;inset:0;width:100%;height:100%;z-index:3;pointer-events:none;user-select:none;object-fit:contain}
+.computer-power-light{position:absolute;left:72%;top:59.9%;width:.5%;height:.5%;min-width:2px;min-height:2px;z-index:4;border-radius:25%;background:#9dffab;box-shadow:0 0 5px #5bff83,0 0 9px #5bff8360;pointer-events:none;animation:power-breathe 3s ease-in-out infinite}
+.retro-panel[data-active=true] .computer-power-light{animation-duration:1s}
+.terminal-screen{
+  position:absolute;left:24%;top:15%;width:46%;height:35.5%;z-index:1;
+  display:flex;flex-direction:column;overflow:hidden;padding:clamp(8px,2cqw,12px);
+  border-radius:9% / 10%;background:radial-gradient(ellipse at center,#092416,#020a05 78%);
+  color:#9affae;font-family:"Cascadia Code",Consolas,"Microsoft YaHei",monospace;
+  font-size:clamp(10px,2.45cqw,12px);line-height:1.6;text-shadow:0 0 4px #58ff8a60;
+  box-shadow:inset 0 0 15px #000c;animation:crt-breathe 5s ease-in-out infinite;
+}
+.terminal-screen::before{content:"";position:absolute;left:0;top:-40%;width:100%;height:35%;z-index:4;pointer-events:none;background:linear-gradient(transparent,#a1ffb710,transparent);animation:crt-sweep 8s linear infinite}
+.terminal-screen::after{content:"";position:absolute;inset:0;z-index:5;pointer-events:none;border-radius:inherit;
+  background:repeating-linear-gradient(0deg,#0000 0 2px,#0003 2px 3px),linear-gradient(128deg,#d9ffed0c,transparent 46%);
+  box-shadow:inset 0 0 16px #0009}
+.terminal-head{position:relative;z-index:2;display:flex;justify-content:space-between;gap:3px;flex-shrink:0;
+  border-bottom:1px solid #92e3a32e;padding-bottom:3px;margin-bottom:5px;color:#73bf88;
+  font-size:clamp(7px,1.7cqw,9px);letter-spacing:.3px;white-space:nowrap}
+.terminal-feed{position:relative;z-index:2;flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;scrollbar-width:none;scroll-behavior:smooth;outline-offset:-2px}
+.terminal-feed::-webkit-scrollbar{display:none}
+.terminal-line{display:flex;align-items:baseline;gap:.35em;flex-wrap:wrap;margin:0 0 3px;overflow-wrap:anywhere;line-height:1.65;font-size:inherit}
+.terminal-line time{font-size:.85em;color:#669e76;font-variant-numeric:tabular-nums;flex-shrink:0}
+.terminal-channel{color:#76d990;white-space:nowrap}
+.terminal-line.succeeded{color:#bcffc9}.terminal-line.failed,.terminal-line.skipped{color:#e0e399}.terminal-line.waiting{color:#a3c7a0}
+.terminal-empty{position:relative;z-index:2;margin:7px 0;color:#8fda9f;font-size:inherit;flex:1}
+.terminal-prompt{position:relative;z-index:2;display:flex;align-items:center;gap:.5em;margin-top:4px;flex-shrink:0;color:#9affae;font-size:.85em;letter-spacing:.3px}
+.terminal-cursor{animation:terminal-cursor 1.2s steps(2,end) infinite}
+.matrix-rain{position:absolute;inset:0;pointer-events:none;overflow:hidden;opacity:.12;mask-image:linear-gradient(transparent,#000 18%,#000 75%,transparent)}
+.matrix-rain span{position:absolute;left:calc(4% + var(--column)*14%);top:0;writing-mode:vertical-rl;white-space:nowrap;color:#4fff7d;line-height:1.5;font-size:10px;text-shadow:0 0 5px #1fff60;animation:matrix-fall calc(13s + var(--column)*1.7s) linear infinite;animation-delay:calc(var(--column)*-2.8s)}
+@keyframes matrix-fall{from{transform:translateY(-100%)}to{transform:translateY(180%)}}
+@keyframes terminal-cursor{50%{opacity:0}}
+@keyframes power-breathe{50%{opacity:.45}}
+@keyframes crt-breathe{50%{filter:brightness(1.13)}}
+@keyframes crt-sweep{to{transform:translateY(500%)}}
+.computer-live{position:absolute;inset:0;z-index:6;background:#020a05;display:flex;flex-direction:column;text-shadow:none}
+.live-bar{height:22px;min-height:22px;display:flex;align-items:center;justify-content:space-between;padding:0 4px;font-size:9px;color:#9affae;background:#07180f}
+.live-bar button,.live-bar a{font:inherit;color:inherit;background:transparent;border:0;padding:0 5px;line-height:20px;text-decoration:none;cursor:pointer}
+.computer-live iframe{width:100%;flex:1;min-height:0;border:0;background:#000}
+.computer-live>a{margin:auto;text-align:center;color:#9affae;font-size:10px}
+.terminal-screen.show-live::before,.terminal-screen.show-live::after{display:none}
+.terminal-screen.show-live{animation:none}
+.terminal-screen.show-live>:not(.computer-live){visibility:hidden}
+.live-bar{gap:3px;height:19px;min-height:19px;font-size:clamp(8px,2.2cqw,10px)}
+.live-bar>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;text-align:center}
+.live-bar button{flex-shrink:0;line-height:18px;min-width:16px;padding:0 2px}
+.live-body{position:relative;display:flex;flex-direction:column;flex:1;min-height:0;overflow:hidden}
+.live-body iframe,.live-body video{display:block;width:100%;height:100%;flex:1;min-height:0;object-fit:contain;background:#000;border:0}
+.live-deck{flex:1;min-height:0;padding:3px 5px 0;outline-offset:-2px}
+.live-card{display:block;position:relative;width:100%;height:100%;overflow:hidden;padding:0;border:1px solid #75d79b55;border-radius:6px;background:#082216;color:#eeffe9;text-align:left;cursor:pointer;box-shadow:0 2px 3px #0008;isolation:isolate}
+.live-card img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:-1}
+.live-card-caption{position:absolute;inset:auto 0 0;padding:11px 5px 4px;background:linear-gradient(transparent,#021109f5 35%);display:flex;flex-direction:column;gap:2px}
+.live-card-caption strong{font-size:clamp(9px,2.8cqw,11px);line-height:1.3;max-height:2.6em;overflow:hidden}
+.live-card-caption small{font-size:clamp(7px,2.1cqw,9px);line-height:1.25;color:#a4dbb5}
+.live-card:active{filter:brightness(.9)}
+.live-navigation{display:flex;align-items:center;justify-content:space-between;gap:2px;padding:2px 5px;flex-shrink:0;color:#8dc69d;font-size:clamp(6px,1.8cqw,8px);white-space:nowrap;line-height:13px}
+.live-navigation button{border:0;background:none;color:#bdf8ce;font-size:12px;padding:0 4px;line-height:13px;cursor:pointer}
+.live-notice{padding:7px;margin:auto;font-size:clamp(9px,2.6cqw,11px);line-height:1.5;color:#b1e0be;text-align:center}
+@media(prefers-reduced-motion:no-preference){.live-card{animation:live-card-in .16s ease-out}@keyframes live-card-in{from{opacity:.5;transform:translateY(3px)}to{opacity:1;transform:translateY(0)}}}
+@media(prefers-reduced-motion:reduce){.matrix-rain span,.terminal-cursor,.computer-float,.retro-panel::before,.computer-power-light,.terminal-screen,.terminal-screen::before{animation:none}.retro-computer{transform:none;transition:none}.terminal-feed{scroll-behavior:auto}}

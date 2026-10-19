@@ -8,7 +8,8 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 
-from app.db.models import BriefAudit, BriefConfig, BriefIssue, BriefJob, BriefVersion, Role, utcnow
+from app.db.models import BriefAudit, BriefConfig, BriefIssue, BriefJob, BriefVersion, Role, Team, utcnow
+from app.services.team_settings import update_notes
 from app.deps import CurrentUser, DbSession, Editor
 from app.briefs.policy import CATEGORIES, CHINA
 from app.briefs.service import owned, enqueue, issue_out, job_out, append_version, artifact_path, delivered_image
@@ -19,7 +20,7 @@ router=APIRouter(prefix='/api/briefs',tags=['fixed briefs'])
 
 class JobRequest(BaseModel):
     model_config = ConfigDict(extra='forbid')
-    category: Literal['volume','turnover','valuation','liquidity','oil_etf']
+    category: Literal[*CATEGORIES]
     issue_date: date
     action: Literal['produce','refresh','render','ai']='produce'
 
@@ -99,6 +100,16 @@ def job(id:uuid.UUID,db:DbSession,user:CurrentUser):
     return job_out(row)
 
 
+@router.get('/jobs/{id}/process')
+def job_process(id:uuid.UUID,db:DbSession,user:CurrentUser):
+    if user.role==Role.VIEWER:raise HTTPException(403,'仅编辑和管理员可检查生成详情')
+    row=db.scalars(select(BriefJob).where(BriefJob.id==id,BriefJob.team_id==user.team_id)).first()
+    if not row:raise HTTPException(404,'任务不存在')
+    from app.briefs.process_details import for_job
+    from app.briefs.service import root_for
+    return {'job':job_out(row),'details':for_job(row,root_for(row.team_id))}
+
+
 @router.get('/issues/{id}/versions')
 def versions(id:uuid.UUID,db:DbSession,user:CurrentUser):
     return visible(db,user,get_issue(db,user,id))['versions']
@@ -114,11 +125,9 @@ def edit(id:uuid.UUID,body:EditRequest,db:DbSession,user:Editor):
     payload=dict(previous.payload)
     if body.fixed_notes is not None:payload['fixed_notes']=body.fixed_notes.strip()
     if body.notes_as_default and body.fixed_notes is not None:
-        config=db.get(BriefConfig,user.team_id,with_for_update=True)
-        if config is None:
-            config=BriefConfig(team_id=user.team_id,enabled=False,notes={});db.add(config)
-        config.notes={**(config.notes or {}),issue.category:body.fixed_notes.strip()}
-        config.updated_at=utcnow()
+        team=db.get(Team,user.team_id,with_for_update=True)
+        update_notes(db,team,{issue.category:body.fixed_notes},user.id)
+        team.settings={**team.settings,'settings_revision':team.settings.get('settings_revision',0)+1}
     append_version(db,issue,payload,user_id=user.id,kind='edited',
                    title=body.title.strip(),body=body.dynamic_body.strip())
     db.commit();return issue_out(db,issue)

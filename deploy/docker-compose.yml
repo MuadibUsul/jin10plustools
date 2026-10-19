@@ -22,6 +22,7 @@ services:
 
   api:
     build: ./jin10-server
+    image: ${PLUS_RELEASE_IMAGE:-plus-api}
     container_name: plus-api
     restart: unless-stopped
     depends_on:
@@ -40,6 +41,7 @@ services:
 
   brief-worker:
     build: ./jin10-server
+    image: ${PLUS_RELEASE_IMAGE:-plus-api}
     restart: unless-stopped
     command: ["python", "-m", "app.briefs.worker"]
     healthcheck:

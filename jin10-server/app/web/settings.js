@@ -267,7 +267,7 @@ $('#chat2api-upload').onclick = async () => {
   try {
     const result = await api('/api/chat2api/tokens', { method: 'POST', json: { text } });
     $('#chat2api-tokens').value = ''; $('#chat2api-error-list').hidden = true;
-    chat2apiMessage(`已上传，当前可用 Tokens：${result.tokens_count ?? '未知'}。`);
+    chat2apiMessage(`已识别并上传 ${result.extracted ?? '?'} 个 Token，当前可用 Tokens：${result.tokens_count ?? '未知'}。`);
     await loadChat2api();
   } catch (error) { chat2apiMessage(error.message, true); }
   finally { button.disabled = false; }

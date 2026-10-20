@@ -78,14 +78,51 @@ def _saved(team) -> dict[str, Any]:
     return dict(((getattr(team, "settings", None) or {}).get("skills") or {}))
 
 
-def effective(team, category: str) -> dict[str, Any]:
+def history_samples(category: str) -> list[dict[str, str]]:
+    """Parse dated examples from the bundled reference file."""
+    text = (asset_dir(category) / "references" / "history.md").read_text(encoding="utf-8")
+    samples = []
+    current_date = None
+    current_title = ""
+    body = []
+    started = False
+
+    def flush():
+        if current_date and body:
+            samples.append({"date": current_date, "title": current_title,
+                            "body": re.sub(r"\s+", " ", " ".join(body)).strip()})
+
+    for line in text.splitlines():
+        if line.startswith("### "):
+            flush()
+            value = line[4:].strip()
+            current_date = value if re.fullmatch(r"\d{4}-\d{2}-\d{2}", value) else None
+            current_title = ""
+            body = []
+            started = False
+            continue
+        if not current_date:
+            continue
+        if not current_title and line.startswith("- 标题："):
+            current_title = line.split("：", 1)[1].strip()
+            continue
+        if line.strip() == "**动态正文**":
+            started = True
+            continue
+        if started and line.strip():
+            body.append(line.strip())
+    flush()
+    return samples
+
+
+def effective(team, category: str, *, include_history: bool = False) -> dict[str, Any]:
     if category not in CATEGORY_ORDER:
         raise SkillNotFound("Skill 不存在")
     saved = _saved(team).get(category) or {}
     bundled = _bundled(category)
     instructions = saved.get("instructions") or bundled
     history = list(saved.get("history") or [])
-    return {
+    result = {
         "category": category,
         "label": CATEGORIES[category],
         "group": CATEGORY_GROUPS[category],
@@ -117,6 +154,9 @@ def effective(team, category: str) -> dict[str, Any]:
             "digest": _hash(item.get("instructions") or bundled),
         } for item in history],
     }
+    if include_history:
+        result["history_samples"] = history_samples(category)
+    return result
 
 
 def research_skills() -> list[dict[str, Any]]:
@@ -160,9 +200,9 @@ def research_skills() -> list[dict[str, Any]]:
     return items
 
 
-def get_skill(team, category: str) -> dict[str, Any]:
+def get_skill(team, category: str, *, include_history: bool = False) -> dict[str, Any]:
     if category in CATEGORY_ORDER:
-        return effective(team, category)
+        return effective(team, category, include_history=include_history)
     for item in research_skills():
         if item["category"] == category:
             return item

@@ -46,7 +46,7 @@ def asset_dir(category: str) -> Path:
     raise ValueError("固定快讯 Skill 规范文件未安装")
 
 
-def _history(category: str, limit: int = 6) -> str:
+def _history(category: str, limit: int = 20) -> str:
     text = (asset_dir(category) / "references" / "history.md").read_text(encoding="utf-8")
     starts = [match.start() for match in _DAILY.finditer(text)]
     if not starts:

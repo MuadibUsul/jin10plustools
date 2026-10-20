@@ -29,6 +29,7 @@ def test_every_member_can_read_five_installed_skills(client):
             "finance.causal-analysis", "news.quality-review"}
     detail = client.get("/api/settings/skills/volume", headers=login(client, "viewer@plus.test"))
     assert detail.status_code == 200 and detail.json()["skill"]["category"] == "volume"
+    assert len(detail.json()["skill"]["history_samples"]) == 20
     research = client.get("/api/settings/skills/news.event-extraction", headers=login(client, "viewer@plus.test"))
     assert research.status_code == 200 and research.json()["skill"]["editable"] is False
     assert client.get("/api/settings/skills/unknown", headers=login(client, "viewer@plus.test")).status_code == 404

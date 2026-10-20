@@ -170,7 +170,7 @@ def skills(db: DbSession, user: CurrentUser):
 @router.get('/skills/{category}')
 def skill_detail(category: str, db: DbSession, user: CurrentUser):
     try:
-        return {'skill': get_skill(db.get(Team, user.team_id), category)}
+        return {'skill': get_skill(db.get(Team, user.team_id), category, include_history=True)}
     except SkillNotFound as exc:
         raise HTTPException(404, str(exc)) from exc
 

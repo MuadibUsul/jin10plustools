@@ -103,6 +103,15 @@ async function renderDetail(category) {
   controls.append(restore);
   card.append(controls);
   if (item.updated_at) card.append(node('p', `最后修改：${displayTime(item.updated_at)}${item.updated_by_name ? ` · ${item.updated_by_name}` : ''}`, 'muted'));
+  if (item.history_samples?.length) {
+    const samples = node('details');
+    samples.append(node('summary', `历史文段（${item.history_samples.length}）`));
+    for (const sample of item.history_samples) {
+      samples.append(node('h3', `${sample.date}${sample.title ? ` · ${sample.title}` : ''}`));
+      samples.append(node('p', sample.body, 'muted'));
+    }
+    card.append(samples);
+  }
   if (item.history?.length) {
     const details = node('details');
     details.append(node('summary', `修改记录（${item.history.length}）`));

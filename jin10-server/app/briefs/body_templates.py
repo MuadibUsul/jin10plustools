@@ -51,6 +51,7 @@ def _values(category: str, payload: dict) -> dict[str, Any]:
         })
     elif category == "turnover":
         values.update({
+            "low_direction": "", "high_direction": "", "threshold_side": "",
             "low_ma9": facts.get("low_ma9", ""), "high_ma9": facts.get("high_ma9", ""),
             "previous_low_ma9": facts.get("previous_low_ma9", ""),
             "previous_high_ma9": facts.get("previous_high_ma9", ""),

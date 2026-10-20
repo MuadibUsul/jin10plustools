@@ -59,3 +59,8 @@ def test_settings_save_and_validate_team_body_template(client):
         "brief_templates": {"volume": {"use_builtin": True, "template": ""}},
     })
     assert allowed.status_code == 200
+
+
+def test_turnover_derived_placeholders_validate_without_live_facts():
+    from app.briefs.body_templates import validate
+    validate("turnover", "{date} {low_direction}{low_ma9}% {high_direction}{high_ma9}% {threshold_side}17%")

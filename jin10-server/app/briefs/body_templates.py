@@ -25,6 +25,13 @@ def all_config(team) -> dict[str, dict]:
     return {category: _config(team, category) for category in CATEGORIES}
 
 
+def _pct2(value) -> str:
+    try:
+        return f"{float(value):.2f}"
+    except (TypeError, ValueError):
+        return ""
+
+
 def _values(category: str, payload: dict) -> dict[str, Any]:
     facts = payload.get("facts") or {}
     values: dict[str, Any] = {
@@ -69,9 +76,11 @@ def _values(category: str, payload: dict) -> dict[str, Any]:
     elif category == "valuation":
         latest = facts.get("erp_latest") or {}
         previous = facts.get("erp_previous") or {}
-        values.update({"buffett": facts.get("buffett_percent", ""), "erp": latest.get("erp_percent", ""),
-                       "previous_erp": previous.get("erp_percent", ""),
-                       "erp_date": latest.get("date", ""), "erp_previous_date": previous.get("date", "")})
+        values.update({"buffett": _pct2(facts.get("buffett_percent")),
+                       "erp": _pct2(latest.get("erp_percent")),
+                       "previous_erp": _pct2(previous.get("erp_percent")),
+                       "erp_date": latest.get("date", ""),
+                       "erp_previous_date": previous.get("date", "")})
     elif category == "liquidity":
         quotes = facts.get("quotes") or {}
         rows = {row.get("product"): row for row in quotes.get("rows") or [] if isinstance(row, dict)}

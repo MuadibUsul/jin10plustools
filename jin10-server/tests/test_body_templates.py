@@ -64,3 +64,12 @@ def test_settings_save_and_validate_team_body_template(client):
 def test_turnover_derived_placeholders_validate_without_live_facts():
     from app.briefs.body_templates import validate
     validate("turnover", "{date} {low_direction}{low_ma9}% {high_direction}{high_ma9}% {threshold_side}17%")
+
+
+def test_valuation_percentages_are_rounded_for_display():
+    payload = {"facts": {
+        "buffett_percent": "85.90310256373557917623418284",
+        "erp_latest": {"erp_percent": "6.062829407236335642802155504"},
+        "erp_previous": {"erp_percent": "6.013135249042145593869731801"},
+    }}
+    assert render("valuation", "{buffett}% {erp}% {previous_erp}%", payload) == "85.90% 6.06% 6.01%"

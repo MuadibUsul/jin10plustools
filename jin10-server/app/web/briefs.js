@@ -261,7 +261,8 @@ async function showSkillPreview() {
     const data = await api(`/api/briefs/issues/${selected.id}/skill-preview?version=${v.number}`);
     skillData = data;
     const ai = data.ai || {};
-    const aiLabel = ai.status === 'ok' ? `${ai.provider || 'AI'} 已润色` : '生产规则稿（AI 未完成）';
+    const aiLabel = ai.status === 'ok' ? `${ai.provider || 'AI'} 已润色`
+      : ai.reason === 'skill_disabled' ? 'Skill 已停用，显示生产规则稿' : '生产规则稿（AI 未完成）';
     $('#skill-status').textContent = `${copyDate(data.data_date)} · ${data.skill_id}@${data.skill_version} · ${aiLabel}`;
     $('#skill-title').value = data.title || '';
     $('#skill-body').value = data.dynamic_body || '';

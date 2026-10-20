@@ -5,6 +5,9 @@ from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator
 
 from app.briefs.delivery import default_notes
 from app.briefs.policy import CATEGORIES
+from app.briefs.skill_library import (
+    MAX_INSTRUCTIONS, SkillConflict, SkillNotFound, list_skills, update_skill,
+)
 from app.db.models import BriefConfig, Role, Team, utcnow
 from app.deps import CurrentUser, DbSession, Editor
 from app.services.team_settings import cipher, provider, update_notes, chat2api_supported
@@ -128,3 +131,33 @@ def update(body: Update, db: DbSession, user: Editor):
     team.settings = {**saved, 'ai': ai, 'settings_revision': body.revision + 1}
     db.commit()
     return output(db, team, user)
+
+
+class SkillUpdate(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    revision: int = Field(ge=0)
+    enabled: bool
+    instructions: str = Field(default='', max_length=MAX_INSTRUCTIONS)
+
+
+@router.get('/skills')
+def skills(db: DbSession, user: CurrentUser):
+    return {'skills': list_skills(db.get(Team, user.team_id))}
+
+
+@router.put('/skills/{category}')
+def skill_update(category: str, body: SkillUpdate, db: DbSession, user: Editor):
+    if user.role != Role.ADMIN:
+        raise HTTPException(403, '仅管理员可修改 Skill 规范')
+    team = db.get(Team, user.team_id, with_for_update=True)
+    try:
+        skill = update_skill(db, team, user, category, revision=body.revision,
+                             enabled=body.enabled, instructions=body.instructions)
+    except SkillNotFound as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except SkillConflict as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    db.commit()
+    return {'skill': skill}

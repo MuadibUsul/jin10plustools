@@ -35,7 +35,7 @@ def _numbers(text: str) -> set[str]:
     return {match.group(0).replace(",", "").lstrip("+-") for match in _NUMBER.finditer(text)}
 
 
-def _asset_dir(category: str) -> Path:
+def asset_dir(category: str) -> Path:
     name = SKILL_NAMES.get(category)
     if not name:
         raise ValueError("该栏目没有固定快讯文字 Skill")
@@ -47,7 +47,7 @@ def _asset_dir(category: str) -> Path:
 
 
 def _history(category: str, limit: int = 6) -> str:
-    text = (_asset_dir(category) / "references" / "history.md").read_text(encoding="utf-8")
+    text = (asset_dir(category) / "references" / "history.md").read_text(encoding="utf-8")
     starts = [match.start() for match in _DAILY.finditer(text)]
     if not starts:
         return ""
@@ -87,8 +87,11 @@ def polish(team, category: str, source_title: str, source_body: str) -> dict:
     warnings = []
     if ai.get("provider") == "chat2api" and ai.get("model_supported") is False:
         warnings.append(f"chat2api 不支持 {ai.get('requested_model')}，本次使用 {ai.get('model')}")
+    saved = ((getattr(team, "settings", None) or {}).get("skills") or {}).get(category) or {}
+    if saved.get("enabled") is False:
+        return {"status": "disabled", "reason": "skill_disabled"}
     try:
-        skill_md = (_asset_dir(category) / "SKILL.md").read_text(encoding="utf-8")
+        skill_md = saved.get("instructions") or (asset_dir(category) / "SKILL.md").read_text(encoding="utf-8")
         examples = _history(category)
     except (OSError, ValueError):
         return {"status": "failed", "reason": "skill_asset_missing"}

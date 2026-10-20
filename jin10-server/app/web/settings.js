@@ -4,6 +4,7 @@ let data, dirty = false;
 const providers = { jev: ['日报选稿 · JEV', '栏目分类与重要度评分'], deepseek: ['固定快讯 · DeepSeek', '在规则稿基础上生成可选的 AI 表达'], chat2api: ['固定快讯 · chat2api', '通过本机 chat2api 节点使用 ChatGPT 网页版；留空则使用服务器节点密钥'], openai: ['固定快讯 · OpenAI', '官方 API；支持 gpt-5.6-sol 等节点无法访问的模型'] };
 const modelOptions = { jev: ['jev-latest'], deepseek: ['deepseek-chat', 'deepseek-reasoner', 'deepseek-v4-pro'], chat2api: ['gpt-4o-mini', 'gpt-4o', 'gpt-4', 'gpt-3.5-turbo', 'o1', 'o1-mini', 'o3-mini', 'auto'], openai: ['gpt-5.6-sol', 'gpt-5.6', 'gpt-5.6-terra', 'gpt-5.6-luna', 'gpt-4o-mini', 'gpt-4o', 'o1', 'o3-mini'] };
 function message(text, error = false) { const target = $('#settings-message'); target.textContent = text; target.className = error ? 'error' : 'success'; }
+async function safe(action) { try { await action(); } catch (e) { message(e.message, true); toast(e.message, 'error'); } }
 function field(label, input) { const row = node('label', label, 'field'); row.append(input); return row; }
 async function load() {
   data = await api('/api/settings');
@@ -78,11 +79,11 @@ async function load() {
 }
 // —— 设置分区导航 ——
 const sections = { team: '#team-panel', notes: '#notes-panel', ai: '#ai-panel', live: '#live-panel' };
-const standalone = { database: '#database-panel', feedback: '#feedback-panel', chat2api: '#chat2api-panel' };
+const standalone = { skills: '#skills-panel', database: '#database-panel', feedback: '#feedback-panel', chat2api: '#chat2api-panel' };
 let panel = 'team', exportData = null, exportPreset = '3m', currentUser = null;
 
 function initialPanel() {
-  for (const name of ['feedback', 'chat2api', 'database', 'notes', 'ai', 'live']) {
+  for (const name of ['skills', 'feedback', 'chat2api', 'database', 'notes', 'ai', 'live']) {
     if (location.hash === `#${name}`) return name;
   }
   return 'team';
@@ -100,6 +101,7 @@ function showPanel(name) {
     link.classList.toggle('active', active);
     if (active) link.setAttribute('aria-current', 'page'); else link.removeAttribute('aria-current');
   }
+  if (name === 'skills') openSkills();
   if (name === 'database') openExport();
   if (name === 'feedback') openFeedback();
   if (name === 'chat2api') openChat2api();
@@ -108,6 +110,76 @@ for (const link of document.querySelectorAll('.settings-nav a')) link.addEventLi
   event.preventDefault(); showPanel(link.dataset.panel); history.replaceState(null, '', link.getAttribute('href'));
 });
 window.addEventListener('hashchange', () => showPanel(initialPanel()));
+
+// —— Skill 库 ——
+let skillsData = null;
+async function openSkills() {
+  const status = $('#skill-library-status');
+  status.className = 'muted'; status.textContent = '正在读取 Skill 库…';
+  try {
+    const result = await api('/api/settings/skills');
+    skillsData = result.skills;
+    renderSkills();
+    status.textContent = `已安装 ${skillsData.length} 项固定快讯文字 Skill；修改只影响预览的 AI 润色。`;
+  } catch (error) {
+    status.className = 'error'; status.textContent = error.message;
+  }
+}
+async function saveSkill(item, area, enabled, button, instructions = area.value) {
+  button.disabled = true;
+  try {
+    await api(`/api/settings/skills/${item.category}`, {
+      method: 'PUT', json: { revision: item.revision, enabled: enabled.checked, instructions },
+    });
+    message(`${item.label} Skill 已保存。`); toast('Skill 已保存。');
+    await openSkills();
+  } finally { button.disabled = false; }
+}
+function renderSkills() {
+  const host = $('#skill-library'); host.replaceChildren();
+  for (const item of skillsData || []) {
+    const card = node('article', undefined, 'ai-setting skill-card');
+    const head = node('div', undefined, 'skill-card-head');
+    head.append(node('h3', item.label), node('span', item.enabled ? '已启用' : '已停用',
+      `badge ${item.enabled ? 'ready' : 'warning'}`));
+    card.append(head);
+    card.append(node('p', `${item.skill_id}@${item.version} · ${item.customized ? '团队规范' : '内置规范'} · ${item.samples} 条历史样本 · 摘要 ${item.digest}`, 'muted'));
+    if (item.description) card.append(node('p', item.description, 'muted'));
+    const area = node('textarea', undefined, 'skill-instructions');
+    area.value = item.instructions; area.rows = 12; area.maxLength = 8000;
+    area.readOnly = !data?.can_admin;
+    area.setAttribute('aria-label', `${item.label} Skill 规范`);
+    const counter = node('p', `${item.instructions.length} / 8000`, 'muted');
+    area.addEventListener('input', () => { counter.textContent = `${area.value.length} / 8000`; });
+    card.append(field('Skill 规范', area), counter);
+    const controls = node('div', undefined, 'toolbar');
+    const enabled = node('input'); enabled.type = 'checkbox'; enabled.checked = item.enabled;
+    enabled.disabled = !data?.can_admin;
+    const enabledLabel = node('label', ' 启用此 Skill', 'check-row'); enabledLabel.prepend(enabled);
+    controls.append(enabledLabel);
+    const save = node('button', '保存 Skill', 'primary'); save.disabled = !data?.can_admin;
+    save.onclick = () => safe(() => saveSkill(item, area, enabled, save));
+    controls.append(save);
+    const restore = node('button', '恢复内置规范'); restore.hidden = !data?.can_admin || !item.customized;
+    restore.onclick = () => safe(async () => {
+      if (!window.confirm('恢复内置规范会覆盖当前团队版本，继续？')) return;
+      await saveSkill(item, area, enabled, restore, '');
+    });
+    controls.append(restore);
+    card.append(controls);
+    if (item.updated_at) card.append(node('p', `最后修改：${displayTime(item.updated_at)}${item.updated_by_name ? ` · ${item.updated_by_name}` : ''}`, 'muted'));
+    if (item.history?.length) {
+      const details = node('details');
+      details.append(node('summary', `修改记录（${item.history.length}）`));
+      for (const entry of [...item.history].reverse()) {
+        details.append(node('p', `第 ${entry.revision} 次 · ${displayTime(entry.at)}${entry.by_name ? ` · ${entry.by_name}` : ''} · ${entry.enabled ? '启用' : '停用'} · ${entry.customized ? '团队规范' : '内置规范'}`, 'muted'));
+      }
+      card.append(details);
+    }
+    host.append(card);
+  }
+  if (!skillsData?.length) host.append(node('p', '没有已安装的 Skill。', 'muted'));
+}
 
 // —— 数据库导出 ——
 const isoDay = (value) => `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`;

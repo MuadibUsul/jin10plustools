@@ -73,3 +73,13 @@ def test_polish_accepts_a_number_safe_answer(monkeypatch):
     result = skill_ai.polish(None, "volume", SOURCE_TITLE, SOURCE_BODY)
     assert result["status"] == "ok" and result["title"] == expected["title"]
     assert result["usage"]["total_tokens"] == 30
+
+
+def test_team_skill_disable_blocks_ai_polish(monkeypatch):
+    monkeypatch.setattr(skill_ai, "get_settings", lambda: SimpleNamespace(briefs_skill_ai_enabled=True))
+    monkeypatch.setattr(skill_ai, "briefs_ai", lambda team: {
+        "key": "test-key", "model": "deepseek-chat", "base_url": "https://example.test",
+        "provider": "deepseek", "configured": True})
+    team = SimpleNamespace(settings={"skills": {"volume": {"enabled": False}}})
+    result = skill_ai.polish(team, "volume", SOURCE_TITLE, SOURCE_BODY)
+    assert result["status"] == "disabled" and result["reason"] == "skill_disabled"

@@ -154,7 +154,8 @@ def skill_preview(id:uuid.UUID,db:DbSession,user:CurrentUser,
             # A model failure must still yield the complete, already-validated rule copy.
             result['title']=rule_title
             result['dynamic_body']=rule_body
-            reason=('AI 未配置，显示当前生产规则稿' if polished.get('status') in ('not_configured','disabled')
+            reason=('Skill 已停用，显示当前生产规则稿' if polished.get('reason')=='skill_disabled'
+                    else 'AI 未配置，显示当前生产规则稿' if polished.get('status') in ('not_configured','disabled')
                     else 'AI 润色未完成，显示当前生产规则稿')
             result['warnings']=[f'{reason}；采用前请人工核对。']
         result['body']=complete_body(issue.category,result['dynamic_body'],result['fixed_note'])

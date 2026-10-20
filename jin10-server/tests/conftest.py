@@ -12,6 +12,7 @@ from sqlalchemy.pool import StaticPool
 
 os.environ.setdefault("PLUS_JWT_SECRET", "test-secret-please-ignore-0123456789")
 os.environ["PLUS_AI_WORKER_ENABLED"] = "false"  # 测试中绝不调用真实 JEV
+os.environ["PLUS_BRIEFS_SKILL_AI_ENABLED"] = "false"  # 测试中绝不调用真实文案模型
 
 from app.config import get_settings  # noqa: E402
 from app.db.models import Base, Role, Team, User  # noqa: E402

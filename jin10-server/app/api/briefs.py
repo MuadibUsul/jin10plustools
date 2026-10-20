@@ -131,9 +131,34 @@ def skill_preview(id:uuid.UUID,db:DbSession,user:CurrentUser,
     row=db.scalars(select(BriefVersion).where(BriefVersion.issue_id==id,
         BriefVersion.number==version)).first()
     if not row:raise HTTPException(404,'版本不存在')
+    from app.briefs.skill_ai import polish as polish_skill
     from app.briefs.skill_preview import preview
+    from app.services.copy_dates import copy_dates
+    from app.briefs.delivery import complete_body
     try:
-        return preview(issue,row)
+        result=preview(issue,row)
+        rule_title=copy_dates(row.title)
+        rule_body=copy_dates(row.dynamic_body)
+        try:
+            polished=polish_skill(db.get(Team,user.team_id),issue.category,rule_title,rule_body)
+        except Exception:
+            polished={'status':'failed','reason':'unexpected_error'}
+        result['rule_title']=rule_title
+        result['rule_body']=rule_body
+        result['ai']=polished
+        if polished.get('status')=='ok':
+            result['title']=polished['title']
+            result['dynamic_body']=polished['body']
+            result['warnings']=[w for w in result.get('warnings',[]) if '不替代' not in w]
+        else:
+            # A model failure must still yield the complete, already-validated rule copy.
+            result['title']=rule_title
+            result['dynamic_body']=rule_body
+            reason=('AI 未配置，显示当前生产规则稿' if polished.get('status') in ('not_configured','disabled')
+                    else 'AI 润色未完成，显示当前生产规则稿')
+            result['warnings']=[f'{reason}；采用前请人工核对。']
+        result['body']=complete_body(issue.category,result['dynamic_body'],result['fixed_note'])
+        return result
     except ValueError as exc:
         raise HTTPException(422,str(exc)) from exc
 

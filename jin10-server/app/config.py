@@ -49,6 +49,8 @@ class Settings(BaseSettings):
     # Optional official OpenAI-compatible endpoint for models the web node cannot reach.
     openai_api_key: str = ''
     openai_model: str = 'gpt-4o-mini'
+    # AI polishing for the five fixed-brief text-Skill previews. Tests set false.
+    briefs_skill_ai_enabled: bool = True
 
     # Isolated News Skill OS preview. No worker or database writes when disabled.
     news_skill_os_enabled: bool = Field(

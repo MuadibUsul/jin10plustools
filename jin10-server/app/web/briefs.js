@@ -256,10 +256,13 @@ async function showSkillPreview() {
   const v = chosen();
   if (!v || !selected || !skillCategories.has(selected.category)) return;
   const button = $('#skill-preview'); button.disabled = true;
+  message('正在请求 AI 润色 Skill 文案…');
   try {
     const data = await api(`/api/briefs/issues/${selected.id}/skill-preview?version=${v.number}`);
     skillData = data;
-    $('#skill-status').textContent = `${copyDate(data.data_date)} · ${data.skill_id}@${data.skill_version} · 只读预览`;
+    const ai = data.ai || {};
+    const aiLabel = ai.status === 'ok' ? `${ai.provider || 'AI'} 已润色` : '生产规则稿（AI 未完成）';
+    $('#skill-status').textContent = `${copyDate(data.data_date)} · ${data.skill_id}@${data.skill_version} · ${aiLabel}`;
     $('#skill-title').value = data.title || '';
     $('#skill-body').value = data.dynamic_body || '';
     $('#skill-note').value = data.fixed_note || '';

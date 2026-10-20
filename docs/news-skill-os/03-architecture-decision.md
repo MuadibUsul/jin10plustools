@@ -21,7 +21,7 @@
 | 离线测试与 fixtures | 新增 `jin10-server/tests/test_news_skill_os*.py` | 使用内存输入与 mock，不连外部源 |
 | 设计、测试证据、进度 | 新增 `docs/news-skill-os/` | 每阶段更新并推送 |
 | 五类现有文字规范与 20 日样本 | `skills/jin10-plus-*-text/`、`docs/jin10-plus-text-history/` | 已作为参考资产迁入；未来显式适配到 Manifest，不能执行历史文案中的数字 |
-| 可选配置 | `jin10-server/app/config.py` | 仅新增默认 `false` 的布尔字段；不改现有配置语义 |
+| 可选配置 | `jin10-server/app/config.py`、三个 Compose API 环境段、`.env.example` | 仅新增默认 `false` 的布尔字段与透传；不改现有配置语义 |
 | 可选路由 | 新增 `app/api/news_skill_os.py`，`app/main.py` 加一次路由注册 | 仅独立命名空间，沿用 `CurrentUser`/`Editor` 与既有异常风格 |
 | 可选持久化 | 未来新增独立 `news_*` 表、Alembic additive migration、`data_export.py` 登记 | 先不触碰旧表；PostgreSQL 迁移需独立验证 |
 

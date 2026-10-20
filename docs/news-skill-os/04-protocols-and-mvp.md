@@ -30,7 +30,7 @@ python -m app.news_skill_os --fixture wrong-number
 
 ## 可选 API 与开关
 
-配置 `NEWS_SKILL_OS_ENABLED=false`（也接受 `PLUS_NEWS_SKILL_OS_ENABLED`）。唯一新增路由为 `POST /api/news-skill-os/fixtures/{official|rumour|wrong-number}/run`。未登录仍受现有 JWT 依赖保护；只读账号返回 403；开关关闭返回 404。即使样例审核通过，响应也固定 `publication_allowed=false`、`human_approval_required=true`。路由不落库、不调用旧 worker、不抓取在线素材，也不触发 CMS 发布。关闭功能无需迁移或删除表；不调用该路由时既有服务按原方式工作。
+配置 `NEWS_SKILL_OS_ENABLED=false`（也接受 `PLUS_NEWS_SKILL_OS_ENABLED`）；各 Compose API 服务显式透传 `NEWS_SKILL_OS_ENABLED`，缺省仍为 `false`。唯一新增路由为 `POST /api/news-skill-os/fixtures/{official|rumour|wrong-number}/run`。未登录仍受现有 JWT 依赖保护；只读账号返回 403；开关关闭返回 404。即使样例审核通过，响应也固定 `publication_allowed=false`、`human_approval_required=true`。路由不落库、不调用旧 worker、不抓取在线素材，也不触发 CMS 发布。关闭功能无需迁移或删除表；不调用该路由时既有服务按原方式工作。
 
 ## 与五类固定快讯资产的关系
 

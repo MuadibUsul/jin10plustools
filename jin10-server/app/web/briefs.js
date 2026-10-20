@@ -266,7 +266,8 @@ async function showSkillPreview() {
     $('#skill-title').value = data.title || '';
     $('#skill-body').value = data.dynamic_body || '';
     $('#skill-note').value = data.fixed_note || '';
-    $('#skill-warnings').replaceChildren(...(data.warnings || []).map((text) => node('p', text)));
+    const warnings = [...(data.warnings || []), ...((data.ai || {}).warnings || [])];
+    $('#skill-warnings').replaceChildren(...warnings.map((text) => node('p', text)));
     $('#skill-adopt').hidden = !canEdit();
     const dialog = $('#skill-dialog');
     if (!dialog.open) { if (dialog.showModal) dialog.showModal(); else dialog.setAttribute('open', ''); }

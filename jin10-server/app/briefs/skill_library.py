@@ -26,6 +26,13 @@ SKILL_IDS = {
     "liquidity": "news.fixed-liquidity",
     "oil_etf": "news.fixed-oil-etf",
 }
+CATEGORY_GROUPS = {
+    "volume": "A股温度计",
+    "turnover": "A股温度计",
+    "valuation": "A股温度计",
+    "liquidity": "流动性",
+    "oil_etf": "原油ETF",
+}
 
 
 class SkillNotFound(ValueError):
@@ -67,6 +74,7 @@ def effective(team, category: str) -> dict[str, Any]:
     return {
         "category": category,
         "label": CATEGORIES[category],
+        "group": CATEGORY_GROUPS[category],
         "skill_id": SKILL_IDS[category],
         "version": "0.1.0",
         "enabled": saved.get("enabled", True) is not False,

@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>设置 · PLUS 工作台</title><link rel="stylesheet" href="/workspace.css"><link rel="stylesheet" href="/skill-library.css"></head><body>
+<html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>设置 · PLUS 工作台</title><link rel="stylesheet" href="/workspace.css"></head><body>
 <header><a class="brand" href="/"><span>PLUS</span>工作台</a><nav><a href="/daily/">日报选稿</a><a href="/briefs/">固定快讯</a><a href="/fresh/">Plus新鲜事</a><a href="/annotations/">Plus注解辅助</a></nav><div id="account"></div></header>
 <main class="settings-page"><div class="page-heading"><div><p class="eyebrow">WORKSPACE SETTINGS</p><h1>设置</h1><p class="muted">本团队共用的注释、自动任务与 AI 接入。</p></div><div class="heading-actions"><button id="save-settings" class="primary" type="submit" form="settings-form" hidden>保存设置</button><button id="reload-settings">刷新设置</button></div></div>
 <p id="settings-message" role="status" aria-live="polite"></p>
@@ -8,7 +8,7 @@
 <a href="#team" data-panel="team" class="active">团队设置</a>
 <a href="#notes" data-panel="notes">栏目默认注释</a>
 <a href="#ai" data-panel="ai">AI接口设置</a>
-<a href="#skills" data-panel="skills">Skill 库</a>
+<a href="/skills/" data-external>Skill 库</a>
 <a href="#live" data-panel="live">小电视直播</a>
 <a href="#database" data-panel="database" id="nav-database" hidden>数据库</a>
 <a href="#feedback" data-panel="feedback">需求反馈</a>
@@ -71,12 +71,6 @@
 <div class="toolbar"><button id="chat2api-upload" class="primary" type="button">上传 Token</button><button id="chat2api-errors" type="button">查看错误 Token</button><button id="chat2api-clear" type="button">清空 Tokens</button></div>
 <p id="chat2api-message" class="muted" role="status" aria-live="polite"></p>
 <pre id="chat2api-error-list" class="chat2api-errors" hidden></pre>
-</section>
-<section id="skills-panel" class="settings-section skills-panel" hidden aria-labelledby="skills-title">
-<h2 id="skills-title">Skill 库</h2>
-<p class="muted">管理固定快讯五项文字 Skill 的团队规范。修改会影响后续固定快讯任务的 Skill 文案产出，但不改变取数、数字、图片和已生成稿件；留空恢复内置规范。</p>
-<p id="skill-library-status" class="muted" role="status" aria-live="polite"></p>
-<div id="skill-library" class="skill-library"></div>
 </section>
 </div>
 </div></main><script type="module" src="/settings.js"></script></body></html>

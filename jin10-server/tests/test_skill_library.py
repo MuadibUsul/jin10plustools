@@ -4,6 +4,13 @@ from __future__ import annotations
 from tests.conftest import login
 
 
+def test_standalone_skill_pages_are_routed(client):
+    assert client.get("/skills/").status_code == 200
+    assert "SKILL LIBRARY" in client.get("/skills/").text
+    assert client.get("/skills/volume/").status_code == 200
+    assert client.get("/skills/unknown/").status_code == 404
+
+
 def test_every_member_can_read_five_installed_skills(client):
     for email in ("viewer@plus.test", "editor@plus.test", "admin@plus.test"):
         response = client.get("/api/settings/skills", headers=login(client, email))
@@ -13,6 +20,10 @@ def test_every_member_can_read_five_installed_skills(client):
         assert all(item["enabled"] and not item["customized"] for item in skills)
         assert all(item["instructions"] and item["bundled_instructions"] == item["instructions"] for item in skills)
         assert skills[0]["skill_id"] == "news.fixed-volume"
+        assert skills[0]["group"] == "A股温度计" and skills[3]["group"] == "流动性"
+    detail = client.get("/api/settings/skills/volume", headers=login(client, "viewer@plus.test"))
+    assert detail.status_code == 200 and detail.json()["skill"]["category"] == "volume"
+    assert client.get("/api/settings/skills/unknown", headers=login(client, "viewer@plus.test")).status_code == 404
 
 
 def test_admin_override_is_versioned_and_can_be_restored(client):

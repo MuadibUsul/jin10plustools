@@ -145,6 +145,15 @@ def skills(db: DbSession, user: CurrentUser):
     return {'skills': list_skills(db.get(Team, user.team_id))}
 
 
+@router.get('/skills/{category}')
+def skill_detail(category: str, db: DbSession, user: CurrentUser):
+    from app.briefs.skill_library import SkillNotFound, effective
+    try:
+        return {'skill': effective(db.get(Team, user.team_id), category)}
+    except SkillNotFound as exc:
+        raise HTTPException(404, str(exc)) from exc
+
+
 @router.put('/skills/{category}')
 def skill_update(category: str, body: SkillUpdate, db: DbSession, user: Editor):
     if user.role != Role.ADMIN:

@@ -1,0 +1,30 @@
+api_version: news.skill/v1
+id: news.background-research
+version: 0.1.0
+owner: plus-editorial
+description: Select only locally supplied context linked to verified claims.
+entrypoint: app.news_skill_os.skills.background:run
+input_schema:
+  type: object
+  additionalProperties: false
+  required: [verification, background_fixture]
+  properties:
+    verification: {type: object}
+    background_fixture: {type: object}
+output_schema:
+  type: object
+  additionalProperties: false
+  required: [context, claim_ids, evidence_ids]
+  properties:
+    context: {type: array}
+    claim_ids: {type: array}
+    evidence_ids: {type: array}
+model_profile: deterministic-fixture
+timeouts: {seconds: 10}
+retry_policy: {max_attempts: 1}
+idempotency: deterministic
+allowed_tools: [local_fixture]
+permissions: {network: false, database_read: false, database_write: false, publish: false}
+quality_gates: [verified-claim-link]
+evaluation_suite: tests/test_news_skill_os_workflow.py
+dependencies: [news.fact-verification@0.1.0]

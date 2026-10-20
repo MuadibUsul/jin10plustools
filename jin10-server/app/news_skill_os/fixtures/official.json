@@ -1,0 +1,18 @@
+{
+  "article": {
+    "title": "某公司公告融资计划",
+    "event_time": "2026-10-20T08:00:00+08:00",
+    "sources": [{"id": "s1", "name": "公司公告", "kind": "official", "original_id": "filing-001"}],
+    "assertions": [{
+      "id": "c1", "text": "公司公告拟融资1亿美元", "subject": "公司", "predicate": "融资金额",
+      "numeric": {"value": 100, "kind": "money", "unit": "million", "currency": "USD"},
+      "source_id": "s1", "evidence_id": "e1", "excerpt": "融资总额不超过1亿美元",
+      "evidence_numeric": {"value": 100, "kind": "money", "unit": "million", "currency": "USD"}
+    }]
+  },
+  "background_fixture": {"items": [
+    {"section": "前因", "text": "融资用途仍需结合完整公告核对。", "label": "inference", "claim_ids": ["c1"], "evidence_ids": ["e1"]},
+    {"section": "后果", "text": "实际融资进度取决于后续审批和发行。", "label": "inference", "claim_ids": ["c1"], "evidence_ids": ["e1"]},
+    {"section": "补充说明", "text": "当前示例仅核验公告中的融资上限。", "label": "inference", "claim_ids": ["c1"], "evidence_ids": ["e1"]}
+  ]}
+}

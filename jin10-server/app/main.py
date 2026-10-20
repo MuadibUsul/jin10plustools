@@ -19,6 +19,7 @@ from app.ai.jev_client import JevClient
 from app.ai.worker import AnalysisWorker
 from app.api import assets, auth, board, collab, issues, materials
 from app.api import briefs, chat2api, export, feedback, live, settings as team_settings
+from app.api import news_skill_os
 from app.config import get_settings
 from app.db.session import get_session_factory
 from app.services.maintenance import MaintenanceWorker
@@ -65,6 +66,7 @@ app.include_router(team_settings.router)
 app.include_router(live.router)
 app.include_router(export.router)
 app.include_router(feedback.router)
+app.include_router(news_skill_os.router)
 @app.middleware('http')
 async def api_no_store(request, call_next):
     response = await call_next(request)

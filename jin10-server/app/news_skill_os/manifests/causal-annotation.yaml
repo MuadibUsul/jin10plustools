@@ -1,0 +1,35 @@
+api_version: news.skill/v1
+id: finance.causal-analysis
+version: 0.1.0
+owner: plus-editorial
+description: Draft 前因/后果/补充说明 strictly from verified claims and supplied context.
+entrypoint: app.news_skill_os.skills.causal:run
+input_schema:
+  type: object
+  additionalProperties: false
+  required: [verification, background]
+  properties:
+    verification: {type: object}
+    background: {type: object}
+output_schema:
+  type: object
+  additionalProperties: false
+  required: [sections, new_information, analysis_items, claim_ids, evidence_ids, confidence, unresolved, draft]
+  properties:
+    sections: {type: object}
+    new_information: {type: array}
+    analysis_items: {type: array}
+    claim_ids: {type: array}
+    evidence_ids: {type: array}
+    confidence: {type: string}
+    unresolved: {type: array}
+    draft: {type: object}
+model_profile: deterministic-fixture
+timeouts: {seconds: 10}
+retry_policy: {max_attempts: 1}
+idempotency: deterministic
+allowed_tools: [local_fixture]
+permissions: {network: false, database_read: false, database_write: false, publish: false}
+quality_gates: [three-sections, evidence-trace]
+evaluation_suite: tests/test_news_skill_os_workflow.py
+dependencies: [news.fact-verification@0.1.0, news.background-research@0.1.0]

@@ -1,0 +1,7 @@
+{
+  "news.event-extraction@0.1.0": "82341ada34142f4f0578c1a898cb4846f3a142da06efc9fd50bb13b03be4a0be",
+  "news.fact-verification@0.1.0": "535708decaf0e91dee08a1eb777f00a00cda9975d0d42c2f1f07edebb75e5696",
+  "news.background-research@0.1.0": "424cce4e2658f2dca18b4cd480bb5d20b919fa53fb8fcf1ceea495e6243032c4",
+  "finance.causal-analysis@0.1.0": "0e37e6465f921ef6eb087e761491e3f3e336c51d7de9b4fdec7902d2025866e1",
+  "news.quality-review@0.1.0": "185b8b26f5049b9aff152aaa4c34f2634a59f9f039f90282ca7098f014128138"
+}

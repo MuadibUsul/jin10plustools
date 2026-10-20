@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://plus.tlines.tech/schemas/news.skill/v1",
+  "title": "News Skill OS Manifest v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["api_version", "id", "version", "owner", "description", "entrypoint", "input_schema", "output_schema", "model_profile", "timeouts", "retry_policy", "idempotency", "allowed_tools", "permissions", "quality_gates", "evaluation_suite"],
+  "properties": {
+    "api_version": {"const": "news.skill/v1"},
+    "id": {"type": "string", "pattern": "^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$"},
+    "version": {"type": "string", "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?$"},
+    "owner": {"type": "string", "minLength": 1},
+    "description": {"type": "string", "minLength": 1},
+    "entrypoint": {"type": "string", "pattern": "^app\\.news_skill_os\\.skills\\.[a-z_]+:run$"},
+    "input_schema": {"type": "object"},
+    "output_schema": {"type": "object"},
+    "model_profile": {"type": "string", "minLength": 1},
+    "timeouts": {
+      "type": "object", "additionalProperties": false, "required": ["seconds"],
+      "properties": {"seconds": {"type": "integer", "minimum": 1, "maximum": 120}}
+    },
+    "retry_policy": {
+      "type": "object", "additionalProperties": false, "required": ["max_attempts"],
+      "properties": {"max_attempts": {"type": "integer", "minimum": 1, "maximum": 3}}
+    },
+    "idempotency": {"enum": ["deterministic", "request"]},
+    "allowed_tools": {"type": "array", "uniqueItems": true, "items": {"enum": ["local_fixture", "network_read", "database_read", "database_write", "publish"]}},
+    "permissions": {
+      "type": "object", "additionalProperties": false,
+      "required": ["network", "database_read", "database_write", "publish"],
+      "properties": {
+        "network": {"type": "boolean"}, "database_read": {"type": "boolean"},
+        "database_write": {"type": "boolean"}, "publish": {"type": "boolean"}
+      }
+    },
+    "quality_gates": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+    "evaluation_suite": {"type": "string", "minLength": 1},
+    "dependencies": {
+      "type": "array", "uniqueItems": true,
+      "items": {"type": "string", "pattern": "^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*@[0-9]+\\.[0-9]+\\.[0-9]+$"}
+    }
+  }
+}

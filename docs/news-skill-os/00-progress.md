@@ -19,7 +19,7 @@
 - [x] F. 新增默认关闭的离线样例预览入口 `/api/news-skill-os/fixtures/{name}/run`；沿用编辑权限，未修改旧 API 的路径和格式，未接生产业务数据。
 - [x] G. 完成本机回归、安全边界检查和[合并前报告](05-regression-and-handoff.md)；Docker/PostgreSQL/云端回滚演练仍是合并门槛，未声称通过。
 - [x] 将五类固定快讯文字规范与历史样本登记到运行时 Manifest；新增默认关闭的五类文字预览端点，动态字段仅由当次传入的结构化数值组成，固定解释读取团队配置。证据 ID 真实性仍由调用方负责，尚未纳入生产生成任务。
-- [ ] 在隔离 Docker/PostgreSQL 环境验证镜像、迁移、关闭开关与回滚；核验云端实际版本后再考虑合并。
+- [x] 在服务器隔离 Docker/PostgreSQL 项目验证镜像构建、Compose、迁移、健康、关闭开关 404、旧接口 200 与清理；云端 feature 分支实际指向 `d63d9eb`。详见[隔离验证](06-isolated-container-check.md)。生产部署/回滚仍未执行，合并前仍需合入 `b238d8a`。
 
 ## 推送记录
 

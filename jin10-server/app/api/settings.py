@@ -7,7 +7,7 @@ from app.briefs.delivery import default_notes
 from app.briefs.policy import CATEGORIES
 from app.db.models import BriefConfig, Role, Team, utcnow
 from app.deps import CurrentUser, DbSession, Editor
-from app.services.team_settings import cipher, provider, update_notes
+from app.services.team_settings import cipher, provider, update_notes, chat2api_supported
 from app.services.live_catalog import catalog
 
 router = APIRouter(prefix='/api/settings', tags=['team settings'])
@@ -26,8 +26,8 @@ class Update(BaseModel):
     revision: int = Field(ge=0)
     notes: dict[Literal[*CATEGORIES], str] | None = None
     schedule_enabled: bool | None = None
-    ai: dict[Literal['jev', 'deepseek', 'chat2api'], AIConfig] | None = None
-    ai_provider: Literal['deepseek', 'chat2api'] | None = None
+    ai: dict[Literal['jev', 'deepseek', 'chat2api', 'openai'], AIConfig] | None = None
+    ai_provider: Literal['deepseek', 'chat2api', 'openai'] | None = None
     live_url: str | None = Field(default=None, max_length=2048)
     live_urls: dict[str,str] | None = None
 
@@ -56,7 +56,7 @@ def output(db, team, user):
     config = db.get(BriefConfig, team.id)
     saved = team.settings or {}
     ai = {name: {key: value for key, value in provider(team, name).items() if key != 'key'}
-          for name in ('jev', 'deepseek', 'chat2api')}
+          for name in ('jev', 'deepseek', 'chat2api', 'openai')}
     return {'revision': saved.get('settings_revision', 0), 'can_edit': user.role != Role.VIEWER,
             'can_admin': user.role == Role.ADMIN, 'schedule_enabled': bool(config and config.enabled),
             'categories': [{'id': key, 'label': label, 'notes': (config.notes or {}).get(key, default_notes(key)) if config else default_notes(key)}
@@ -113,8 +113,10 @@ def update(body: Update, db: DbSession, user: Editor):
             current['token'] = cipher().encrypt(key.encode()).decode()
             if not current.get('model') and not provider(team, name)['model']:
                 current['model'] = {'deepseek': 'deepseek-chat', 'jev': 'jev-latest',
-                                    'chat2api': 'gpt-4o-mini'}.get(name, '')
+                                    'chat2api': 'gpt-4o-mini', 'openai': 'gpt-4o-mini'}.get(name, '')
         if change.model is not None:
+            if name == 'chat2api' and not chat2api_supported(change.model):
+                raise HTTPException(422, '当前 chat2api 节点不支持该模型，请选择 gpt-4o-mini、gpt-4o、o1、o3 等已支持模型')
             current['model'] = change.model
         if change.enabled is not None:
             current['enabled'] = change.enabled

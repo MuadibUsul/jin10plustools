@@ -2,6 +2,7 @@
 import json
 import logging
 import os
+import httpx
 import signal
 import subprocess
 import sys
@@ -15,7 +16,7 @@ from app.db.models import BriefConfig,BriefIssue,BriefJob,BriefVersion,BriefSour
 from app.services.team_settings import briefs_ai
 from app.db.session import get_session_factory,get_engine
 from .policy import CATEGORIES,CHINA,expected_date,first_run,production_window,next_slot
-from .service import enqueue,ensure_issue,owned,append_version,root_for
+from .service import enqueue,ensure_issue,owned,append_version,root_for,find_issue
 from .source_archive import archive_run,restore_pe_capture
 from .progress import record,read
 
@@ -30,6 +31,8 @@ def schedule(factory,now=None):
         for config in db.scalars(select(BriefConfig).where(BriefConfig.enabled.is_(True))):
             for category in CATEGORIES:
                 if local.time().replace(tzinfo=None)<first_run(category):continue
+                issue=find_issue(db,config.team_id,local.date(),category)
+                if issue and issue.version:continue
                 enqueue(db,config.team_id,local.date(),category);count+=1
         db.commit()
     return count
@@ -86,6 +89,20 @@ def execute(factory,id):
     payload=json.loads(result.read_text(encoding='utf-8')) if result.exists() else None
     if not payload and (out/'error.json').exists():
         report=json.loads((out/'error.json').read_text(encoding='utf-8'));error=report['message']
+    if payload and ai.get('provider')=='chat2api':
+        if ai.get('requested_model') and ai['requested_model']!=ai['model']:
+            payload.setdefault('warnings',[]).append(
+                f"AI 模型 {ai['requested_model']} 不受 chat2api 节点支持，本次实际使用 {ai['model']}")
+        try:
+            from app.api.chat2api import TOKEN_COUNT
+            prefix=settings.chat2api_prefix.strip('/')
+            url=f"{settings.chat2api_url.rstrip('/')}/{prefix}/tokens"
+            with httpx.Client(timeout=5) as client:
+                count=TOKEN_COUNT.search(client.get(url).text)
+            if count and int(count.group(1))==0:
+                payload.setdefault('warnings',[]).append('chat2api 号池为空，本次 AI 可能使用匿名降级模型')
+        except Exception:
+            pass
     with factory() as db:
         job=db.get(BriefJob,id);job.lease_until=None;job.updated_at=utcnow()
         stopped_step=read(out).get('step',1)

@@ -166,7 +166,10 @@ def generate(category,day,root,run_id,action='produce'):
     alternative=payload['dynamic_body'].replace(day,f'{parsed.year}年{parsed.month}月{parsed.day}日',1)
     if alternative!=payload['dynamic_body']:rule['approved_bodies'].append(alternative)
     payload['deepseek']=generate_deepseek(rule)
-    if payload['deepseek'].get('status')=='ok':record(out,4,'AI表达已通过校验，规则稿同时保留')
+    if payload['deepseek'].get('status')=='ok':
+        from app.services.copy_dates import copy_dates
+        payload['deepseek']['source_body_sha']=hashlib.sha256(copy_dates(payload['dynamic_body']).encode()).hexdigest()
+        record(out,4,'AI表达已通过校验，规则稿同时保留')
     elif payload['deepseek'].get('status') not in ('not_configured','disabled'):
         record(out,4,'AI表达未完成，完整规则稿已保留')
     save(out/'result.json',payload);save(cache,payload)

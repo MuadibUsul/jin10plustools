@@ -14,7 +14,7 @@ const channelNames = { volume: '成交额', turnover: '换手率', valuation: '�
 const terminalSeen = new Map(), terminalPending = new Set();
 let terminalDay = null, polling = false;
 const today = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai' }).format(new Date());
-$('#day').value = today();
+$('#day').value = today(); $('#day').max = today();
 function message(text, error = false) { $('#message').textContent = text; $('#message').className = error ? 'error' : 'success'; }
 async function safe(action) { try { await action(); } catch (e) { message(e.message, true); toast(e.message, 'error'); } }
 function canEdit() { return me.user.role !== 'viewer'; }
@@ -44,8 +44,10 @@ async function refresh() {
   items = data.items; renderCards();
   if (selected && !dirty) {
     const fresh = items.find((x) => x.id === selected.id);
-    if (fresh?.versions.length) await open(fresh, Number($('#version').value));
-    else hideDetail();
+    if (!fresh?.versions.length) hideDetail();
+    else if (fresh.version !== selected.version || fresh.confirmed_version !== selected.confirmed_version) {
+      await open(fresh, Number($('#version').value));
+    }
   }
 }
 function renderCards() {
@@ -169,7 +171,9 @@ async function pollJobs() {
       if (!active(job)) finished = true;
     }
     renderCards();
-    if (finished && !dirty) await refresh();
+    if (finished && !dirty) {
+      try { await refresh(); } catch (e) { message(e.message, true); }
+    }
     if (results.some((r) => r.status === 'rejected')) message('过程状态暂时无法更新，正在重连；后台任务仍可能运行。', true);
   } finally { polling = false; }
 }
@@ -202,12 +206,15 @@ async function showVersion() {
   $('#fixed').readOnly = !canEdit();
   $('#notes-label').textContent = v.notes_placement === 'image' ? '注释（保存后显示在图片底部）' : '注释（自动加入完整正文）';
   $('#detail-status').textContent = `数据日 ${copyDate(v.data_date)}${v.deepseek.status === 'not_configured' || v.deepseek.status === 'disabled' ? '' : ` · ${aiName(v.deepseek)}：${aiLabels[v.deepseek.status] || '未完成'}`}`;
-  $('#warnings').replaceChildren(...v.warnings.map((s) => node('p', s)));
+  const warnings = [...(v.warnings || [])];
+  if (v.deepseek.stale) warnings.push('AI候选基于生成时的正文，当前正文已修改；请先补跑AI再采用。');
+  $('#warnings').replaceChildren(...warnings.map((s) => node('p', s)));
   $('#facts').textContent = JSON.stringify(v.facts, null, 2);
   for (const id of ['save', 'confirm', 'unconfirm', 'rerender', 'retry-ai', 'refetch']) $(`#${id}`).hidden = !canEdit();
   $('#save').disabled = v.number !== selected.version;
   $('#confirm').disabled = v.number !== selected.version || !v.valid;
-  $('#use-ai').hidden = !canEdit() || v.deepseek.status !== 'ok';
+  $('#use-ai').hidden = !canEdit() || v.deepseek.status !== 'ok' || v.deepseek.stale === true || v.number !== selected.version;
+  $('#unconfirm').disabled = !v.confirmed_version;
   dirty = false;
   const key = JSON.stringify([selected.id, v.number, v.images]);
   if (key === pendingImageKey) return;
@@ -246,7 +253,7 @@ $('#day').onchange = () => safe(async () => { if (dirty && !confirm('放弃未�
 $('#version').onchange = () => safe(async () => { if (dirty && !confirm('放弃未保存的修改？')) { $('#version').value = current.number; return; } await showVersion(); });
 $('#title').oninput = $('#body').oninput = $('#fixed').oninput = () => { dirty = true; };
 $('#close-detail').onclick = () => { if (dirty && !confirm('放弃未保存的修改？')) return; hideDetail(); };
-$('#save').onclick = () => safe(async () => { await act('revisions', { base_version: current.number, title: $('#title').value, dynamic_body: $('#body').value, fixed_notes: $('#fixed').value }); toast('修改已保存。'); });
+$('#save').onclick = () => { const button = $('#save'); if (button.disabled) return; button.disabled = true; safe(async () => { await act('revisions', { base_version: current.number, title: $('#title').value, dynamic_body: $('#body').value, fixed_notes: $('#fixed').value }); toast('修改已保存。'); }).finally(() => { button.disabled = false; }); };
 $('#confirm').onclick = () => safe(async () => { if (dirty) throw new Error('请先保存修改，再确认版本'); await act('confirm', { version: current.number }); message('此版本已确认为正式取稿版本。'); toast('已确认此版本。'); });
 $('#unconfirm').onclick = () => safe(async () => { await act('unconfirm'); toast('已撤回确认。'); });
 $('#copy-title').onclick = () => safe(async () => { if (dirty) throw new Error('请先保存修改后取稿'); await copy(current.title); message('标题已复制。'); toast('标题已复制。'); });
@@ -256,4 +263,4 @@ for (const [id, action] of [['rerender', 'render'], ['retry-ai', 'ai'], ['refetc
 window.addEventListener('beforeunload', (e) => { if (dirty) { e.preventDefault(); e.returnValue = ''; } });
 await safe(async () => { me = await login(); config = await api('/api/briefs/categories'); await refresh(); });
 setInterval(() => { if (me && !document.hidden && !dirty) safe(refresh); }, 30000);
-setInterval(() => safe(pollJobs), 2000);
+setInterval(() => { pollJobs().catch(() => {}); }, 2000);

@@ -4,7 +4,7 @@ from sqlalchemy import select
 import pytest
 
 from app.briefs.policy import CATEGORIES,CHINA,first_run,previous_weekday,expected_date,production_window,next_slot
-from app.briefs.service import ensure_issue,append_version,root_for
+from app.briefs.service import ensure_issue,append_version,root_for,version_out
 from app.briefs.worker import schedule,claim
 from app.briefs.central_bank import parse_article
 from app.db.models import BriefConfig,BriefJob,BriefVersion
@@ -40,6 +40,7 @@ def test_portal_and_daily_routes_are_distinct(client):
     assert '固定快讯' in client.get('/briefs/').text
     assert 'src="/app.js"' in client.get('/daily/').text
     assert client.get('/api/health').json()=={'status':'ok'}
+    assert client.head('/briefs/').status_code==200
     assert client.get('/api/briefs/categories').status_code==401
 
 
@@ -135,3 +136,71 @@ def test_new_us_categories_accept_jobs(client):
         assert response.status_code==202, response.text
     assert client.post('/api/briefs/jobs',headers=headers,
                        json={'category':'unknown','issue_date':'2026-10-16'}).status_code==422
+
+
+def test_active_job_cannot_silently_swap_action(client):
+    headers=login(client,'editor@plus.test'); body={'category':'volume','issue_date':'2026-10-15'}
+    assert client.post('/api/briefs/jobs',json=body,headers=headers).status_code==202
+    swapped=client.post('/api/briefs/jobs',json={**body,'action':'render'},headers=headers)
+    assert swapped.status_code==409 and '正在执行' in swapped.json()['detail']
+
+
+def test_viewer_sees_the_confirmed_older_version(client,db_factory,seed):
+    id=draft(db_factory,seed); headers=login(client,'editor@plus.test'); viewer=login(client,'viewer@plus.test')
+    assert client.post(f'/api/briefs/issues/{id}/confirm',json={'version':1},headers=headers).status_code==200
+    edit={'base_version':1,'title':'新版标题','dynamic_body':'新版正文。'}
+    assert client.post(f'/api/briefs/issues/{id}/revisions',json=edit,headers=headers).status_code==201
+    visible=client.get(f'/api/briefs/issues/{id}',headers=viewer).json()
+    assert [v['number'] for v in visible['versions']]==[1]
+    assert visible['versions'][0]['title']=='核验标题'
+    assert client.get(f'/api/briefs/issues/{id}/files/1/test.png',headers=viewer).status_code==200
+
+
+def test_schedule_skips_a_category_that_already_has_a_version(db_factory,seed,monkeypatch):
+    now=datetime(2026,10,15,8,10,tzinfo=CHINA)
+    monkeypatch.setattr('app.db.models.utcnow',lambda:now.astimezone(timezone.utc))
+    with db_factory() as db:
+        db.add(BriefConfig(team_id=seed['editor'].team_id,enabled=True))
+        issue=ensure_issue(db,seed['editor'].team_id,date(2026,10,15),'volume')
+        append_version(db,issue,{'title':'已有','dynamic_body':'已有正文','data_date':'2026-10-15','images':[],'valid':True})
+        db.commit()
+    schedule(db_factory,now)
+    with db_factory() as db:
+        assert not db.scalars(select(BriefJob).where(BriefJob.category=='volume',BriefJob.issue_date==date(2026,10,15))).all()
+
+
+def test_confirmed_version_survives_pruning(db_factory,seed):
+    with db_factory() as db:
+        issue=ensure_issue(db,seed['editor'].team_id,date(2026,10,15),'volume')
+        first=append_version(db,issue,{'title':'v1','dynamic_body':'v1','data_date':'2026-10-15','images':[],'valid':True})
+        issue.confirmed_version=first.number;db.flush()
+        for number in range(2,6):
+            append_version(db,issue,{'title':f'v{number}','dynamic_body':f'v{number}','data_date':'2026-10-15','images':[],'valid':True})
+        db.commit()
+        versions=list(db.scalars(select(BriefVersion).where(BriefVersion.issue_id==issue.id).order_by(BriefVersion.number)))
+        assert first.number in [v.number for v in versions]
+        assert issue.confirmed_version==first.number
+
+
+def test_ai_candidate_is_marked_stale_after_the_body_changes(db_factory,seed):
+    with db_factory() as db:
+        issue=ensure_issue(db,seed['editor'].team_id,date(2026,10,15),'volume')
+        body='原正文。'
+        payload={'title':'标题','dynamic_body':body,'data_date':'2026-10-15','images':[],'valid':True,
+                 'deepseek':{'status':'ok','source_body_sha':hashlib.sha256(body.encode()).hexdigest()}}
+        version=append_version(db,issue,payload)
+        db.commit()
+        assert version_out(issue,version)['deepseek']['stale'] is False
+        edited=append_version(db,issue,payload,body='改过的正文。')
+        db.commit()
+        assert version_out(issue,edited)['deepseek']['stale'] is True
+
+
+def test_liquidity_falls_back_when_the_pbc_table_is_missing(tmp_path,monkeypatch):
+    from app.briefs import sources
+    snapshot={'quotes':{'quote_date':'2026-10-15','updated_at':'2026-10-15 10:00'},'history':{}}
+    monkeypatch.setattr('app.briefs.engines.liquidity.fetch_data.fetch_snapshot',lambda out,day:snapshot)
+    monkeypatch.setattr(sources.central_bank,'fetch',lambda day,out:(_ for _ in ()).throw(ValueError('未找到唯一7天期逆回购操作表')))
+    monkeypatch.setattr(sources,'render_liquidity',lambda snap,out:{'title':'标题','dynamic_body':'正文','data_date':'2026-10-15','images':[],'warnings':[],'facts':{}})
+    payload=sources.liquidity('2026-10-15',tmp_path,tmp_path/'state')
+    assert payload['warnings'] and '未找到唯一7天期逆回购操作表' in payload['warnings'][0]

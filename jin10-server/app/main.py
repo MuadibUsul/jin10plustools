@@ -105,9 +105,19 @@ def briefs_page():
     return FileResponse(_WEB/'briefs.html',headers={'Cache-Control':'no-cache'})
 
 
+@app.head('/briefs/',include_in_schema=False)
+def briefs_head():
+    return FileResponse(_WEB/'briefs.html',headers={'Cache-Control':'no-cache'})
+
+
 # Legacy script, guide and extension-download URLs remain available.
 @app.get('/settings/',include_in_schema=False)
 def settings_page():
+    return FileResponse(_WEB/'settings.html',headers={'Cache-Control':'no-cache'})
+
+
+@app.head('/settings/',include_in_schema=False)
+def settings_head():
     return FileResponse(_WEB/'settings.html',headers={'Cache-Control':'no-cache'})
 
 

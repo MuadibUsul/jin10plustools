@@ -46,6 +46,9 @@ class Settings(BaseSettings):
     chat2api_prefix: str = ''
     chat2api_key: str = ''
     chat2api_model: str = 'gpt-4o-mini'
+    # Optional official OpenAI-compatible endpoint for models the web node cannot reach.
+    openai_api_key: str = ''
+    openai_model: str = 'gpt-4o-mini'
 
 
 @lru_cache

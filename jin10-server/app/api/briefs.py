@@ -88,6 +88,12 @@ def detail(id:uuid.UUID,db:DbSession,user:CurrentUser):
 def jobs(body:JobRequest,db:DbSession,user:Editor):
     now=datetime.now(CHINA)
     if body.issue_date>now.date():raise HTTPException(422,'不能处理未来日期')
+    active=db.scalars(select(BriefJob).where(BriefJob.team_id==user.team_id,
+        BriefJob.issue_date==body.issue_date,BriefJob.category==body.category,
+        BriefJob.status.in_(['queued','running','waiting']))).first()
+    if active and active.action!=body.action:
+        names={'produce':'生成稿件','refresh':'重新取数','render':'重新制图','ai':'补跑AI文案'}
+        raise HTTPException(409,f"该栏目正在执行{names.get(active.action,active.action)}，请等待当前任务结束后再{names.get(body.action,body.action)}")
     job=enqueue(db,user.team_id,body.issue_date,body.category,action=body.action,
                 user_id=user.id,unique=True)
     db.commit();return job_out(job)

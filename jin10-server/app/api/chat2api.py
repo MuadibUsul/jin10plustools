@@ -49,7 +49,7 @@ def request(method: str, path: str, **kwargs) -> httpx.Response:
 
 
 class TokensIn(BaseModel):
-    text: str = Field(min_length=1, max_length=20000)
+    text: str = Field(min_length=1, max_length=200000)
 
 
 def extract_tokens(text: str) -> list[str]:
@@ -135,7 +135,7 @@ def pool_expiries():
             continue
         if expiry <= now:
             result['expired'] += 1
-        if result['earliest'] is None or expiry < result['earliest']:
+        elif result['earliest'] is None or expiry < result['earliest']:
             result['earliest'] = expiry
     return result
 
@@ -160,6 +160,14 @@ def status(user: CurrentUser):
             'tokens_count': int(match.group(1)) if match else None, **base}
 
 
+def existing_tokens():
+    try:
+        content = Path(os.getenv('PLUS_CHAT2API_TOKENS', '/opt/chat2api-data/token.txt')).read_text(encoding='utf-8')
+    except OSError:
+        return set()
+    return {line.strip() for line in content.splitlines() if line.strip() and not line.strip().startswith('#')}
+
+
 @router.post('/tokens')
 def upload(body: TokensIn, user: CurrentUser):
     require_admin(user)
@@ -168,8 +176,12 @@ def upload(body: TokensIn, user: CurrentUser):
         if 'session-token.' in body.text or 'eyJhbGciOiJkaXIi' in body.text:
             raise HTTPException(422, '检测到加密会话 Cookie（.0/.1 分片），它不是 chat2api 可用的 Token；请改用 /api/auth/session 的 accessToken')
         raise HTTPException(422, '没有识别到 AccessToken 或 RefreshToken')
-    data = request('POST', '/tokens/upload', data={'text': '\n'.join(tokens)}).json()
-    return {'tokens_count': data.get('tokens_count'), 'extracted': len(tokens)}
+    known = existing_tokens()
+    fresh = [token for token in tokens if token not in known]
+    if not fresh:
+        return {'tokens_count': None, 'extracted': 0, 'duplicate': True}
+    data = request('POST', '/tokens/upload', data={'text': '\n'.join(fresh)}).json()
+    return {'tokens_count': data.get('tokens_count'), 'extracted': len(fresh)}
 
 
 @router.post('/clear')

@@ -1,6 +1,7 @@
 """Brief editions and immutable revisions, isolated from daily-report materials."""
 import hashlib
 import json
+import shutil
 import uuid
 from datetime import date, datetime, timezone
 from pathlib import Path
@@ -83,9 +84,12 @@ def append_version(db,issue,payload,*,user_id=None,kind='generated',title=None,b
 
 
 def prune_versions(db,issue):
-    """Keep two deliverable revisions; retain original evidence and note revision history."""
+    """Keep the latest two revisions plus the confirmed one; never drop a confirmation."""
     versions=list(db.scalars(select(BriefVersion).where(BriefVersion.issue_id==issue.id).order_by(BriefVersion.number.desc())))
-    for old in versions[2:]:
+    keep={version.number for version in versions[:2]}
+    if issue.confirmed_version: keep.add(issue.confirmed_version)
+    for old in versions:
+        if old.number in keep: continue
         # Notes remain reproducible without retaining extra downloadable editions.
         team=db.get(Team,issue.team_id,with_for_update=True)
         saved=dict(team.settings or {})
@@ -96,6 +100,8 @@ def prune_versions(db,issue):
         db.execute(update(BriefSourceSnapshot).where(BriefSourceSnapshot.version_id==old.id).values(version_id=None))
         if issue.confirmed_version==old.number:
             issue.confirmed_version=None;issue.confirmed_by=None;issue.confirmed_at=None
+        delivery=root_for(issue.team_id)/'delivery'/str(old.id)
+        if delivery.is_dir(): shutil.rmtree(delivery, ignore_errors=True)
         db.delete(old)
 
 
@@ -105,6 +111,8 @@ def version_out(issue,version):
     ai=dict(data.get('deepseek',{'status':'not_configured'}))
     for key in ('title','body'):
         if key in ai:ai[key]=copy_dates(ai[key])
+    if ai.get('source_body_sha'):
+        ai['stale']=ai['source_body_sha']!=hashlib.sha256(version.dynamic_body.encode()).hexdigest()
     # Valuation and turnover keep their notes on the image; their body stays dynamic-only,
     # including earlier editions that still stored the appended note block.
     image_notes=issue.category in ('valuation','turnover','us_barometer')
@@ -125,7 +133,7 @@ def issue_out(db,issue):
     return {'id':str(issue.id),'category':issue.category,'label':CATEGORIES[issue.category],
         'issue_date':issue.issue_date,'expected_date':expected_date(issue.category,issue.issue_date),
         'version':issue.version,'confirmed_version':issue.confirmed_version,'confirmed_at':issue.confirmed_at,
-        'versions':[version_out(issue,v) for v in versions[:1]],
+        'versions':[version_out(issue,v) for v in versions],
         'jobs':[job_out(j) for j in jobs[:15]]}
 
 

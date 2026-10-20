@@ -1,7 +1,7 @@
 import { $, node, api, login, displayTime, copyDate, download, toast } from '/workspace.js';
 
 let data, dirty = false;
-const providers = { jev: ['日报选稿 · JEV', '栏目分类与重要度评分'], deepseek: ['固定快讯 · DeepSeek', '在规则稿基础上生成可选的 AI 表达'], chat2api: ['固定快讯 · chat2api', '通过本机 chat2api 节点使用 ChatGPT 网页版；留空则使用服务器节点密钥'] };
+const providers = { jev: ['日报选稿 · JEV', '栏目分类与重要度评分'], deepseek: ['固定快讯 · DeepSeek', '在规则稿基础上生成可选的 AI 表达'], chat2api: ['固定快讯 · chat2api', '通过本机 chat2api 节点使用 ChatGPT 网页版；留空则使用服务器节点密钥'], openai: ['固定快讯 · OpenAI', '官方 API；支持 gpt-5.6-sol 等节点无法访问的模型'] };
 function message(text, error = false) { const target = $('#settings-message'); target.textContent = text; target.className = error ? 'error' : 'success'; }
 function field(label, input) { const row = node('label', label, 'field'); row.append(input); return row; }
 async function load() {
@@ -40,9 +40,10 @@ async function load() {
     const saved = data.ai[name], card = node('div', undefined, 'ai-setting');
     card.append(node('h3', label), node('p', description, 'muted'));
     card.append(node('p', `${saved.configured ? '已配置' : '未配置'}${saved.source === 'server' ? ' · 使用服务器 Key' : saved.source === 'team' ? ' · 使用团队 Key' : ''}${saved.enabled ? '' : ' · 已停用'}`, saved.configured && saved.enabled ? 'success' : 'muted'));
+    if (name === 'chat2api' && saved.model_supported === false) card.append(node('p', `当前节点不支持 ${saved.requested_model}，实际使用 ${saved.model}；请改选已支持模型。`, 'warning'));
     if (data.can_admin) {
       const key = node('input'); key.type = 'password'; key.autocomplete = 'new-password'; key.id = `key-${name}`; key.maxLength = 2048; key.placeholder = '输入新的 Key；留空保留';
-      const model = node('input'); model.id = `model-${name}`; model.value = saved.model; model.maxLength = 100; model.placeholder = name === 'deepseek' ? '例如 deepseek-chat' : name === 'chat2api' ? '例如 gpt-4o-mini' : 'jev-latest';
+      const model = node('input'); model.id = `model-${name}`; model.value = name === 'chat2api' ? saved.requested_model ?? saved.model : saved.model; model.maxLength = 100; model.placeholder = name === 'deepseek' ? '例如 deepseek-chat' : name === 'chat2api' ? '例如 gpt-4o-mini' : name === 'openai' ? '例如 gpt-5.6-sol' : 'jev-latest';
       card.append(field('API Key', key), field('模型名称', model));
       const enabled = node('input'); enabled.type = 'checkbox'; enabled.id = `enabled-${name}`; enabled.checked = saved.enabled;
       const enableLabel = node('label', ' 启用此 AI 接入', 'check-row'); enableLabel.prepend(enabled); card.append(enableLabel);
@@ -254,7 +255,7 @@ $('#feedback-form').onsubmit = async (event) => {
 };
 
 // —— chat2api 登录设置 ——
-let chat2apiExpiryAt = null, chat2apiExpiryKnown = true, chat2apiExpiryTimer = null;
+let chat2apiExpiryAt = null, chat2apiExpiryKnown = true, chat2apiExpiryTimer = null, chat2apiExpired = 0;
 function chat2apiStatus(text, error = false) { const target = $('#chat2api-state'); target.textContent = text; target.className = error ? 'error' : 'muted'; }
 function chat2apiMessage(text, error = false) { const target = $('#chat2api-message'); target.textContent = text; target.className = error ? 'error' : 'muted'; }
 function formatRemaining(ms) {
@@ -271,11 +272,14 @@ function renderChat2apiExpiry() {
   const target = $('#chat2api-expiry');
   if (!target) return;
   if (!chat2apiExpiryKnown) { target.textContent = '无法读取 Token 到期时间（节点数据目录未挂载）。'; target.className = 'muted'; return; }
-  if (!chat2apiExpiryAt) { target.textContent = '当前没有带到期时间的 AccessToken（仅有 RefreshToken 或尚未添加）。'; target.className = 'muted'; return; }
+  if (!chat2apiExpiryAt) {
+    target.textContent = chat2apiExpired ? `所有带到期时间的 AccessToken 均已过期（${chat2apiExpired} 个），请清空后重新上传。` : '当前没有带到期时间的 AccessToken（仅有 RefreshToken 或尚未添加）。';
+    target.className = chat2apiExpired ? 'error' : 'muted'; return;
+  }
   const left = chat2apiExpiryAt - Date.now();
   const when = displayTime(new Date(chat2apiExpiryAt).toISOString());
   if (left <= 0) { target.textContent = `最近一个 AccessToken 已于 ${when} 到期，请重新粘贴整段 JSON 上传。`; target.className = 'error'; return; }
-  target.textContent = `最近一个 AccessToken 将于 ${when} 到期，剩余 ${formatRemaining(left)}。`;
+  target.textContent = `最近一个 AccessToken 将于 ${when} 到期，剩余 ${formatRemaining(left)}。${chat2apiExpired ? `（另有 ${chat2apiExpired} 个已过期，建议清空）` : ''}`;
   target.className = left < 24 * 3600 * 1000 ? 'warning' : 'active';
 }
 async function loadChat2api() {
@@ -284,6 +288,7 @@ async function loadChat2api() {
     const info = await api('/api/chat2api');
     chat2apiExpiryKnown = info.expiry_available !== false;
     chat2apiExpiryAt = info.earliest_expiry ? Date.parse(info.earliest_expiry) : null;
+    chat2apiExpired = Number(info.expired_tokens) || 0;
     renderChat2apiExpiry();
     if (!chat2apiExpiryTimer) chat2apiExpiryTimer = setInterval(renderChat2apiExpiry, 1000);
     if (!info.configured) { chat2apiStatus('尚未配置 chat2api 节点（缺少 PLUS_CHAT2API_PREFIX）。', true); return; }
@@ -301,7 +306,7 @@ $('#chat2api-upload').onclick = async () => {
   try {
     const result = await api('/api/chat2api/tokens', { method: 'POST', json: { text } });
     $('#chat2api-tokens').value = ''; $('#chat2api-error-list').hidden = true;
-    chat2apiMessage(`已识别并上传 ${result.extracted ?? '?'} 个 Token，当前可用 Tokens：${result.tokens_count ?? '未知'}。`); toast('Token 已上传。');
+    chat2apiMessage(result.duplicate ? '这些 Token 已在号池中，无需重复上传。' : `已识别并上传 ${result.extracted ?? '?'} 个 Token，当前可用 Tokens：${result.tokens_count ?? '未知'}。`); toast(result.duplicate ? 'Token 已在号池中。' : 'Token 已上传。');
     await loadChat2api();
   } catch (error) { chat2apiMessage(error.message, true); }
   finally { button.disabled = false; }
@@ -341,7 +346,7 @@ $('#settings-form').onsubmit = async (event) => {
       body.ai = Object.fromEntries(Object.keys(providers).map((name) => {
         const value = { enabled: $(`#enabled-${name}`).checked };
         const model = $(`#model-${name}`).value.trim(), key = $(`#key-${name}`).value.trim();
-        if (model) value.model = model;
+        if (model && model !== (data.ai[name]?.requested_model ?? data.ai[name]?.model)) value.model = model;
         if (key) value.key = key;
         if ($(`#reset-${name}`)?.checked) value.use_server_key = true;
         return [name, value];

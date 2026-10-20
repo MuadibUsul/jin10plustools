@@ -36,6 +36,8 @@ services:
       PLUS_CHAT2API_PREFIX: ${PLUS_CHAT2API_PREFIX:-}
       PLUS_CHAT2API_KEY: ${PLUS_CHAT2API_KEY:-}
       PLUS_CHAT2API_MODEL: ${PLUS_CHAT2API_MODEL:-gpt-4o-mini}
+      PLUS_OPENAI_API_KEY: ${PLUS_OPENAI_API_KEY:-}
+      PLUS_OPENAI_MODEL: ${PLUS_OPENAI_MODEL:-gpt-4o-mini}
     volumes:
       - storage:/data
       - /opt/chat2api/data:/opt/chat2api-data:ro
@@ -65,6 +67,8 @@ services:
       PLUS_CHAT2API_PREFIX: ${PLUS_CHAT2API_PREFIX:-}
       PLUS_CHAT2API_KEY: ${PLUS_CHAT2API_KEY:-}
       PLUS_CHAT2API_MODEL: ${PLUS_CHAT2API_MODEL:-gpt-4o-mini}
+      PLUS_OPENAI_API_KEY: ${PLUS_OPENAI_API_KEY:-}
+      PLUS_OPENAI_MODEL: ${PLUS_OPENAI_MODEL:-gpt-4o-mini}
     volumes:
       - storage:/data
     networks:

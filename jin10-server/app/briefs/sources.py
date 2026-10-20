@@ -99,9 +99,17 @@ def liquidity(day,out,state,refresh=False):
     from .engines.liquidity.fetch_data import fetch_snapshot
     snapshot=fetch_snapshot(out,day)
     record(out,2,f"中国货币网行情已读取，源数据时间 {snapshot['quotes']['updated_at']}；正在核对央行公告")
-    snapshot['central_bank']=central_bank.fetch(day,out)
+    warnings=[]
+    try:
+        snapshot['central_bank']=central_bank.fetch(day,out)
+    except ValueError as exc:
+        # The DR007 brief still has value when no reverse-repo table was published.
+        snapshot['central_bank']=None
+        warnings.append(f'央行公开市场公告未纳入：{exc}')
     save(out/'liquidity-snapshot.json',snapshot)
-    return render_liquidity(snapshot,out)
+    payload=render_liquidity(snapshot,out)
+    payload['warnings']=warnings+payload.get('warnings',[])
+    return payload
 
 
 def render_liquidity(snapshot,out):

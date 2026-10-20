@@ -121,3 +121,55 @@ def test_notes_accept_every_registered_category(client):
     response=client.put('/api/settings',headers=admin,
                         json={'revision':0,'notes':{c['id']:'注：'+c['label'] for c in categories}})
     assert response.status_code==200, response.text
+
+
+def test_chat2api_model_is_validated_and_falls_back_to_a_supported_one(client, seed, db_factory, monkeypatch):
+    from app.config import get_settings
+    from app.services.team_settings import briefs_ai
+    monkeypatch.setenv('PLUS_CHAT2API_URL', 'http://chat2api:5005')
+    monkeypatch.setenv('PLUS_CHAT2API_PREFIX', 'c2a_test')
+    monkeypatch.setenv('PLUS_CHAT2API_KEY', 'sk-c2a-server-key-1234')
+    monkeypatch.setenv('PLUS_CHAT2API_MODEL', 'gpt-4o-mini')
+    get_settings.cache_clear()
+    admin = login(client, seed['admin'].email)
+    initial = client.get('/api/settings', headers=admin).json()
+    rejected = client.put('/api/settings', headers=admin, json={
+        'revision': initial['revision'], 'ai': {'chat2api': {'model': 'gpt-5.6-sol'}}})
+    assert rejected.status_code == 422
+    accepted = client.put('/api/settings', headers=admin, json={
+        'revision': initial['revision'], 'ai': {'chat2api': {'model': 'gpt-4o-mini'}}})
+    assert accepted.status_code == 200
+    with db_factory() as db:
+        team = db.get(Team, seed['admin'].team_id)
+        settings = dict(team.settings or {})
+        settings['ai'] = {**(settings.get('ai') or {}), 'chat2api': {'model': 'gpt-5.6-sol'}}
+        settings['ai_provider'] = 'chat2api'
+        team.settings = settings
+        db.commit()
+        ai = briefs_ai(team)
+        assert ai['requested_model'] == 'gpt-5.6-sol'
+        assert ai['model'] == 'gpt-4o-mini' and ai['model_supported'] is False
+    get_settings.cache_clear()
+
+
+def test_openai_provider_is_available_for_official_models(client, seed, db_factory, monkeypatch):
+    from app.config import get_settings
+    from app.services.team_settings import briefs_ai
+    monkeypatch.setenv('PLUS_OPENAI_API_KEY', '')
+    monkeypatch.setenv('PLUS_OPENAI_MODEL', 'gpt-4o-mini')
+    get_settings.cache_clear()
+    admin = login(client, seed['admin'].email)
+    initial = client.get('/api/settings', headers=admin).json()
+    key = 'sk-test-openai-key-123456'
+    result = client.put('/api/settings', headers=admin, json={
+        'revision': initial['revision'], 'ai_provider': 'openai',
+        'ai': {'openai': {'key': key, 'model': 'gpt-5.6-sol'}}})
+    assert result.status_code == 200
+    assert result.json()['ai_provider'] == 'openai'
+    assert result.json()['ai']['openai']['configured'] is True
+    with db_factory() as db:
+        ai = briefs_ai(db.get(Team, seed['admin'].team_id))
+        assert ai['provider'] == 'openai'
+        assert ai['base_url'] == 'https://api.openai.com/v1'
+        assert ai['model'] == 'gpt-5.6-sol' and ai['key'] == key
+    get_settings.cache_clear()

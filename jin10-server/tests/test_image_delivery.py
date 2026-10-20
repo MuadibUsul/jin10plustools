@@ -144,7 +144,8 @@ def test_notes_are_versioned_and_defaults_apply_to_future_issues(client,db_facto
     versions=response.json()['versions']
     assert versions[0]['fixed_notes']=='注：自定义说明。'
     assert '自定义说明' in versions[0]['body']
-    assert len(versions)==1
+    assert [v['number'] for v in versions]==[2,1]
+    assert versions[1]['fixed_notes']!=versions[0]['fixed_notes']
     with db_factory() as db:
         previous=db.scalar(select(BriefVersion).where(BriefVersion.issue_id==uuid.UUID(id),BriefVersion.number==1))
         assert previous.payload['fixed_notes']!=versions[0]['fixed_notes']

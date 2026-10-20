@@ -1,6 +1,6 @@
 import base64
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import HTTPException
 
@@ -71,7 +71,7 @@ def test_status_marks_expired_access_tokens(client, monkeypatch, tmp_path):
     monkeypatch.setattr(chat2api, 'request', lambda *args, **kwargs: FakeResponse(text=''))
     data = client.get('/api/chat2api', headers=login(client, 'admin@plus.test')).json()
     assert data['expired_tokens'] == 1
-    assert data['earliest_expiry'] == '1970-01-01T00:00:01+00:00'
+    assert data['earliest_expiry'] is None
 
 
 def test_upload_clear_and_error_tokens(client, monkeypatch):
@@ -152,3 +152,47 @@ def test_offline_node_never_reports_success(client, monkeypatch):
     data = client.get('/api/chat2api', headers=headers).json()
     assert data['configured'] is True and data['online'] is False and data['tokens_count'] is None
     assert client.post('/api/chat2api/tokens', json={'text': 'x'}, headers=headers).status_code == 502
+
+
+def test_expiry_prefers_future_tokens_and_counts_expired(client, monkeypatch, tmp_path):
+    monkeypatch.setenv('PLUS_CHAT2API_PREFIX', 'c2a_test')
+    future = int((datetime.now(timezone.utc) + timedelta(days=2)).timestamp())
+    past = int((datetime.now(timezone.utc) - timedelta(days=1)).timestamp())
+    tokens = tmp_path / 'token.txt'
+    tokens.write_text(make_jwt(past) + '\n' + make_jwt(future) + '\n', encoding='utf-8')
+    monkeypatch.setenv('PLUS_CHAT2API_TOKENS', str(tokens))
+    monkeypatch.setattr(chat2api, 'request', lambda *args, **kwargs: FakeResponse(text=''))
+    data = client.get('/api/chat2api', headers=login(client, 'admin@plus.test')).json()
+    assert data['expired_tokens'] == 1
+    assert data['earliest_expiry'] == datetime.fromtimestamp(future, tz=timezone.utc).isoformat()
+
+
+def test_upload_accepts_a_full_session_json_over_twenty_kilobytes(client, monkeypatch):
+    monkeypatch.setenv('PLUS_CHAT2API_PREFIX', 'c2a_test')
+    jwt = make_jwt(4102444800)
+    session = json.dumps({'accessToken': jwt, 'user': {'name': 'tester'}, 'marketing': 'x' * 25000})
+    assert len(session) > 20000
+    forwarded = {}
+    def fake(method, path, **kwargs):
+        forwarded.update(kwargs)
+        return FakeResponse(data={'status': 'success', 'tokens_count': 1})
+    monkeypatch.setattr(chat2api, 'request', fake)
+    response = client.post('/api/chat2api/tokens', json={'text': session},
+                           headers=login(client, 'admin@plus.test'))
+    assert response.status_code == 200
+    assert response.json() == {'tokens_count': 1, 'extracted': 1}
+    assert forwarded['data']['text'] == jwt
+
+
+def test_upload_skips_tokens_already_in_the_pool(client, monkeypatch, tmp_path):
+    monkeypatch.setenv('PLUS_CHAT2API_PREFIX', 'c2a_test')
+    jwt = make_jwt(4102444800)
+    tokens = tmp_path / 'token.txt'
+    tokens.write_text(jwt + '\n', encoding='utf-8')
+    monkeypatch.setenv('PLUS_CHAT2API_TOKENS', str(tokens))
+    called = []
+    monkeypatch.setattr(chat2api, 'request', lambda *args, **kwargs: called.append(1) or FakeResponse())
+    response = client.post('/api/chat2api/tokens', json={'text': jwt},
+                           headers=login(client, 'admin@plus.test'))
+    assert response.json() == {'tokens_count': None, 'extracted': 0, 'duplicate': True}
+    assert not called

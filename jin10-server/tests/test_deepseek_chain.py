@@ -91,6 +91,6 @@ def test_only_two_deliverable_versions_and_latest_visible(db_factory,seed):
         db.commit()
         versions=list(db.scalars(select(BriefVersion).where(BriefVersion.issue_id==issue.id).order_by(BriefVersion.number.desc())))
         assert [v.number for v in versions]==[4,3]
-        assert [v['number'] for v in issue_out(db,issue)['versions']]==[4]
+        assert [v['number'] for v in issue_out(db,issue)['versions']]==[4,3]
         archived=db.get(Team,issue.team_id).settings['retired_issue_notes']
         assert [v['notes'] for v in archived]==['注释0','注释1']

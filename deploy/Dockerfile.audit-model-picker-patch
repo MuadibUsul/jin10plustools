@@ -1,0 +1,7 @@
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
+USER root
+COPY jin10-server/app/web/settings.js /srv/app/web/settings.js
+COPY jin10-server/app/web/workspace.css /srv/app/web/workspace.css
+RUN chmod a+r /srv/app/web/settings.js /srv/app/web/workspace.css
+USER plus

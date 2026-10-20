@@ -47,8 +47,10 @@ export function account(me) {
   const target = $('#account'); if (!target) return;
   const settings = node('a', '⚙ 设置', 'settings-link'); settings.href = '/settings/';
   if (location.pathname === '/settings/') settings.setAttribute('aria-current', 'page');
+  const skills = node('a', '◇ Skill 库', 'settings-link'); skills.href = '/skills/';
+  if (location.pathname === '/skills/' || location.pathname.startsWith('/skills/')) skills.setAttribute('aria-current', 'page');
   const out = node('button', '退出'); out.onclick = () => { localStorage.removeItem('plus.token'); location.reload(); };
-  target.replaceChildren(settings, node('span', me.user.name), out);
+  target.replaceChildren(settings, skills, node('span', me.user.name), out);
 }
 export async function download(path, filename) { const res = await api(path, { raw: true }); const disposition = res.headers.get('Content-Disposition') || ''; const encoded = disposition.match(/filename\*=UTF-8''([^;]+)/i); const plain = disposition.match(/filename=["]([^"]+)["]/i); const url = URL.createObjectURL(await res.blob()); const a = node('a'); a.href = url; a.download = encoded ? decodeURIComponent(encoded[1]) : plain?.[1] || filename || 'image'; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); }
 export async function copy(text) { try { await navigator.clipboard.writeText(text); } catch { throw new Error('浏览器未允许复制，请选中文字手动复制'); } }

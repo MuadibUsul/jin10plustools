@@ -112,7 +112,9 @@ def execute(factory,id):
         except Exception:
             pass
     if payload and payload.get('valid') and action!='render':
+        from .body_templates import apply as apply_body_template
         from .skill_production import apply_skill_copy
+        apply_body_template(payload,category,team_settings)
         apply_skill_copy(payload,category,team_settings)
         if payload.get('skill'):
             record(out,4,'Skill AI 文案已采用' if payload['skill'].get('status')=='ok'

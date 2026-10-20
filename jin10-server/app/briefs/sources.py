@@ -73,7 +73,7 @@ def render_volume(rows,out):
           f"成交活跃度较前日{'回升' if change>0 else '回落' if change<0 else '持平'}。")
     image=volume_chart([r for r in rows if r['ma20'] is not None],out)
     return {'title':title,'dynamic_body':body,'images':[image.name],'data_date':current['date'],
-            'facts':{'amount_yi':str(current['turn']),'ma20_yi':str(current['ma20']),'previous_date':prior['date'],'source':url_source()},'warnings':[]}
+            'facts':{'amount_yi':str(current['turn']),'amount_wan_yi':f"{current['turn']/10000:.2f}",'change_yi':f'{change:.2f}','change_pct':f'{percent:+.2f}','streak':streak,'side':side,'activity':'回升' if change>0 else '回落' if change<0 else '持平','ma20_yi':str(current['ma20']),'ma20_wan_yi':f"{current['ma20']/10000:.2f}",'previous_date':prior['date'],'source':url_source()},'warnings':[]}
 
 
 def url_source():return 'https://www.jin10.com/minipro/index.html#/pages_sub/huShenVolume/huShenVolume?category=hu_shen_volume&id=550059&type=4'

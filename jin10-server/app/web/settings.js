@@ -2,6 +2,14 @@ import { $, node, api, login, displayTime, copyDate, download, toast } from '/wo
 
 let data, dirty = false;
 const providers = { jev: ['日报选稿 · JEV', '栏目分类与重要度评分'], deepseek: ['固定快讯 · DeepSeek', '用于五项固定快讯的 Skill 文案产出'], chat2api: ['固定快讯 · chat2api', '通过本机 chat2api 节点使用 ChatGPT 网页版；留空则使用服务器节点密钥'], openai: ['固定快讯 · OpenAI', '官方 API；支持 gpt-5.6-sol 等节点无法访问的模型'] };
+const templateCategories = new Set(['volume', 'turnover', 'valuation', 'liquidity', 'oil_etf']);
+const templateVars = {
+  volume: '{date} {previous_date} {amount_yi} {amount_wan_yi} {change_yi} {change_pct} {streak} {side} {ma20_yi} {ma20_wan_yi} {activity} {builtin_body}',
+  turnover: '{date} {previous_date} {low_ma9} {high_ma9} {previous_low_ma9} {previous_high_ma9} {low_direction} {high_direction} {threshold_side} {builtin_body}',
+  valuation: '{date} {erp_date} {buffett} {erp} {previous_erp} {erp_previous_date} {builtin_body}',
+  liquidity: '{date} {quote_date} {quote_time} {dr007} {dr001} {builtin_body}',
+  oil_etf: '{date} {previous_date} {uso_wan_barrels} {bno_wan_barrels} {previous_uso_wan_barrels} {previous_bno_wan_barrels} {uso_change_wan_barrels} {bno_change_wan_barrels} {builtin_body}',
+};
 const modelOptions = { jev: ['jev-latest'], deepseek: ['deepseek-chat', 'deepseek-reasoner', 'deepseek-v4-pro'], chat2api: ['gpt-4o-mini', 'gpt-4o', 'gpt-4', 'gpt-3.5-turbo', 'o1', 'o1-mini', 'o3-mini', 'auto'], openai: ['gpt-5.6-sol', 'gpt-5.6', 'gpt-5.6-terra', 'gpt-5.6-luna', 'gpt-4o-mini', 'gpt-4o', 'o1', 'o3-mini'] };
 function message(text, error = false) { const target = $('#settings-message'); target.textContent = text; target.className = error ? 'error' : 'success'; }
 function field(label, input) { const row = node('label', label, 'field'); row.append(input); return row; }
@@ -33,6 +41,22 @@ async function load() {
     $('#note-history').append(detail);
   }
   if (!data.note_revisions.length) $('#note-history').append(node('p', '暂无默认注释修改记录', 'muted'));
+  $('#template-fields').replaceChildren();
+  const templates = data.brief_templates || {};
+  for (const category of data.categories) {
+    if (!templateCategories.has(category.id)) continue;
+    const config = templates[category.id] || { use_builtin: true, template: '' };
+    const group = node('details'); group.open = category.id === 'volume';
+    const toggle = node('input'); toggle.type = 'checkbox'; toggle.id = `template-builtin-${category.id}`;
+    toggle.checked = config.use_builtin !== false; toggle.disabled = !data.can_edit;
+    const toggleLabel = node('label', ' 使用内置硬编码正文', 'check-row'); toggleLabel.prepend(toggle);
+    const area = node('textarea'); area.id = `template-${category.id}`; area.value = config.template || '';
+    area.rows = 5; area.maxLength = 4000; area.readOnly = !data.can_edit; area.disabled = toggle.checked;
+    toggle.onchange = () => { area.disabled = toggle.checked; area.readOnly = !data.can_edit; dirty = true; };
+    group.append(node('summary', category.label), toggleLabel, field('团队正文模板（关闭内置后生效）', area),
+      node('p', `可用变量：${templateVars[category.id] || '{builtin_body}'}`, 'muted'));
+    $('#template-fields').append(group);
+  }
   $('#schedule-enabled').checked = data.schedule_enabled; $('#schedule-enabled').disabled = !data.can_admin;
   $('#ai-fields').replaceChildren();
   $('#ai-provider').value = data.ai_provider || 'deepseek';
@@ -354,6 +378,10 @@ $('#settings-form').onsubmit = async (event) => {
   event.preventDefault(); const button = $('#save-settings'); button.disabled = true;
   try {
     const body = { revision: data.revision, live_url: $('#live-url').value.trim(), notes: Object.fromEntries(data.categories.map((c) => [c.id, $(`#notes-${c.id}`).value])) };
+    if (data.can_edit) body.brief_templates = Object.fromEntries(data.categories.filter((c) => templateCategories.has(c.id)).map((c) => [c.id, {
+      use_builtin: $(`#template-builtin-${c.id}`).checked,
+      template: $(`#template-${c.id}`).value,
+    }]));
     body.live_urls = Object.fromEntries([...document.querySelectorAll('[data-live-id]')].filter(input => input.value.trim()).map(input => [input.dataset.liveId, input.value.trim()]));
     if (data.can_edit) {
       body.ai_provider = $('#ai-provider').value;

@@ -3,6 +3,7 @@ from typing import Literal
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator
 
+from app.briefs.body_templates import all_config as body_templates, validate as validate_body_template
 from app.briefs.delivery import default_notes
 from app.briefs.policy import CATEGORIES
 from app.briefs.skill_library import (
@@ -24,6 +25,12 @@ class AIConfig(BaseModel):
     use_server_key: bool = False
 
 
+class TemplateConfig(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    use_builtin: bool = True
+    template: str = Field(default='', max_length=4000)
+
+
 class Update(BaseModel):
     model_config = ConfigDict(extra='forbid')
     revision: int = Field(ge=0)
@@ -31,6 +38,7 @@ class Update(BaseModel):
     schedule_enabled: bool | None = None
     ai: dict[Literal['jev', 'deepseek', 'chat2api', 'openai'], AIConfig] | None = None
     ai_provider: Literal['deepseek', 'chat2api', 'openai'] | None = None
+    brief_templates: dict[Literal[*CATEGORIES], TemplateConfig] | None = None
     live_url: str | None = Field(default=None, max_length=2048)
     live_urls: dict[str,str] | None = None
 
@@ -66,6 +74,7 @@ def output(db, team, user):
                            for key, label in CATEGORIES.items()],
             'note_revisions': saved.get('brief_note_revisions', []), 'ai': ai,
             'ai_provider': saved.get('ai_provider', 'deepseek'),
+            'brief_templates': body_templates(team),
             'live_url': saved.get('live_url', ''), 'live_catalog': catalog(team),
             'live_urls':saved.get('live_urls',{})}
 
@@ -98,6 +107,19 @@ def update(body: Update, db: DbSession, user: Editor):
         config.enabled = body.schedule_enabled
         config.updated_at = utcnow()
     saved = dict(team.settings or {})
+    if body.brief_templates is not None:
+        templates = dict(saved.get('brief_templates') or {})
+        for category, config in body.brief_templates.items():
+            text = config.template.strip()
+            if not config.use_builtin and not text:
+                raise HTTPException(422, f'{CATEGORIES[category]}已关闭内置文案，必须填写团队正文模板')
+            if text:
+                try:
+                    validate_body_template(category, text)
+                except ValueError as exc:
+                    raise HTTPException(422, f'{CATEGORIES[category]}正文模板无效：{exc}') from exc
+            templates[category] = {'use_builtin': config.use_builtin, 'template': text}
+        saved['brief_templates'] = templates
     if body.live_urls is not None:
         known={item['id'] for item in catalog(team)['channels'] if item['id']!='custom'}
         if not set(body.live_urls)<=known:raise HTTPException(422,'直播条目不正确')

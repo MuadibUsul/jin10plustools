@@ -225,22 +225,6 @@ describe('fixed brief image refresh', () => {
     expect(createUrl).toHaveBeenCalledTimes(1);
   });
 
-  it('previews and adopts the five fixed-brief Skill wording', async () => {
-    const ui = await page(); await ui.open(issue());
-    api.mockImplementationOnce(async (path: string) => {
-      expect(path).toBe('/api/briefs/issues/turnover/skill-preview?version=1');
-      return { title: 'Skill标题', dynamic_body: 'Skill正文', fixed_note: '注释',
-        data_date: '2026-10-14', skill_id: 'news.fixed-turnover', skill_version: '0.1.0',
-        warnings: ['辅助预览'] };
-    });
-    ($('#skill-preview') as HTMLButtonElement).click();
-    await vi.waitFor(() => expect(($('#skill-title') as HTMLInputElement).value).toBe('Skill标题'));
-    expect($('#skill-warnings').textContent).toContain('辅助预览');
-    ($('#skill-adopt') as HTMLButtonElement).click();
-    expect(($('#title') as HTMLInputElement).value).toBe('Skill标题');
-    expect(($('#body') as HTMLTextAreaElement).value).toBe('Skill正文');
-  });
-
   it('releases displayed and pending blobs when closing the detail', async () => {
     const ui = await page(); await ui.open(issue());
     let ready!: () => void;

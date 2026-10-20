@@ -63,7 +63,9 @@ def execute(factory,id):
         team_id=job.team_id;category=job.category;preview=job.preview;day=job.issue_date;action=job.action
         # Scheduled jobs have no requesting user; manual jobs keep their editor id.
         automatic=job.created_by is None and not preview
-        ai=briefs_ai(db.get(Team,team_id))
+        team=db.get(Team,team_id)
+        ai=briefs_ai(team)
+        team_settings=dict(team.settings or {})
         config=db.get(BriefConfig,team_id)
         category_notes=(config.notes or {}).get(category,default_notes(category)) if config else default_notes(category)
     root=root_for(team_id);out=root/'runs'/str(id);out.mkdir(parents=True,exist_ok=True)
@@ -77,6 +79,8 @@ def execute(factory,id):
     env=dict(os.environ);env['AI_PROVIDER']=ai['provider'];env['AI_API_KEY']=ai['key']
     env['AI_MODEL']=ai['model'];env['AI_BASE_URL']=ai['base_url']
     env['CATEGORY_NOTES']=category_notes
+    # The runner keeps the fixed rule payload; Skill copy runs after it returns.
+    env['SKILL_PRODUCTION']='1'
     command=[sys.executable,'-m','app.briefs.runner','--category',category,'--date',expected_date(category,day).isoformat(),
              '--root',str(root),'--run-id',str(id),'--action',action]
     process=subprocess.Popen(command,env=env,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,start_new_session=os.name!='nt')
@@ -107,6 +111,12 @@ def execute(factory,id):
                 payload.setdefault('warnings',[]).append('chat2api 号池为空，本次 AI 可能使用匿名降级模型')
         except Exception:
             pass
+    if payload and payload.get('valid') and action!='render':
+        from .skill_production import apply_skill_copy
+        apply_skill_copy(payload,category,team_settings)
+        if payload.get('skill'):
+            record(out,4,'Skill AI 文案已采用' if payload['skill'].get('status')=='ok'
+                   else 'Skill AI 未完成，已保留固定组合文案')
     with factory() as db:
         job=db.get(BriefJob,id);job.lease_until=None;job.updated_at=utcnow()
         stopped_step=read(out).get('step',1)

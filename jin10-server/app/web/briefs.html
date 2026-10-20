@@ -5,17 +5,11 @@
 <p id="message" role="status"></p><div id="brief-workspace" class="brief-workspace"><section id="cards" class="brief-grid"></section></div>
 
 <footer class="brief-footer">自动任务：工作日08:00—10:00（北京时间），到点停止重试；手动生成不限时。数据日取前一工作日，流动性取当天。</footer>
-</main><dialog id="skill-dialog" class="detail-dialog" aria-labelledby="skill-dialog-title"><section class="detail"><div class="detail-head"><div><h2 id="skill-dialog-title">Skill 文案预览</h2><p id="skill-status" class="muted"></p></div><button id="close-skill">关闭</button></div>
-<p id="skill-warnings" class="warnings"></p>
-<label class="field">标题<input id="skill-title" readonly></label>
-<label class="field">动态正文<textarea id="skill-body" rows="8" readonly></textarea></label>
-<label class="field">固定注释<textarea id="skill-note" rows="3" readonly></textarea></label>
-<div class="toolbar"><button id="skill-copy-title">复制标题</button><button id="skill-copy-body">复制正文</button><button id="skill-adopt" class="primary" hidden>采用到编辑区</button></div>
-</section></dialog><dialog id="detail-dialog" class="detail-dialog" aria-labelledby="detail-title"><section id="detail" class="detail"><div class="detail-head"><div><h2 id="detail-title"></h2><p id="detail-status" class="muted"></p></div><button id="close-detail">关闭</button></div>
-<div class="editor-grid"><div><label class="field">版本<select id="version" aria-label="稿件版本"></select></label><div class="toolbar"><button id="use-ai" hidden>采用AI文字</button><button id="skill-preview" hidden>Skill 文案预览</button></div>
+</main><dialog id="detail-dialog" class="detail-dialog" aria-labelledby="detail-title"><section id="detail" class="detail"><div class="detail-head"><div><h2 id="detail-title"></h2><p id="detail-status" class="muted"></p></div><button id="close-detail">关闭</button></div>
+<div class="editor-grid"><div><label class="field">版本<select id="version" aria-label="稿件版本"></select></label>
 <label class="field">标题<input id="title" maxlength="300"></label><label class="field">动态正文<textarea id="body" rows="9"></textarea></label>
 <details open><summary id="notes-label">注释</summary><label class="field">本期注释<textarea id="fixed" rows="8" maxlength="2000"></textarea></label><a class="muted" href="/settings/">栏目默认注释在设置中管理 →</a></details>
 <div id="warnings" class="warnings"></div>
 <div class="toolbar"><button id="save" class="primary">保存修改</button><button id="confirm">确认此版本</button><button id="unconfirm">撤回确认</button></div>
 <div class="toolbar"><button id="copy-title">复制标题</button><button id="copy-body">复制完整正文</button></div>
-</div><div><div id="images" class="images"></div><details><summary>数据核对与来源</summary><pre id="facts"></pre></details><div class="toolbar"><button id="rerender">重新制图</button><button id="retry-ai">补跑AI</button><button id="refetch">重新取数</button></div></div></div></section></dialog><script type="module" src="/briefs.js"></script></body></html>
+</div><div><div id="images" class="images"></div><details><summary>数据核对与来源</summary><pre id="facts"></pre></details><div class="toolbar"><button id="rerender">重新制图</button><button id="refetch">重新取数</button></div></div></div></section></dialog><script type="module" src="/briefs.js"></script></body></html>

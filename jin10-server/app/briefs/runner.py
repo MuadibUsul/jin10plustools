@@ -153,6 +153,11 @@ def generate(category,day,root,run_id,action='produce'):
         payload['deepseek']=previous.get('deepseek',{'status':'not_configured'})
         save(out/'result.json',payload);save(cache,payload)
         return payload
+    if os.getenv('SKILL_PRODUCTION')=='1':
+        # The worker applies the Skill copy stage after this process exits.
+        payload['deepseek']={'status':'disabled','reason':'skill_production'}
+        save(out/'result.json',payload);save(cache,payload)
+        return payload
     payload['deepseek']={'status':'pending'}
     # A complete rule product is durable before the optional model request.
     save(out/'result.json',payload);save(cache,payload)

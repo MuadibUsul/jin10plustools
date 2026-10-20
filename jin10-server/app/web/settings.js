@@ -1,7 +1,7 @@
 import { $, node, api, login, displayTime, copyDate, download, toast } from '/workspace.js';
 
 let data, dirty = false;
-const providers = { jev: ['日报选稿 · JEV', '栏目分类与重要度评分'], deepseek: ['固定快讯 · DeepSeek', '在规则稿基础上生成可选的 AI 表达'], chat2api: ['固定快讯 · chat2api', '通过本机 chat2api 节点使用 ChatGPT 网页版；留空则使用服务器节点密钥'], openai: ['固定快讯 · OpenAI', '官方 API；支持 gpt-5.6-sol 等节点无法访问的模型'] };
+const providers = { jev: ['日报选稿 · JEV', '栏目分类与重要度评分'], deepseek: ['固定快讯 · DeepSeek', '用于五项固定快讯的 Skill 文案产出'], chat2api: ['固定快讯 · chat2api', '通过本机 chat2api 节点使用 ChatGPT 网页版；留空则使用服务器节点密钥'], openai: ['固定快讯 · OpenAI', '官方 API；支持 gpt-5.6-sol 等节点无法访问的模型'] };
 const modelOptions = { jev: ['jev-latest'], deepseek: ['deepseek-chat', 'deepseek-reasoner', 'deepseek-v4-pro'], chat2api: ['gpt-4o-mini', 'gpt-4o', 'gpt-4', 'gpt-3.5-turbo', 'o1', 'o1-mini', 'o3-mini', 'auto'], openai: ['gpt-5.6-sol', 'gpt-5.6', 'gpt-5.6-terra', 'gpt-5.6-luna', 'gpt-4o-mini', 'gpt-4o', 'o1', 'o3-mini'] };
 function message(text, error = false) { const target = $('#settings-message'); target.textContent = text; target.className = error ? 'error' : 'success'; }
 async function safe(action) { try { await action(); } catch (e) { message(e.message, true); toast(e.message, 'error'); } }
@@ -120,7 +120,7 @@ async function openSkills() {
     const result = await api('/api/settings/skills');
     skillsData = result.skills;
     renderSkills();
-    status.textContent = `已安装 ${skillsData.length} 项固定快讯文字 Skill；修改只影响预览的 AI 润色。`;
+    status.textContent = `已安装 ${skillsData.length} 项固定快讯文字 Skill；修改影响后续任务的 Skill 文案产出。`;
   } catch (error) {
     status.className = 'error'; status.textContent = error.message;
   }

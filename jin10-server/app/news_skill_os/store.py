@@ -235,6 +235,9 @@ def append_revision(db: Session, *, event: NewsEvent, user, expected_previous: i
         db.add(row)
         claim_rows[item.id] = row
 
+    # Flush evidence and claims before the link rows so PostgreSQL enforces the
+    # foreign keys in dependency order; SQLAlchemy has no ORM relationship here.
+    db.flush()
     for item in revision.links:
         db.add(NewsEventClaimEvidence(
             team_id=event.team_id, event_id=event.id, revision_id=revision_row.id,

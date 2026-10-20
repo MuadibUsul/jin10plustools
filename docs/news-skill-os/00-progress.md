@@ -53,7 +53,7 @@
 | 固定快讯强制 Skill 自动产出 | `31124d5` | 已推送；生产镜像 `plus-api:skill-production-20261020` |
 | Skill 库独立卡片页与设置页 | `b2fd52b` | 已推送；生产镜像 `plus-api:skill-pages-20261020` |
 | Skill 库入口提升到全局页头 | `27d51e1` | 已推送；生产镜像 `plus-api:skill-header-20261020` |
-| 研究型 Skill 纳入只读卡片库 | 待提交 | 已推送；生产镜像 `plus-api:skill-research-20261020` |
+| 研究型 Skill 纳入只读卡片库 | `f765f7d` | 已推送；生产镜像 `plus-api:skill-research-20261020` |
 
 ## 当前边界
 

@@ -214,7 +214,7 @@ async function showVersion() {
   $('#save').disabled = v.number !== selected.version;
   $('#confirm').disabled = v.number !== selected.version || !v.valid;
   $('#use-ai').hidden = !canEdit() || v.deepseek.status !== 'ok' || v.deepseek.stale === true || v.number !== selected.version;
-  $('#unconfirm').disabled = !v.confirmed_version;
+  $('#unconfirm').disabled = !selected.confirmed_version;
   dirty = false;
   const key = JSON.stringify([selected.id, v.number, v.images]);
   if (key === pendingImageKey) return;

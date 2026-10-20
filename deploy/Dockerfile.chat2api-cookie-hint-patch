@@ -1,0 +1,7 @@
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
+USER root
+COPY jin10-server/app/api/chat2api.py /srv/app/api/chat2api.py
+COPY jin10-server/app/web/settings.html /srv/app/web/settings.html
+RUN chmod a+r /srv/app/api/chat2api.py /srv/app/web/settings.html
+USER plus

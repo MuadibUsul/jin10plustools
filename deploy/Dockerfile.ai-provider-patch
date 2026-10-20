@@ -1,0 +1,20 @@
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
+USER root
+COPY jin10-server/app/config.py /srv/app/config.py
+COPY jin10-server/app/services/team_settings.py /srv/app/services/team_settings.py
+COPY jin10-server/app/api/settings.py /srv/app/api/settings.py
+COPY jin10-server/app/briefs/worker.py /srv/app/briefs/worker.py
+COPY jin10-server/app/briefs/runner.py /srv/app/briefs/runner.py
+COPY jin10-server/app/briefs/process_details.py /srv/app/briefs/process_details.py
+COPY jin10-server/app/briefs/engines/liquidity/copy_tracks.py /srv/app/briefs/engines/liquidity/copy_tracks.py
+COPY jin10-server/app/web/settings.html /srv/app/web/settings.html
+COPY jin10-server/app/web/settings.js /srv/app/web/settings.js
+COPY jin10-server/app/web/briefs.html /srv/app/web/briefs.html
+COPY jin10-server/app/web/briefs.js /srv/app/web/briefs.js
+COPY jin10-server/app/web/generation-process.js /srv/app/web/generation-process.js
+RUN chmod a+r /srv/app/config.py /srv/app/services/team_settings.py /srv/app/api/settings.py \
+    /srv/app/briefs/worker.py /srv/app/briefs/runner.py /srv/app/briefs/process_details.py \
+    /srv/app/briefs/engines/liquidity/copy_tracks.py /srv/app/web/settings.html /srv/app/web/settings.js \
+    /srv/app/web/briefs.html /srv/app/web/briefs.js /srv/app/web/generation-process.js
+USER plus

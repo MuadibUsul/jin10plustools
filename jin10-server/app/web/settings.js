@@ -36,14 +36,13 @@ async function load() {
   $('#schedule-enabled').checked = data.schedule_enabled; $('#schedule-enabled').disabled = !data.can_admin;
   $('#ai-fields').replaceChildren();
   $('#ai-provider').value = data.ai_provider || 'deepseek';
-  $('#ai-provider').disabled = !data.can_admin;
+  $('#ai-provider').disabled = !data.can_edit;
   for (const [name, [label, description]] of Object.entries(providers)) {
     const saved = data.ai[name], card = node('div', undefined, 'ai-setting');
     card.append(node('h3', label), node('p', description, 'muted'));
     card.append(node('p', `${saved.configured ? '已配置' : '未配置'}${saved.source === 'server' ? ' · 使用服务器 Key' : saved.source === 'team' ? ' · 使用团队 Key' : ''}${saved.enabled ? '' : ' · 已停用'}`, saved.configured && saved.enabled ? 'success' : 'muted'));
     if (name === 'chat2api' && saved.model_supported === false) card.append(node('p', `当前节点不支持 ${saved.requested_model}，实际使用 ${saved.model}；请改选已支持模型。`, 'warning'));
-    if (data.can_admin) {
-      const key = node('input'); key.type = 'password'; key.autocomplete = 'new-password'; key.id = `key-${name}`; key.maxLength = 2048; key.placeholder = '输入新的 Key；留空保留';
+    if (data.can_edit) {
       const savedModel = name === 'chat2api' ? saved.requested_model ?? saved.model : saved.model;
       const choices = modelOptions[name] || [];
       const model = node('select'); model.id = `model-${name}`;
@@ -55,17 +54,21 @@ async function load() {
       if (customSelected) { model.value = '__custom__'; custom.value = savedModel; } else { model.value = savedModel || choices[0] || ''; }
       model.onchange = () => { custom.hidden = model.value !== '__custom__'; };
       const modelWrap = node('div', undefined, 'model-picker'); modelWrap.append(model, custom);
-      card.append(field('API Key', key), field('模型名称', modelWrap));
-      const enabled = node('input'); enabled.type = 'checkbox'; enabled.id = `enabled-${name}`; enabled.checked = saved.enabled;
-      const enableLabel = node('label', ' 启用此 AI 接入', 'check-row'); enableLabel.prepend(enabled); card.append(enableLabel);
-      if (saved.source === 'team') {
-        const reset = node('input'); reset.type = 'checkbox'; reset.id = `reset-${name}`;
-        const resetLabel = node('label', ' 移除团队 Key，恢复服务器配置', 'check-row'); resetLabel.prepend(reset); card.append(resetLabel);
-      }
+      if (data.can_admin) {
+        const key = node('input'); key.type = 'password'; key.autocomplete = 'new-password'; key.id = `key-${name}`; key.maxLength = 2048; key.placeholder = '输入新的 Key；留空保留';
+        card.append(field('API Key', key), field('模型名称', modelWrap));
+        const enabled = node('input'); enabled.type = 'checkbox'; enabled.id = `enabled-${name}`; enabled.checked = saved.enabled;
+        const enableLabel = node('label', ' 启用此 AI 接入', 'check-row'); enableLabel.prepend(enabled); card.append(enableLabel);
+        if (saved.source === 'team') {
+          const reset = node('input'); reset.type = 'checkbox'; reset.id = `reset-${name}`;
+          const resetLabel = node('label', ' 移除团队 Key，恢复服务器配置', 'check-row'); resetLabel.prepend(reset); card.append(resetLabel);
+        }
+      } else card.append(field('模型名称', modelWrap));
     } else card.append(node('p', `模型：${saved.model || '未指定'}`, 'muted'));
     $('#ai-fields').append(card);
   }
   for (const hint of document.querySelectorAll('.admin-hint')) hint.textContent = data.can_admin ? '' : '仅管理员可修改此项。';
+  for (const hint of document.querySelectorAll('.ai-hint')) hint.textContent = data.can_admin ? '' : 'API Key 与启用状态仅管理员可修改；模型和引擎可选择。';
   $('#save-settings').hidden = !data.can_edit;
   $('#settings-layout').hidden = false;
   $('#nav-database').hidden = false;
@@ -351,19 +354,25 @@ $('#settings-form').onsubmit = async (event) => {
   try {
     const body = { revision: data.revision, live_url: $('#live-url').value.trim(), notes: Object.fromEntries(data.categories.map((c) => [c.id, $(`#notes-${c.id}`).value])) };
     body.live_urls = Object.fromEntries([...document.querySelectorAll('[data-live-id]')].filter(input => input.value.trim()).map(input => [input.dataset.liveId, input.value.trim()]));
-    if (data.can_admin) {
-      body.schedule_enabled = $('#schedule-enabled').checked;
+    if (data.can_edit) {
       body.ai_provider = $('#ai-provider').value;
-      body.ai = Object.fromEntries(Object.keys(providers).map((name) => {
-        const value = { enabled: $(`#enabled-${name}`).checked };
+      const changes = {};
+      for (const name of Object.keys(providers)) {
+        const value = {};
         const select = $(`#model-${name}`), custom = $(`#model-custom-${name}`);
-        const model = (select?.value === '__custom__' ? custom?.value || '' : select?.value || '').trim(), key = $(`#key-${name}`).value.trim();
+        const model = (select?.value === '__custom__' ? custom?.value || '' : select?.value || '').trim();
         if (model && model !== (data.ai[name]?.requested_model ?? data.ai[name]?.model)) value.model = model;
-        if (key) value.key = key;
-        if ($(`#reset-${name}`)?.checked) value.use_server_key = true;
-        return [name, value];
-      }));
+        if (data.can_admin) {
+          value.enabled = $(`#enabled-${name}`).checked;
+          const key = $(`#key-${name}`).value.trim();
+          if (key) value.key = key;
+          if ($(`#reset-${name}`)?.checked) value.use_server_key = true;
+        }
+        if (Object.keys(value).length) changes[name] = value;
+      }
+      if (Object.keys(changes).length) body.ai = changes;
     }
+    if (data.can_admin) body.schedule_enabled = $('#schedule-enabled').checked;
     await api('/api/settings', { method: 'PUT', json: body });
     for (const name of Object.keys(providers)) if ($(`#key-${name}`)) $(`#key-${name}`).value = '';
     dirty = false; await load(); message('设置已保存。后续任务将使用新配置。'); toast('设置已保存。');

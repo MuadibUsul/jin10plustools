@@ -31,12 +31,15 @@ def test_settings_are_team_scoped_versioned_and_do_not_expose_keys(client, seed,
     assert not other['note_revisions']
     assert next(c['notes'] for c in other['categories'] if c['id'] == 'valuation') != '团队估值注释'
     assert not other['schedule_enabled']
-    # Editor may edit notes, but cannot change credentials or scheduling.
-    assert client.put('/api/settings', headers=editor, json={'revision': 1, 'ai': {}}).status_code == 403
-    assert client.put('/api/settings', headers=editor, json={'revision': 1, 'notes': {'valuation': '新版注释'}}).status_code == 200
+    # Editors may choose the engine and model, but credentials and scheduling stay admin-only.
+    assert client.put('/api/settings', headers=editor, json={'revision': 1, 'ai': {'deepseek': {'key': 'editor-key-0123456'}}}).status_code == 403
+    assert client.put('/api/settings', headers=editor, json={'revision': 1, 'ai': {'deepseek': {'enabled': False}}}).status_code == 403
+    assert client.put('/api/settings', headers=editor, json={'revision': 1, 'ai': {'deepseek': {'model': 'deepseek-chat'}}}).status_code == 200
+    assert client.put('/api/settings', headers=editor, json={'revision': 2, 'ai_provider': 'chat2api'}).status_code == 200
+    assert client.put('/api/settings', headers=editor, json={'revision': 3, 'notes': {'valuation': '新版注释'}}).status_code == 200
     assert client.put('/api/settings', headers=admin, json={'revision': 1, 'notes': {}}).status_code == 409
     viewer = login(client, seed['viewer'].email)
-    assert client.put('/api/settings', headers=viewer, json={'revision': 2, 'notes': {}}).status_code == 403
+    assert client.put('/api/settings', headers=viewer, json={'revision': 4, 'notes': {}}).status_code == 403
     assert key not in client.get('/api/settings', headers=viewer).text
 
 
@@ -83,8 +86,10 @@ def test_briefs_ai_provider_is_selectable_and_chat2api_uses_server_node(client, 
         assert ai['key'] == 'sk-c2a-server-key-1234' and ai['model'] == 'gpt-4o-mini'
     editor = login(client, seed['editor'].email)
     current = client.get('/api/settings', headers=editor).json()['revision']
-    assert client.put('/api/settings', headers=editor,
-                      json={'revision': current, 'ai_provider': 'deepseek'}).status_code == 403
+    switched = client.put('/api/settings', headers=editor,
+                          json={'revision': current, 'ai_provider': 'deepseek'})
+    assert switched.status_code == 200 and switched.json()['ai_provider'] == 'deepseek'
+    current = client.get('/api/settings', headers=editor).json()['revision']
     assert client.put('/api/settings', headers=admin,
                       json={'revision': current, 'ai_provider': 'nope'}).status_code == 422
     get_settings.cache_clear()

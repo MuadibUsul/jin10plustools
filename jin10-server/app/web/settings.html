@@ -62,7 +62,7 @@
 </section>
 <section id="chat2api-panel" class="settings-section" hidden aria-labelledby="chat2api-title">
 <h2 id="chat2api-title">chat2api</h2>
-<p class="muted">ChatGPT 网页端登录凭证池，供 Plus新鲜事与 Plus注解的 AI 调用。可直接粘贴 <code>/api/auth/session</code> 的整段 JSON、Cookie 行，或一行一个 AccessToken/RefreshToken；系统会自动提取 accessToken 或 refreshToken（加密的 sessionToken 不能用于刷新，会被忽略），凭证只保存在节点服务器上。</p>
+<p class="muted">ChatGPT 网页端登录凭证池，供 Plus新鲜事与 Plus注解的 AI 调用。先在已登录的 ChatGPT 网页打开 <a href="https://chatgpt.com/api/auth/session" target="_blank" rel="noopener noreferrer">https://chatgpt.com/api/auth/session</a>，复制整段 JSON 粘贴到下方；也可粘贴 Cookie 行，或一行一个 AccessToken/RefreshToken。系统会自动提取 accessToken 或 refreshToken（加密的 sessionToken 不能用于刷新，会被忽略），凭证只保存在节点服务器上。</p>
 <p id="chat2api-state" class="muted" role="status" aria-live="polite">正在读取节点状态…</p>
 <p id="chat2api-expiry" class="muted" role="status" aria-live="polite"></p>
 

@@ -65,7 +65,7 @@
 | 历史文段详情与 20 条提示词 | `6622064` | 生产镜像 `plus-api:skill-history-20261020` |
 | 关闭内置正文时自动填入起步模板 | `5264c37` | 生产镜像 `plus-api:template-defaults-20261020` |
 | 换手率派生模板变量校验修复 | `aa32f55` | 生产镜像 `plus-api:template-validation-20261020` |
-| 模板百分比变量两位小数修复 | 待提交 | 生产镜像 `plus-api:template-percent-20261020`；估值已重生成 v4 |
+| 模板百分比变量两位小数修复 | `ceced34` | 生产镜像 `plus-api:template-percent-20261020`；估值已重生成 v4 |
 
 ## 当前边界
 

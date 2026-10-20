@@ -42,7 +42,7 @@ def setup():
 
 def test_bundled_manifest_and_workflow_contracts_load():
     registry, workflow, _ = setup()
-    assert len(registry.keys()) == 5
+    assert len(registry.keys()) == 10
     assert workflow.order == ("extraction", "verification", "background", "analysis", "review")
 
 

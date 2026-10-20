@@ -1,7 +1,12 @@
 {
+  "finance.causal-analysis@0.1.0": "0e37e6465f921ef6eb087e761491e3f3e336c51d7de9b4fdec7902d2025866e1",
+  "news.background-research@0.1.0": "424cce4e2658f2dca18b4cd480bb5d20b919fa53fb8fcf1ceea495e6243032c4",
   "news.event-extraction@0.1.0": "82341ada34142f4f0578c1a898cb4846f3a142da06efc9fd50bb13b03be4a0be",
   "news.fact-verification@0.1.0": "535708decaf0e91dee08a1eb777f00a00cda9975d0d42c2f1f07edebb75e5696",
-  "news.background-research@0.1.0": "424cce4e2658f2dca18b4cd480bb5d20b919fa53fb8fcf1ceea495e6243032c4",
-  "finance.causal-analysis@0.1.0": "0e37e6465f921ef6eb087e761491e3f3e336c51d7de9b4fdec7902d2025866e1",
+  "news.fixed-liquidity@0.1.0": "5899084b91fa6729c1bcb2663fffe23c56d04cf884ac4d6bb36f89f0c6b6a899",
+  "news.fixed-oil-etf@0.1.0": "45d0aaf4589272be39ad3f4398252a3728f81c82b52e9554689b0da146036eed",
+  "news.fixed-turnover@0.1.0": "9e8cc8adfdf470a3bfd1ef22e4983ce8bc73999285ed03ef36ee5e5dd7c84c34",
+  "news.fixed-valuation@0.1.0": "423206def0d1d44cc6de4f716469ce4e25cd5ecdf3f7f82ddf689ed65fa2595a",
+  "news.fixed-volume@0.1.0": "8653c997c927611a0041e02d178c1f3b274752f9586abeb02e3fa142b1d0794f",
   "news.quality-review@0.1.0": "185b8b26f5049b9aff152aaa4c34f2634a59f9f039f90282ca7098f014128138"
 }

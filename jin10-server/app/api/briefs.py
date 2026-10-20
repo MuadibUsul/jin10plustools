@@ -121,6 +121,23 @@ def versions(id:uuid.UUID,db:DbSession,user:CurrentUser):
     return visible(db,user,get_issue(db,user,id))['versions']
 
 
+@router.get('/issues/{id}/skill-preview')
+def skill_preview(id:uuid.UUID,db:DbSession,user:CurrentUser,
+                  version:int=Query(ge=1)):
+    """Suggest wording from one fixed-brief version; read-only and never published."""
+    issue=get_issue(db,user,id)
+    if user.role==Role.VIEWER and version!=issue.confirmed_version:
+        raise HTTPException(403,'只读账号仅可预览已确认稿')
+    row=db.scalars(select(BriefVersion).where(BriefVersion.issue_id==id,
+        BriefVersion.number==version)).first()
+    if not row:raise HTTPException(404,'版本不存在')
+    from app.briefs.skill_preview import preview
+    try:
+        return preview(issue,row)
+    except ValueError as exc:
+        raise HTTPException(422,str(exc)) from exc
+
+
 @router.post('/issues/{id}/revisions',status_code=201)
 def edit(id:uuid.UUID,body:EditRequest,db:DbSession,user:Editor):
     issue=get_issue(db,user,id,True)

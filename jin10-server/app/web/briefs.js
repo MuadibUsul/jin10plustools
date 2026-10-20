@@ -7,6 +7,8 @@ const aiName = (info) => info?.provider === 'chat2api' ? 'chat2api' : 'DeepSeek'
 let me, config, items = [], selected = null, current = null, dirty = false;
 const blobs = new Set();
 let imageKey = null, pendingImageKey = null, imageRequest = 0;
+const skillCategories = new Set(['volume', 'turnover', 'valuation', 'liquidity', 'oil_etf']);
+let skillData = null;
 const pendingCategories = new Set();
 const active = (job) => ['queued', 'running', 'waiting'].includes(job?.status);
 const processSteps = ['准备任务', '正在取数', '正在制图', '整理文案', '保存稿件', '生成完成'];
@@ -25,7 +27,7 @@ function showDetail() {
   if (detailDialog.showModal) detailDialog.showModal();
   else detailDialog.setAttribute('open', '');
 }
-function clearDetailState() { dirty = false; selected = null; clearImages(); }
+function clearDetailState() { dirty = false; selected = null; skillData = null; clearImages(); closeSkillPreview(); }
 function hideDetail() {
   if (!detailDialog || !detailDialog.open) return;
   if (detailDialog.close) { detailDialog.close(); return; }
@@ -215,6 +217,8 @@ async function showVersion() {
   $('#save').disabled = v.number !== selected.version;
   $('#confirm').disabled = v.number !== selected.version || !v.valid;
   $('#use-ai').hidden = !canEdit() || v.deepseek.status !== 'ok' || v.deepseek.stale === true || v.deepseek.untracked === true || v.number !== selected.version;
+  $('#skill-preview').hidden = !skillCategories.has(selected.category);
+  $('#skill-preview').disabled = false;
   $('#unconfirm').disabled = !selected.confirmed_version;
   dirty = false;
   const key = JSON.stringify([selected.id, v.number, v.images]);
@@ -248,6 +252,28 @@ async function showVersion() {
     if (request === imageRequest) pendingImageKey = null;
   }
 }
+async function showSkillPreview() {
+  const v = chosen();
+  if (!v || !selected || !skillCategories.has(selected.category)) return;
+  const button = $('#skill-preview'); button.disabled = true;
+  try {
+    const data = await api(`/api/briefs/issues/${selected.id}/skill-preview?version=${v.number}`);
+    skillData = data;
+    $('#skill-status').textContent = `${copyDate(data.data_date)} · ${data.skill_id}@${data.skill_version} · 只读预览`;
+    $('#skill-title').value = data.title || '';
+    $('#skill-body').value = data.dynamic_body || '';
+    $('#skill-note').value = data.fixed_note || '';
+    $('#skill-warnings').replaceChildren(...(data.warnings || []).map((text) => node('p', text)));
+    $('#skill-adopt').hidden = !canEdit();
+    const dialog = $('#skill-dialog');
+    if (!dialog.open) { if (dialog.showModal) dialog.showModal(); else dialog.setAttribute('open', ''); }
+  } finally { button.disabled = false; }
+}
+function closeSkillPreview() {
+  const dialog = $('#skill-dialog');
+  if (!dialog?.open) return;
+  if (dialog.close) dialog.close(); else dialog.removeAttribute('open');
+}
 async function act(path, json) { await api(`/api/briefs/issues/${selected.id}/${path}`, { method: 'POST', json }); dirty = false; const fresh = await api(`/api/briefs/issues/${selected.id}`); await open(fresh); await refresh(); }
 $('#refresh').onclick = () => safe(refresh);
 $('#day').onchange = () => safe(async () => { if (dirty && !confirm('放弃未保存的修改？')) { $('#day').value = selected.issue_date; return; } hideDetail(); await refresh(); });
@@ -260,6 +286,18 @@ $('#unconfirm').onclick = () => safe(async () => { await act('unconfirm'); toast
 $('#copy-title').onclick = () => safe(async () => { if (dirty) throw new Error('请先保存修改后取稿'); await copy(current.title); message('标题已复制。'); toast('标题已复制。'); });
 $('#copy-body').onclick = () => safe(async () => { if (dirty) throw new Error('请先保存修改后取稿'); await copy(current.body); message('完整正文已复制。'); toast('完整正文已复制。'); });
 $('#use-ai').onclick = () => { $('#title').value = current.deepseek.title; $('#body').value = current.deepseek.body; dirty = true; message(`已采用${aiName(current.deepseek)}表达，请保存并核对。`); toast('已采用AI表达，请保存。'); };
+$('#skill-preview').onclick = () => safe(showSkillPreview);
+$('#close-skill').onclick = closeSkillPreview;
+$('#skill-copy-title').onclick = () => safe(async () => { await copy($('#skill-title').value); message('Skill 标题已复制。'); toast('Skill 标题已复制。'); });
+$('#skill-copy-body').onclick = () => safe(async () => { await copy($('#skill-body').value); message('Skill 正文已复制。'); toast('Skill 正文已复制。'); });
+$('#skill-adopt').onclick = () => {
+  if (!skillData) return;
+  if (dirty && !window.confirm('采用 Skill 文案会覆盖当前未保存的标题和正文，继续？')) return;
+  $('#title').value = skillData.title || '';
+  $('#body').value = skillData.dynamic_body || '';
+  dirty = true; closeSkillPreview();
+  message('已采用 Skill 文案，请核对并保存。'); toast('已采用 Skill 文案，请保存。');
+};
 for (const [id, action] of [['rerender', 'render'], ['retry-ai', 'ai'], ['refetch', 'refresh']]) $(`#${id}`).onclick = () => safe(async () => { if (!confirm(action === 'refresh' ? '重新请求数据源并生成新版本？现有稿件会保留。' : '创建新版本？现有人工修改和确认版本会保留。')) return; await runJob(selected.category, action); });
 window.addEventListener('beforeunload', (e) => { if (dirty) { e.preventDefault(); e.returnValue = ''; } });
 await safe(async () => { me = await login(); config = await api('/api/briefs/categories'); await refresh(); });

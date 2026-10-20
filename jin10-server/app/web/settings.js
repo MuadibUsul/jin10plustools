@@ -3,6 +3,13 @@ import { $, node, api, login, displayTime, copyDate, download, toast } from '/wo
 let data, dirty = false;
 const providers = { jev: ['日报选稿 · JEV', '栏目分类与重要度评分'], deepseek: ['固定快讯 · DeepSeek', '用于五项固定快讯的 Skill 文案产出'], chat2api: ['固定快讯 · chat2api', '通过本机 chat2api 节点使用 ChatGPT 网页版；留空则使用服务器节点密钥'], openai: ['固定快讯 · OpenAI', '官方 API；支持 gpt-5.6-sol 等节点无法访问的模型'] };
 const templateCategories = new Set(['volume', 'turnover', 'valuation', 'liquidity', 'oil_etf']);
+const templateDefaults = {
+  volume: '{date}，沪深两市成交额为{amount_wan_yi}万亿元，较前一交易日变动{change_yi}亿元（{change_pct}%）；连续{streak}个交易日{side}20日均线（{ma20_wan_yi}万亿元）。成交活跃度较前日{activity}。',
+  turnover: '{date}，A股低于3%换手率股票占比的9日均线{low_direction}{low_ma9}%，高于5%换手率股票占比的9日均线{high_direction}{high_ma9}%，{threshold_side}17%参考阈值。',
+  valuation: '{date}，巴菲特指数（A股总市值／上年度全年GDP）为{buffett}%；沪深300指数股权风险溢价（ERP）为{erp}%，前值为{previous_erp}%。',
+  liquidity: '{date}，DR007加权利率报{dr007}%，DR001加权利率报{dr001}%。',
+  oil_etf: '{date}，WTI（USO）名义敞口约{uso_wan_barrels}万桶，Brent（BNO）期货持仓约{bno_wan_barrels}万桶。',
+};
 const templateVars = {
   volume: '{date} {previous_date} {amount_yi} {amount_wan_yi} {change_yi} {change_pct} {streak} {side} {ma20_yi} {ma20_wan_yi} {activity} {builtin_body}',
   turnover: '{date} {previous_date} {low_ma9} {high_ma9} {previous_low_ma9} {previous_high_ma9} {low_direction} {high_direction} {threshold_side} {builtin_body}',
@@ -52,7 +59,10 @@ async function load() {
     const toggleLabel = node('label', ' 使用内置硬编码正文', 'check-row'); toggleLabel.prepend(toggle);
     const area = node('textarea'); area.id = `template-${category.id}`; area.value = config.template || '';
     area.rows = 5; area.maxLength = 4000; area.readOnly = !data.can_edit; area.disabled = toggle.checked;
-    toggle.onchange = () => { area.disabled = toggle.checked; area.readOnly = !data.can_edit; dirty = true; };
+    toggle.onchange = () => {
+      if (!toggle.checked && !area.value.trim()) area.value = templateDefaults[category.id] || '{builtin_body}';
+      area.disabled = toggle.checked; area.readOnly = !data.can_edit; dirty = true;
+    };
     group.append(node('summary', category.label), toggleLabel, field('团队正文模板（关闭内置后生效）', area),
       node('p', `可用变量：${templateVars[category.id] || '{builtin_body}'}`, 'muted'));
     $('#template-fields').append(group);

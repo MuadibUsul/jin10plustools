@@ -54,3 +54,6 @@ button.primary:active:not(:disabled){box-shadow:0 0 0 3px rgba(71,122,226,.18)}
 #chat2api-expiry.warning{background:#fff4e6;color:#b26a00}
 #chat2api-expiry.error{background:#fdecec;color:#b33a3a}
 #chat2api-expiry.muted{background:transparent;color:#7b8da5;font-weight:400;font-size:13px;padding:0}
+
+.model-picker select{display:block;width:100%;margin-top:8px}
+.model-picker input{margin-top:8px}

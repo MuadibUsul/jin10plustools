@@ -14,6 +14,7 @@ from sqlalchemy import select,text,update
 from app.config import get_settings
 from app.db.models import BriefConfig,BriefIssue,BriefJob,BriefVersion,BriefSourceSnapshot,Team,utcnow
 from app.services.team_settings import briefs_ai
+from .delivery import default_notes
 from app.db.session import get_session_factory,get_engine
 from .policy import CATEGORIES,CHINA,expected_date,first_run,production_window,next_slot
 from .service import enqueue,ensure_issue,owned,append_version,root_for,find_issue
@@ -63,6 +64,8 @@ def execute(factory,id):
         # Scheduled jobs have no requesting user; manual jobs keep their editor id.
         automatic=job.created_by is None and not preview
         ai=briefs_ai(db.get(Team,team_id))
+        config=db.get(BriefConfig,team_id)
+        category_notes=(config.notes or {}).get(category,default_notes(category)) if config else default_notes(category)
     root=root_for(team_id);out=root/'runs'/str(id);out.mkdir(parents=True,exist_ok=True)
     record(out,1,f'任务开始：生产日 {day}，数据日 {expected_date(category,day)}')
     if category=='valuation' and action=='produce':
@@ -73,6 +76,7 @@ def execute(factory,id):
             if restored:record(out,1,'已恢复经过哈希核验的PE原始来源证据')
     env=dict(os.environ);env['AI_PROVIDER']=ai['provider'];env['AI_API_KEY']=ai['key']
     env['AI_MODEL']=ai['model'];env['AI_BASE_URL']=ai['base_url']
+    env['CATEGORY_NOTES']=category_notes
     command=[sys.executable,'-m','app.briefs.runner','--category',category,'--date',expected_date(category,day).isoformat(),
              '--root',str(root),'--run-id',str(id),'--action',action]
     process=subprocess.Popen(command,env=env,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,start_new_session=os.name!='nt')

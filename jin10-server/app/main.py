@@ -65,6 +65,15 @@ app.include_router(team_settings.router)
 app.include_router(live.router)
 app.include_router(export.router)
 app.include_router(feedback.router)
+@app.middleware('http')
+async def api_no_store(request, call_next):
+    response = await call_next(request)
+    if request.url.path.startswith('/api/'):
+        response.headers['Cache-Control'] = 'no-store'
+        response.headers['Pragma'] = 'no-cache'
+    return response
+
+
 app.include_router(chat2api.router)
 
 

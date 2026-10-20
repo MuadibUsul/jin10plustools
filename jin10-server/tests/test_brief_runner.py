@@ -75,3 +75,21 @@ def test_cached_valuation_copy_uses_a_share_label(tmp_path):
         result=generate('valuation','2026-10-14',tmp_path,'updated')
     assert result['dynamic_body']=='巴菲特指数（A股总市值/上年度全年GDP）为87.21%。'
     assert result['deepseek']['body']==result['dynamic_body']
+
+
+def test_default_notes_change_prevents_cache_reuse(tmp_path, monkeypatch):
+    source=tmp_path/'runs/original';source.mkdir(parents=True)
+    (source/'image.png').write_bytes(b'old-image')
+    save(source/'plot-data.json',[{'date':'2026-10-14'}])
+    save(tmp_path/'cache/volume/2026-10-14.json',{
+        'title':'标题','dynamic_body':'正文','data_date':'2026-10-14','fixed_notes':'旧注释',
+        'images':['image.png'],'image_sha256':{'image.png':hashlib.sha256(b'old-image').hexdigest()},
+        'artifact_dir':'runs/original','deepseek':{'status':'not_configured'},
+        'pipeline':pipeline_signature()})
+    monkeypatch.setenv('CATEGORY_NOTES','新注释')
+    def rendered(rows,out):
+        (out/'image.png').write_bytes(b'new-image')
+        return {'title':'标题','dynamic_body':'正文','data_date':'2026-10-14','images':['image.png'],'facts':{},'warnings':[]}
+    with patch.dict('app.briefs.runner.ADAPTERS',{'volume':lambda *a,**k:pytest.fail('unexpected fetch')}),          patch('app.briefs.sources.render_volume',rendered):
+        result=generate('volume','2026-10-14',tmp_path,'notes')
+    assert (tmp_path/result['artifact_dir']/'image.png').read_bytes()==b'new-image'

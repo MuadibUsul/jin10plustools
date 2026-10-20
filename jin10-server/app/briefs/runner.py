@@ -2,6 +2,7 @@
 import argparse
 import hashlib
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -105,8 +106,10 @@ def generate(category,day,root,run_id,action='produce'):
         if action in ('produce','ai'):
             payload=dict(previous)
             signature=pipeline_signature()
-            if previous.get('pipeline')!=signature:
-                record(out,4,'渲染或文案规则已更新，正在用已保存快照重建稿件')
+            current_notes=os.getenv('CATEGORY_NOTES')
+            notes_changed=current_notes is not None and previous.get('fixed_notes','')!=current_notes
+            if previous.get('pipeline')!=signature or notes_changed:
+                record(out,4,'渲染、文案或默认注释已更新，正在用已保存快照重建稿件')
                 if category in SNAPSHOT_REBUILDS:
                     payload=rerender(category,previous,source,out,day)
                 else:
@@ -117,7 +120,6 @@ def generate(category,day,root,run_id,action='produce'):
                     payload=ADAPTERS[category](day,out,state,refresh=action=='refresh')
                 payload['deepseek']=previous.get('deepseek',{'status':'not_configured'})
             else:
-                import os
                 provider=os.getenv('AI_PROVIDER','deepseek')
                 model=os.getenv('AI_MODEL') or os.getenv('DEEPSEEK_MODEL','')
                 configured=bool((os.getenv('AI_API_KEY') or os.getenv('DEEPSEEK_API_KEY')) and model)
@@ -155,8 +157,8 @@ def generate(category,day,root,run_id,action='produce'):
     # A complete rule product is durable before the optional model request.
     save(out/'result.json',payload);save(cache,payload)
     from .engines.liquidity.copy_tracks import generate_deepseek
-    import os
-    record(out,4,'正在请求AI文案表达' if os.getenv('DEEPSEEK_API_KEY') and os.getenv('DEEPSEEK_MODEL') else '未启用AI表达，使用已完成的规则稿')
+    ai_configured=bool((os.getenv('AI_API_KEY') or os.getenv('DEEPSEEK_API_KEY')) and (os.getenv('AI_MODEL') or os.getenv('DEEPSEEK_MODEL')))
+    record(out,4,'正在请求AI文案表达' if ai_configured else '未启用AI表达，使用已完成的规则稿')
     rule={'title':payload['title'],'body':payload['dynamic_body'],
           'approved_titles':[payload['title']], 'approved_bodies':[payload['dynamic_body']]}
     from .policy import CATEGORIES

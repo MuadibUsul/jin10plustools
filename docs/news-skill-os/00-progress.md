@@ -63,6 +63,7 @@
 | News Skill OS 生产部署与产品页 | `2a8245c` | 生产镜像 `plus-api:news-os-live-20261020`；迁移 0012 |
 | 固定快讯动态正文模板与关闭硬编码 | `c0ac57d` | 生产镜像 `plus-api:body-templates-20261020` |
 | 历史文段详情与 20 条提示词 | `6622064` | 生产镜像 `plus-api:skill-history-20261020` |
+| 关闭内置正文时自动填入起步模板 | `5264c37` | 生产镜像 `plus-api:template-defaults-20261020` |
 
 ## 当前边界
 

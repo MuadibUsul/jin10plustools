@@ -276,7 +276,7 @@ function renderChat2apiExpiry() {
   const when = displayTime(new Date(chat2apiExpiryAt).toISOString());
   if (left <= 0) { target.textContent = `最近一个 AccessToken 已于 ${when} 到期，请重新粘贴整段 JSON 上传。`; target.className = 'error'; return; }
   target.textContent = `最近一个 AccessToken 将于 ${when} 到期，剩余 ${formatRemaining(left)}。`;
-  target.className = left < 24 * 3600 * 1000 ? 'warning' : 'muted';
+  target.className = left < 24 * 3600 * 1000 ? 'warning' : 'active';
 }
 async function loadChat2api() {
   chat2apiStatus('正在读取节点状态…');

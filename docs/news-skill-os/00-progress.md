@@ -50,6 +50,7 @@
 | 固定快讯 Skill 文案预览上线 | `7d6be58` / `742def8` / `65288b6` | 已推送；生产镜像 `plus-api:skill-preview-20261020` |
 | 固定快讯 Skill AI 润色与数字守卫 | `422f3ff` | 已推送；生产镜像 `plus-api:skill-ai-preview-20261020` |
 | 设置页 Skill 库与团队规范管理 | `d06e1ad` | 已推送；生产镜像 `plus-api:skill-library-20261020` |
+| 固定快讯强制 Skill 自动产出 | `31124d5` | 已推送；生产镜像 `plus-api:skill-production-20261020` |
 
 ## 当前边界
 

@@ -7,7 +7,10 @@ import uuid
 from enum import StrEnum
 from typing import Any
 
-from sqlalchemy import JSON, Boolean, Date, DateTime, Float, ForeignKey, Index, Integer, LargeBinary, String, Text, text
+from sqlalchemy import (
+    JSON, Boolean, CheckConstraint, Date, DateTime, Float, ForeignKey, Index, Integer,
+    LargeBinary, String, Text, text,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -313,3 +316,294 @@ class Feedback(Base):
     image_bytes: Mapped[int] = mapped_column(Integer, default=0)
     image_sha256: Mapped[str | None] = mapped_column(String(64))
     created_at: Mapped[dt.datetime] = mapped_column(default=lambda: utcnow())
+
+
+# ---------- News Skill OS：独立、团队隔离、默认关闭的内容事实链 ----------
+# 这些表只由 /api/news-skill-os 在开关打开时写入；不参与日报、固定快讯和插件路径。
+# 事件修订与草稿修订均不可变；审核、审计和运行记录只追加。
+
+class NewsEvent(Base):
+    """团队新闻事件的稳定身份；具体事实由不可变的 NewsEventRevision 保存。"""
+    __tablename__ = 'news_events'
+    __table_args__ = (
+        Index('uq_news_events_team_key', 'team_id', 'event_key', unique=True,
+              postgresql_where=text('event_key IS NOT NULL'), sqlite_where=text('event_key IS NOT NULL')),
+        Index('ix_news_events_team_time', 'team_id', 'event_time'),
+        CheckConstraint("status IN ('open','closed','archived')", name='ck_news_events_status'),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    team_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('teams.id', ondelete='CASCADE'), index=True)
+    event_key: Mapped[str | None] = mapped_column(String(200))
+    title: Mapped[str] = mapped_column(Text)
+    event_time: Mapped[dt.datetime]
+    status: Mapped[str] = mapped_column(String(20), default='open')
+    current_revision: Mapped[int] = mapped_column(Integer, default=0)
+    payload: Mapped[dict[str, Any]] = mapped_column(JsonType, default=dict)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey('users.id', ondelete='SET NULL'))
+    created_at: Mapped[dt.datetime] = mapped_column(default=utcnow)
+    updated_at: Mapped[dt.datetime] = mapped_column(default=utcnow)
+
+
+class NewsEventRevision(Base):
+    """ArtifactRevision 的完整快照；旧文章可按 number 重建当时采用的事实。"""
+    __tablename__ = 'news_event_revisions'
+    __table_args__ = (
+        Index('uq_news_event_revision', 'event_id', 'number', unique=True),
+        Index('ix_news_event_revisions_team_time', 'team_id', 'created_at'),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    team_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('teams.id', ondelete='CASCADE'), index=True)
+    event_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('news_events.id', ondelete='CASCADE'), index=True)
+    number: Mapped[int] = mapped_column(Integer)
+    snapshot: Mapped[dict[str, Any]] = mapped_column(JsonType)
+    snapshot_sha256: Mapped[str] = mapped_column(String(64))
+    audit_reason: Mapped[str] = mapped_column(Text)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey('users.id', ondelete='SET NULL'))
+    created_at: Mapped[dt.datetime] = mapped_column(default=utcnow)
+
+
+class NewsEventEvidence(Base):
+    """修订级证据行；同一原始来源的转载共享 original_id，来源字段随证据保存。"""
+    __tablename__ = 'news_event_evidence'
+    __table_args__ = (
+        Index('uq_news_evidence_revision_key', 'revision_id', 'evidence_key', unique=True),
+        Index('ix_news_evidence_team_event', 'team_id', 'event_id', 'captured_at'),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    team_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('teams.id', ondelete='CASCADE'), index=True)
+    event_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('news_events.id', ondelete='CASCADE'), index=True)
+    revision_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('news_event_revisions.id', ondelete='CASCADE'), index=True)
+    evidence_key: Mapped[str] = mapped_column(String(200))
+    source_key: Mapped[str] = mapped_column(String(200))
+    source_name: Mapped[str] = mapped_column(Text)
+    source_kind: Mapped[str] = mapped_column(String(30))
+    source_original_id: Mapped[str] = mapped_column(String(300))
+    source_published_at: Mapped[dt.datetime | None]
+    excerpt: Mapped[str] = mapped_column(Text)
+    captured_at: Mapped[dt.datetime]
+    locator: Mapped[str | None] = mapped_column(String(1024))
+    source_snapshot_hash: Mapped[str | None] = mapped_column(String(64))
+    payload: Mapped[dict[str, Any]] = mapped_column(JsonType, default=dict)
+    created_at: Mapped[dt.datetime] = mapped_column(default=utcnow)
+
+
+class NewsEventClaim(Base):
+    """修订级原子断言；数值口径以结构化 payload 保存，状态变更走新修订。"""
+    __tablename__ = 'news_event_claims'
+    __table_args__ = (
+        Index('uq_news_claim_revision_key', 'revision_id', 'claim_key', unique=True),
+        Index('ix_news_claims_team_event', 'team_id', 'event_id', 'claim_key'),
+        CheckConstraint("status IN ('unverified','corroborated','verified','disputed','rejected','superseded')",
+                        name='ck_news_claim_status'),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    team_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('teams.id', ondelete='CASCADE'), index=True)
+    event_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('news_events.id', ondelete='CASCADE'), index=True)
+    revision_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('news_event_revisions.id', ondelete='CASCADE'), index=True)
+    claim_key: Mapped[str] = mapped_column(String(200))
+    subject: Mapped[str] = mapped_column(Text)
+    predicate: Mapped[str] = mapped_column(Text)
+    text: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(20), default='unverified')
+    numeric: Mapped[dict[str, Any] | None] = mapped_column(JsonType)
+    attributed_to: Mapped[str | None] = mapped_column(Text)
+    superseded_by: Mapped[str | None] = mapped_column(String(200))
+    payload: Mapped[dict[str, Any]] = mapped_column(JsonType, default=dict)
+    created_at: Mapped[dt.datetime] = mapped_column(default=utcnow)
+
+
+class NewsEventClaimEvidence(Base):
+    __tablename__ = 'news_event_claim_evidence'
+    __table_args__ = (
+        Index('uq_news_claim_evidence_pair', 'claim_id', 'evidence_id', unique=True),
+        Index('ix_news_claim_evidence_team_event', 'team_id', 'event_id'),
+        CheckConstraint("stance IN ('supports','contradicts')", name='ck_news_link_stance'),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    team_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('teams.id', ondelete='CASCADE'), index=True)
+    event_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('news_events.id', ondelete='CASCADE'), index=True)
+    revision_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('news_event_revisions.id', ondelete='CASCADE'), index=True)
+    claim_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('news_event_claims.id', ondelete='CASCADE'))
+    evidence_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('news_event_evidence.id', ondelete='CASCADE'))
+    stance: Mapped[str] = mapped_column(String(20))
+    created_at: Mapped[dt.datetime] = mapped_column(default=utcnow)
+
+
+class NewsEventAnalysis(Base):
+    __tablename__ = 'news_event_analyses'
+    __table_args__ = (
+        Index('uq_news_analysis_revision_key', 'revision_id', 'analysis_key', unique=True),
+        Index('ix_news_analyses_team_event', 'team_id', 'event_id', 'section'),
+        CheckConstraint("section IN ('前因','后果','补充说明')", name='ck_news_analysis_section'),
+        CheckConstraint("label IN ('fact','inference')", name='ck_news_analysis_label'),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    team_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('teams.id', ondelete='CASCADE'), index=True)
+    event_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('news_events.id', ondelete='CASCADE'), index=True)
+    revision_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('news_event_revisions.id', ondelete='CASCADE'), index=True)
+    analysis_key: Mapped[str] = mapped_column(String(200))
+    section: Mapped[str] = mapped_column(String(20))
+    text: Mapped[str] = mapped_column(Text)
+    label: Mapped[str] = mapped_column(String(20))
+    claim_ids: Mapped[list[str]] = mapped_column(JsonType, default=list)
+    evidence_ids: Mapped[list[str]] = mapped_column(JsonType, default=list)
+    payload: Mapped[dict[str, Any]] = mapped_column(JsonType, default=dict)
+    created_at: Mapped[dt.datetime] = mapped_column(default=utcnow)
+
+
+class NewsDraft(Base):
+    """Plus新鲜事 / Plus注解等待审草稿的当前头；正文历史保存在 NewsDraftRevision。"""
+    __tablename__ = 'news_drafts'
+    __table_args__ = (
+        Index('ix_news_drafts_team_updated', 'team_id', 'updated_at'),
+        Index('ix_news_drafts_team_event', 'team_id', 'event_id'),
+        CheckConstraint("target IN ('fresh','annotation','brief_text','research')", name='ck_news_draft_target'),
+        CheckConstraint("status IN ('draft','pending_review','approved','rejected','archived')",
+                        name='ck_news_draft_status'),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    team_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('teams.id', ondelete='CASCADE'), index=True)
+    event_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey('news_events.id', ondelete='SET NULL'), index=True)
+    title: Mapped[str] = mapped_column(Text)
+    body: Mapped[str] = mapped_column(Text)
+    target: Mapped[str] = mapped_column(String(20), default='fresh')
+    status: Mapped[str] = mapped_column(String(20), default='draft')
+    current_revision: Mapped[int] = mapped_column(Integer, default=1)
+    skill_id: Mapped[str | None] = mapped_column(String(200))
+    skill_version: Mapped[str | None] = mapped_column(String(30))
+    payload: Mapped[dict[str, Any]] = mapped_column(JsonType, default=dict)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey('users.id', ondelete='SET NULL'))
+    created_at: Mapped[dt.datetime] = mapped_column(default=utcnow)
+    updated_at: Mapped[dt.datetime] = mapped_column(default=utcnow)
+
+
+class NewsDraftRevision(Base):
+    """不可变草稿版本；审核只写入本版本的审核元数据，不改正文。"""
+    __tablename__ = 'news_draft_revisions'
+    __table_args__ = (
+        Index('uq_news_draft_revision', 'draft_id', 'number', unique=True),
+        Index('ix_news_draft_revisions_team_time', 'team_id', 'created_at'),
+        CheckConstraint("review_status IN ('pending','approved','rejected')", name='ck_news_draft_review_status'),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    team_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('teams.id', ondelete='CASCADE'), index=True)
+    draft_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('news_drafts.id', ondelete='CASCADE'), index=True)
+    number: Mapped[int] = mapped_column(Integer)
+    event_revision_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey('news_event_revisions.id', ondelete='SET NULL'))
+    title: Mapped[str] = mapped_column(Text)
+    body: Mapped[str] = mapped_column(Text)
+    skill_id: Mapped[str | None] = mapped_column(String(200))
+    skill_version: Mapped[str | None] = mapped_column(String(30))
+    payload: Mapped[dict[str, Any]] = mapped_column(JsonType, default=dict)
+    review_status: Mapped[str] = mapped_column(String(20), default='pending')
+    review_note: Mapped[str | None] = mapped_column(Text)
+    reviewed_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey('users.id', ondelete='SET NULL'))
+    reviewed_at: Mapped[dt.datetime | None]
+    created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey('users.id', ondelete='SET NULL'))
+    created_at: Mapped[dt.datetime] = mapped_column(default=utcnow)
+
+
+class NewsSkillVersion(Base):
+    """团队首次使用某个 Skill 时的不可变 Manifest 快照与摘要。"""
+    __tablename__ = 'news_skill_versions'
+    __table_args__ = (
+        Index('uq_news_skill_version', 'team_id', 'skill_id', 'version', unique=True),
+        Index('ix_news_skill_versions_team_time', 'team_id', 'created_at'),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    team_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('teams.id', ondelete='CASCADE'), index=True)
+    skill_id: Mapped[str] = mapped_column(String(200))
+    version: Mapped[str] = mapped_column(String(30))
+    digest: Mapped[str] = mapped_column(String(64))
+    manifest: Mapped[dict[str, Any]] = mapped_column(JsonType)
+    source: Mapped[str] = mapped_column(String(20), default='bundled')
+    created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey('users.id', ondelete='SET NULL'))
+    created_at: Mapped[dt.datetime] = mapped_column(default=utcnow)
+
+
+class NewsWorkflowRun(Base):
+    """一次 DAG 运行的持久化状态；不包含发布动作。"""
+    __tablename__ = 'news_workflow_runs'
+    __table_args__ = (
+        Index('uq_news_workflow_run_key', 'run_key', unique=True),
+        Index('ix_news_workflow_runs_team_time', 'team_id', 'created_at'),
+        Index('ix_news_workflow_runs_team_status', 'team_id', 'status'),
+        CheckConstraint("status IN ('queued','running','succeeded','failed','blocked','cancelled')",
+                        name='ck_news_workflow_run_status'),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    run_key: Mapped[str] = mapped_column(String(64))
+    team_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('teams.id', ondelete='CASCADE'), index=True)
+    event_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey('news_events.id', ondelete='SET NULL'))
+    event_revision: Mapped[int | None] = mapped_column(Integer)
+    workflow_id: Mapped[str] = mapped_column(String(200))
+    workflow_digest: Mapped[str] = mapped_column(String(64))
+    status: Mapped[str] = mapped_column(String(20))
+    input: Mapped[dict[str, Any]] = mapped_column(JsonType, default=dict)
+    input_digest: Mapped[str] = mapped_column(String(64))
+    output: Mapped[dict[str, Any] | None] = mapped_column(JsonType)
+    error: Mapped[str | None] = mapped_column(Text)
+    started_at: Mapped[dt.datetime | None]
+    finished_at: Mapped[dt.datetime | None]
+    created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey('users.id', ondelete='SET NULL'))
+    created_at: Mapped[dt.datetime] = mapped_column(default=utcnow)
+
+
+class NewsWorkflowNode(Base):
+    """节点级运行记录：摘要、缓存、耗时、尝试次数和错误，便于局部重跑。"""
+    __tablename__ = 'news_workflow_nodes'
+    __table_args__ = (
+        Index('uq_news_workflow_node', 'run_id', 'node_id', unique=True),
+        Index('ix_news_workflow_nodes_team_run', 'team_id', 'run_id'),
+        CheckConstraint("status IN ('queued','running','succeeded','failed','blocked','cancelled')",
+                        name='ck_news_workflow_node_status'),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    team_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('teams.id', ondelete='CASCADE'), index=True)
+    run_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('news_workflow_runs.id', ondelete='CASCADE'), index=True)
+    node_id: Mapped[str] = mapped_column(String(200))
+    skill_id: Mapped[str] = mapped_column(String(200))
+    skill_version: Mapped[str] = mapped_column(String(30))
+    status: Mapped[str] = mapped_column(String(20))
+    input_digest: Mapped[str] = mapped_column(String(64))
+    output_digest: Mapped[str | None] = mapped_column(String(64))
+    source_snapshot_hashes: Mapped[list[str]] = mapped_column(JsonType, default=list)
+    duration_ms: Mapped[int] = mapped_column(Integer, default=0)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    cached: Mapped[bool] = mapped_column(Boolean, default=False)
+    error: Mapped[str | None] = mapped_column(Text)
+    output: Mapped[dict[str, Any] | None] = mapped_column(JsonType)
+    created_at: Mapped[dt.datetime] = mapped_column(default=utcnow)
+
+
+class NewsAuditEvent(Base):
+    """每条人工写操作都追加审计；不提供更新或删除接口。"""
+    __tablename__ = 'news_audit_events'
+    __table_args__ = (
+        Index('ix_news_audit_team_time', 'team_id', 'created_at'),
+        Index('ix_news_audit_entity', 'team_id', 'entity_type', 'entity_id'),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    team_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('teams.id', ondelete='CASCADE'), index=True)
+    entity_type: Mapped[str] = mapped_column(String(30))
+    entity_id: Mapped[str] = mapped_column(String(64))
+    action: Mapped[str] = mapped_column(String(40))
+    revision: Mapped[int | None] = mapped_column(Integer)
+    actor_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey('users.id', ondelete='SET NULL'))
+    actor_name: Mapped[str] = mapped_column(String(100))
+    reason: Mapped[str] = mapped_column(Text, default='')
+    details: Mapped[dict[str, Any]] = mapped_column(JsonType, default=dict)
+    created_at: Mapped[dt.datetime] = mapped_column(default=utcnow)

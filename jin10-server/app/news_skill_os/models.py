@@ -179,6 +179,45 @@ def validate_revision(revision: ArtifactRevision) -> None:
         measured[key] = fact
 
 
+CLAIM_TRANSITIONS: dict[ClaimStatus, set[ClaimStatus]] = {
+    ClaimStatus.UNVERIFIED: {ClaimStatus.CORROBORATED, ClaimStatus.VERIFIED, ClaimStatus.DISPUTED,
+                             ClaimStatus.REJECTED, ClaimStatus.SUPERSEDED},
+    ClaimStatus.CORROBORATED: {ClaimStatus.VERIFIED, ClaimStatus.DISPUTED, ClaimStatus.REJECTED,
+                               ClaimStatus.SUPERSEDED},
+    ClaimStatus.VERIFIED: {ClaimStatus.DISPUTED, ClaimStatus.REJECTED, ClaimStatus.SUPERSEDED},
+    ClaimStatus.DISPUTED: {ClaimStatus.VERIFIED, ClaimStatus.REJECTED, ClaimStatus.SUPERSEDED},
+    ClaimStatus.REJECTED: {ClaimStatus.SUPERSEDED},
+    ClaimStatus.SUPERSEDED: set(),
+}
+
+
+def validate_revision_sequence(previous: ArtifactRevision | None, current: ArtifactRevision) -> None:
+    """Check append-only history rules shared by memory and database ledgers.
+
+    A correction must preserve every earlier claim ID, may only move through the
+    declared status graph, and must state why the revision exists.  The event
+    identity is immutable for the life of the ledger.
+    """
+    if previous is None:
+        return
+    if previous.event != current.event:
+        raise RevisionConflict("event metadata changed across revisions")
+    old_claims = {claim.id: claim for claim in previous.claims}
+    new_claims = {claim.id: claim for claim in current.claims}
+    if not old_claims.keys() <= new_claims.keys():
+        raise RevisionConflict("claims cannot disappear from revision history")
+    for claim_id, old in old_claims.items():
+        new = new_claims[claim_id]
+        if (old.subject, old.predicate, old.text, old.numeric, old.attributed_to) != (
+            new.subject, new.predicate, new.text, new.numeric, new.attributed_to
+        ):
+            raise RevisionConflict("fact correction requires a new claim ID")
+        if old.status != new.status and new.status not in CLAIM_TRANSITIONS[old.status]:
+            raise RevisionConflict(f"invalid claim status transition: {old.status} → {new.status}")
+    if not current.audit.reason.strip():
+        raise RevisionConflict("revision requires an audit reason")
+
+
 class EventLedger:
     """Thread-safe, append-only in-memory revisions for offline validation."""
 
@@ -193,33 +232,7 @@ class EventLedger:
             history = self._revisions.setdefault(key, [])
             if len(history) != expected_previous or revision.number != expected_previous + 1:
                 raise RevisionConflict("concurrent or out-of-order revision")
-            if history and history[0].event != revision.event:
-                raise RevisionConflict("event metadata changed across revisions")
-            if history:
-                previous = {claim.id: claim for claim in history[-1].claims}
-                current = {claim.id: claim for claim in revision.claims}
-                if not previous.keys() <= current.keys():
-                    raise RevisionConflict("claims cannot disappear from revision history")
-                transitions = {
-                    ClaimStatus.UNVERIFIED: {ClaimStatus.CORROBORATED, ClaimStatus.VERIFIED, ClaimStatus.DISPUTED,
-                                             ClaimStatus.REJECTED, ClaimStatus.SUPERSEDED},
-                    ClaimStatus.CORROBORATED: {ClaimStatus.VERIFIED, ClaimStatus.DISPUTED, ClaimStatus.REJECTED,
-                                               ClaimStatus.SUPERSEDED},
-                    ClaimStatus.VERIFIED: {ClaimStatus.DISPUTED, ClaimStatus.REJECTED, ClaimStatus.SUPERSEDED},
-                    ClaimStatus.DISPUTED: {ClaimStatus.VERIFIED, ClaimStatus.REJECTED, ClaimStatus.SUPERSEDED},
-                    ClaimStatus.REJECTED: {ClaimStatus.SUPERSEDED},
-                    ClaimStatus.SUPERSEDED: set(),
-                }
-                for claim_id, old in previous.items():
-                    new = current[claim_id]
-                    if (old.subject, old.predicate, old.text, old.numeric, old.attributed_to) != (
-                        new.subject, new.predicate, new.text, new.numeric, new.attributed_to
-                    ):
-                        raise RevisionConflict("fact correction requires a new claim ID")
-                    if old.status != new.status and new.status not in transitions[old.status]:
-                        raise RevisionConflict(f"invalid claim status transition: {old.status} → {new.status}")
-                if not revision.audit.reason.strip():
-                    raise RevisionConflict("revision requires an audit reason")
+            validate_revision_sequence(history[-1] if history else None, revision)
             history.append(revision)
             return revision
 

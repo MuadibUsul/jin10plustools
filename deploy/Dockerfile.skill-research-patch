@@ -1,0 +1,11 @@
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
+USER root
+COPY jin10-server/app/main.py /srv/app/main.py
+COPY jin10-server/app/api/settings.py /srv/app/api/settings.py
+COPY jin10-server/app/briefs/skill_library.py /srv/app/briefs/skill_library.py
+COPY jin10-server/app/web/skills.js /srv/app/web/skills.js
+COPY jin10-server/app/web/skill-library.css /srv/app/web/skill-library.css
+RUN chmod a+rX /srv/app/main.py /srv/app/api/settings.py \
+    /srv/app/briefs/skill_library.py /srv/app/web/skills.js /srv/app/web/skill-library.css
+USER plus

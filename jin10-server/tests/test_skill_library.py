@@ -8,6 +8,7 @@ def test_standalone_skill_pages_are_routed(client):
     assert client.get("/skills/").status_code == 200
     assert "SKILL LIBRARY" in client.get("/skills/").text
     assert client.get("/skills/volume/").status_code == 200
+    assert client.get("/skills/news.event-extraction/").status_code == 200
     assert client.get("/skills/unknown/").status_code == 404
 
 
@@ -16,13 +17,20 @@ def test_every_member_can_read_five_installed_skills(client):
         response = client.get("/api/settings/skills", headers=login(client, email))
         assert response.status_code == 200, response.text
         skills = response.json()["skills"]
-        assert [item["category"] for item in skills] == ["volume", "turnover", "valuation", "liquidity", "oil_etf"]
-        assert all(item["enabled"] and not item["customized"] for item in skills)
-        assert all(item["instructions"] and item["bundled_instructions"] == item["instructions"] for item in skills)
+        assert [item["category"] for item in skills[:5]] == ["volume", "turnover", "valuation", "liquidity", "oil_etf"]
+        assert all(item["enabled"] and not item["customized"] for item in skills[:5])
+        assert all(item["instructions"] and item["bundled_instructions"] == item["instructions"] for item in skills[:5])
         assert skills[0]["skill_id"] == "news.fixed-volume"
         assert skills[0]["group"] == "A股温度计" and skills[3]["group"] == "流动性"
+        research = [item for item in skills if item.get("group") == "研究型 Skill"]
+        assert len(research) == 5 and all(item["editable"] is False for item in research)
+        assert {item["skill_id"] for item in research} == {
+            "news.event-extraction", "news.fact-verification", "news.background-research",
+            "finance.causal-analysis", "news.quality-review"}
     detail = client.get("/api/settings/skills/volume", headers=login(client, "viewer@plus.test"))
     assert detail.status_code == 200 and detail.json()["skill"]["category"] == "volume"
+    research = client.get("/api/settings/skills/news.event-extraction", headers=login(client, "viewer@plus.test"))
+    assert research.status_code == 200 and research.json()["skill"]["editable"] is False
     assert client.get("/api/settings/skills/unknown", headers=login(client, "viewer@plus.test")).status_code == 404
 
 

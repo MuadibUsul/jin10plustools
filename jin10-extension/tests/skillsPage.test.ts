@@ -22,6 +22,12 @@ const skills = [
     version: '0.1.0', enabled: true, customized: false, instructions: '# 内置', bundled_instructions: '# 内置',
     description: '', digest: 'abc', bundled_digest: 'abc', samples: 20, revision: 0,
     updated_at: null, updated_by: null, updated_by_name: null, history: [] },
+  { category: 'news.event-extraction', label: '事件提取', group: '研究型 Skill',
+    skill_id: 'news.event-extraction', version: '0.1.0', enabled: true, editable: false, kind: 'runtime',
+    customized: false, instructions: '', bundled_instructions: '', description: '提取事件与断言。',
+    digest: 'abc', bundled_digest: 'abc', samples: 0, revision: 0, updated_at: null,
+    updated_by: null, updated_by_name: null, history: [], model_profile: 'deterministic-fixture',
+    allowed_tools: ['local_fixture'], permissions: { network: false }, quality_gates: [], dependencies: [] },
 ];
 let api: ReturnType<typeof vi.fn>;
 
@@ -60,10 +66,17 @@ beforeEach(() => {
 describe('standalone Skill library', () => {
   it('renders grouped small cards that link to detail pages', async () => {
     await page(listHtml, '/skills/');
-    await vi.waitFor(() => expect(document.querySelectorAll('.skill-card-link').length).toBe(3));
-    expect(document.querySelectorAll('.skill-group').length).toBe(2);
+    await vi.waitFor(() => expect(document.querySelectorAll('.skill-card-link').length).toBe(4));
+    expect(document.querySelectorAll('.skill-group').length).toBe(3);
     expect($('.skill-card-link').getAttribute('href')).toBe('/skills/volume/');
-    expect($('#skills-status').textContent).toContain('3 项');
+    expect($('#skills-status').textContent).toContain('4 项');
+  });
+
+  it('opens a runtime research Skill read-only', async () => {
+    await page(detailHtml, '/skills/news.event-extraction/');
+    await vi.waitFor(() => expect($('#skill-title').textContent).toBe('事件提取'));
+    expect(document.querySelector('#skill-detail textarea')).toBeNull();
+    expect($('#skill-detail').textContent).toContain('只读');
   });
 
   it('opens a Skill detail page and saves a team override', async () => {

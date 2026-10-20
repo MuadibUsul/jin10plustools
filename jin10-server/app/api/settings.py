@@ -6,7 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator
 from app.briefs.delivery import default_notes
 from app.briefs.policy import CATEGORIES
 from app.briefs.skill_library import (
-    MAX_INSTRUCTIONS, SkillConflict, SkillNotFound, list_skills, update_skill,
+    MAX_INSTRUCTIONS, SkillConflict, SkillNotFound, get_skill, list_skills, update_skill,
 )
 from app.db.models import BriefConfig, Role, Team, utcnow
 from app.deps import CurrentUser, DbSession, Editor
@@ -147,9 +147,8 @@ def skills(db: DbSession, user: CurrentUser):
 
 @router.get('/skills/{category}')
 def skill_detail(category: str, db: DbSession, user: CurrentUser):
-    from app.briefs.skill_library import SkillNotFound, effective
     try:
-        return {'skill': effective(db.get(Team, user.team_id), category)}
+        return {'skill': get_skill(db.get(Team, user.team_id), category)}
     except SkillNotFound as exc:
         raise HTTPException(404, str(exc)) from exc
 

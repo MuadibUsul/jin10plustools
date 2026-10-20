@@ -204,3 +204,12 @@ def test_liquidity_falls_back_when_the_pbc_table_is_missing(tmp_path,monkeypatch
     monkeypatch.setattr(sources,'render_liquidity',lambda snap,out:{'title':'标题','dynamic_body':'正文','data_date':'2026-10-15','images':[],'warnings':[],'facts':{}})
     payload=sources.liquidity('2026-10-15',tmp_path,tmp_path/'state')
     assert payload['warnings'] and '未找到唯一7天期逆回购操作表' in payload['warnings'][0]
+
+
+def test_untracked_ai_candidate_is_marked_for_retry(db_factory,seed):
+    with db_factory() as db:
+        issue=ensure_issue(db,seed['editor'].team_id,date(2026,10,15),'volume')
+        version=append_version(db,issue,{'title':'标题','dynamic_body':'正文','data_date':'2026-10-15',
+            'images':[],'valid':True,'deepseek':{'status':'ok'}})
+        db.commit()
+        assert version_out(issue,version)['deepseek']['untracked'] is True

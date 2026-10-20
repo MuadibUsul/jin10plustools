@@ -208,12 +208,13 @@ async function showVersion() {
   $('#detail-status').textContent = `数据日 ${copyDate(v.data_date)}${v.deepseek.status === 'not_configured' || v.deepseek.status === 'disabled' ? '' : ` · ${aiName(v.deepseek)}：${aiLabels[v.deepseek.status] || '未完成'}`}`;
   const warnings = [...(v.warnings || [])];
   if (v.deepseek.stale) warnings.push('AI候选基于生成时的正文，当前正文已修改；请先补跑AI再采用。');
+  if (v.deepseek.untracked) warnings.push('AI候选来源未记录，请补跑AI后再采用。');
   $('#warnings').replaceChildren(...warnings.map((s) => node('p', s)));
   $('#facts').textContent = JSON.stringify(v.facts, null, 2);
   for (const id of ['save', 'confirm', 'unconfirm', 'rerender', 'retry-ai', 'refetch']) $(`#${id}`).hidden = !canEdit();
   $('#save').disabled = v.number !== selected.version;
   $('#confirm').disabled = v.number !== selected.version || !v.valid;
-  $('#use-ai').hidden = !canEdit() || v.deepseek.status !== 'ok' || v.deepseek.stale === true || v.number !== selected.version;
+  $('#use-ai').hidden = !canEdit() || v.deepseek.status !== 'ok' || v.deepseek.stale === true || v.deepseek.untracked === true || v.number !== selected.version;
   $('#unconfirm').disabled = !selected.confirmed_version;
   dirty = false;
   const key = JSON.stringify([selected.id, v.number, v.images]);

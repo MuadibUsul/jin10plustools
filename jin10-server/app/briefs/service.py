@@ -113,6 +113,9 @@ def version_out(issue,version):
         if key in ai:ai[key]=copy_dates(ai[key])
     if ai.get('source_body_sha'):
         ai['stale']=ai['source_body_sha']!=hashlib.sha256(version.dynamic_body.encode()).hexdigest()
+    elif ai.get('status')=='ok':
+        # Older candidates predate source tracking; never let them silently overwrite an edit.
+        ai['untracked']=True
     # Valuation and turnover keep their notes on the image; their body stays dynamic-only,
     # including earlier editions that still stored the appended note block.
     image_notes=issue.category in ('valuation','turnover','us_barometer')

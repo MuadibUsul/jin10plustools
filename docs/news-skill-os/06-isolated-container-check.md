@@ -31,3 +31,7 @@
 - 未在线上部署本分支，也没有生产回滚演练；生产镜像和数据库仍是 `audit-fixes` 版本。
 - 分支基于 `0a8c4fc`，`main` 还有 `b238d8a`（编辑可选 AI 引擎/模型）；合并前需把该提交合入并复跑测试。
 - 本验证只覆盖默认关闭版本的镜像/Compose/PostgreSQL/迁移/旧接口/关闭路由/清理，不代表真实新闻抽取、在线模型或持久化事实链已验证。
+
+## 后续：持久化 0012 的隔离验证
+
+2026-10-20 在 `feature/news-skill-os` 的 `ae23c3c` 上另建临时项目，使用真实 PostgreSQL 和 `plus-api:news-skill-ae23c3c` 验证 `0012 (head)`、事件→修订→研究工作流→注解草稿→人工批准→导出链路；同时修复了 PostgreSQL 外键顺序问题（evidence/claims 必须先于 link 插入）。详见[持久化基础](07-persistence-foundation.md)。生产仍未部署。

@@ -1,6 +1,6 @@
 # ADR 001：以旁路包引入 News Skill OS
 
-状态：方案选定，实施与回归仍在推进。依据：[真实仓库审计](01-repository-audit.md)、[基线验证](02-baseline.md)。
+状态：方案选定；默认关闭 MVP、隔离验证与持久化基础已落地，生产部署/合并仍待批准。依据：[真实仓库审计](01-repository-audit.md)、[基线验证](02-baseline.md)、[持久化基础](07-persistence-foundation.md)。
 
 ## 问题和两个方案
 
@@ -23,7 +23,7 @@
 | 五类现有文字规范与 20 日样本 | `skills/jin10-plus-*-text/`、`docs/jin10-plus-text-history/` | 已作为参考资产迁入；未来显式适配到 Manifest，不能执行历史文案中的数字 |
 | 可选配置 | `jin10-server/app/config.py`、三个 Compose API 环境段、`.env.example` | 仅新增默认 `false` 的布尔字段与透传；不改现有配置语义 |
 | 可选路由 | 新增 `app/api/news_skill_os.py`，`app/main.py` 加一次路由注册 | 仅独立命名空间，沿用 `CurrentUser`/`Editor` 与既有异常风格 |
-| 可选持久化 | 未来新增独立 `news_*` 表、Alembic additive migration、`data_export.py` 登记 | 先不触碰旧表；PostgreSQL 迁移需独立验证 |
+| 持久化 | 已新增独立 `news_*` 表、Alembic `0012` additive migration、`data_export.py` 登记 | 不触碰旧表；SQLite/真实 PostgreSQL 迁移和写入链已验证；生产尚未部署 |
 
 ## 三项协议边界
 
@@ -40,7 +40,7 @@
 
 ## 数据落地与回滚
 
-- MVP 先只在内存/fixture 上验证三项协议，不添加 migration、不执行在线发布。未来持久化设计须有 `team_id`、事务、唯一键、外键和必要索引；快照需屏蔽凭据及受版权限制的原始材料。新表进入 `data_export.py` 非敏感登记。
+- 离线 MVP 阶段只在内存/fixture 上验证三项协议；2026-10-20 的持久化阶段已新增 `0012`，按 `team_id`、事务、唯一键、外键和索引隔离事实链。快照不含凭据或原始网页 HTML，12 张新表均进入 `data_export.py` 非敏感登记。生产仍未部署。
 - 本分支可通过停止调用旁路入口和 `NEWS_SKILL_OS_ENABLED=false` 停用。若未来部署 additive migration，应用回退只停用代码和开关，保留 `news_*` 表数据；不得通过危险 downgrade 删除生产事实链。发布节点不在 MVP 范围。
 - `docs/jin10-plus-text-history/` 中的旧例只用于判断文体、固定注释边界和测试回归。每日事实必须来自当次证据，固定解释内容需与动态正文分离，并遵守团队可编辑配置。
 

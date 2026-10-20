@@ -10,7 +10,7 @@
 
 ## NewsEvent / Claim / Evidence
 
-`models.py` 定义 `NewsEvent`、`Source`、`Evidence`、`Claim`、`ClaimEvidenceLink`、`Analysis`、`Draft`、`ArtifactRevision` 和 `AuditEvent`。金额、比例等数值带单位、币种、统计口径、预测/实际和期间；同一原始来源的转载共享 `original_id`，不能冒充两条独立证据。`validate_revision` 阻止缺证据的 verified、冲突的已核实数字和缺事实依赖的分析；`EventLedger` 为线程安全、按团队隔离的内存追加式快照，修订需保留旧 Claim 和审计原因。它**不是数据库持久化**；重启后数据不保留。
+`models.py` 定义 `NewsEvent`、`Source`、`Evidence`、`Claim`、`ClaimEvidenceLink`、`Analysis`、`Draft`、`ArtifactRevision` 和 `AuditEvent`。金额、比例等数值带单位、币种、统计口径、预测/实际和期间；同一原始来源的转载共享 `original_id`，不能冒充两条独立证据。`validate_revision` 阻止缺证据的 verified、冲突的已核实数字和缺事实依赖的分析；`EventLedger` 为线程安全、按团队隔离的内存追加式快照，修订需保留旧 Claim 和审计原因。`EventLedger` 本身仍是内存实现，供离线测试使用；2026-10-20 起另有 `news_*` 数据库持久化版本，见[持久化基础](07-persistence-foundation.md)。
 
 ## `news.workflow/v1`
 
@@ -30,7 +30,9 @@ python -m app.news_skill_os --fixture wrong-number
 
 ## 可选 API 与开关
 
-配置 `NEWS_SKILL_OS_ENABLED=false`（也接受 `PLUS_NEWS_SKILL_OS_ENABLED`）；各 Compose API 服务显式透传 `NEWS_SKILL_OS_ENABLED`，缺省仍为 `false`。唯一新增路由为 `POST /api/news-skill-os/fixtures/{official|rumour|wrong-number}/run`。未登录仍受现有 JWT 依赖保护；只读账号返回 403；开关关闭返回 404。即使样例审核通过，响应也固定 `publication_allowed=false`、`human_approval_required=true`。路由不落库、不调用旧 worker、不抓取在线素材，也不触发 CMS 发布。关闭功能无需迁移或删除表；不调用该路由时既有服务按原方式工作。
+配置 `NEWS_SKILL_OS_ENABLED=false`（也接受 `PLUS_NEWS_SKILL_OS_ENABLED`）；各 Compose API 服务显式透传 `NEWS_SKILL_OS_ENABLED`，缺省仍为 `false`。离线样例路由为 `POST /api/news-skill-os/fixtures/{official|rumour|wrong-number}/run`；未登录仍受现有 JWT 依赖保护，只读账号返回 403，开关关闭返回 404。即使样例审核通过，响应也固定 `publication_allowed=false`、`human_approval_required=true`。样例路由不落库、不调用旧 worker、不抓取在线素材，也不触发 CMS 发布。
+
+持久化阶段新增的 `/events`、`/drafts`、`/workflow-runs` 等路由只在开关打开时可用，写入独立的 `news_*` 表；仍然没有发布端点。旧固定快讯与日报路径不调用这些路由。详细表结构、权限和验证见[持久化基础](07-persistence-foundation.md)。
 
 ## 与五类固定快讯资产的关系
 

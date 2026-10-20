@@ -34,7 +34,7 @@ def research_input(snapshot: Mapping[str, Any]) -> dict[str, Any]:
             "id": claim["id"], "text": claim["text"], "subject": claim["subject"],
             "predicate": claim["predicate"], "numeric": claim.get("numeric"),
             "source_id": evidence_row["source_id"], "evidence_id": evidence_row["id"],
-            "excerpt": evidence_row["excerpt"],
+            "excerpt": evidence_row["excerpt"], "evidence_numeric": claim.get("numeric"),
         })
 
     items = []

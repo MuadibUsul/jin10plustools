@@ -108,11 +108,15 @@ _SKILL_CATEGORIES=frozenset({'volume','turnover','valuation','liquidity','oil_et
 
 
 @app.get('/',include_in_schema=False)
-@app.get('/fresh/',include_in_schema=False)
-@app.get('/annotations/',include_in_schema=False)
 @app.get('/login/',include_in_schema=False)
 def workspace_page():
     return FileResponse(_WEB/'portal.html',headers={'Cache-Control':'no-cache'})
+
+
+@app.get('/fresh/',include_in_schema=False)
+@app.get('/annotations/',include_in_schema=False)
+def news_page():
+    return FileResponse(_WEB/'news.html',headers={'Cache-Control':'no-cache'})
 
 
 @app.get('/daily/',include_in_schema=False)

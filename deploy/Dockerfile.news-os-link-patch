@@ -1,0 +1,18 @@
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
+USER root
+COPY jin10-server/app/api/news_skill_os.py /srv/app/api/news_skill_os.py
+COPY jin10-server/app/news_skill_os/article_ai.py /srv/app/news_skill_os/article_ai.py
+COPY jin10-server/app/news_skill_os/link_ingest.py /srv/app/news_skill_os/link_ingest.py
+COPY jin10-server/app/news_skill_os/fresh_ai.py /srv/app/news_skill_os/fresh_ai.py
+COPY jin10-server/app/news_skill_os/annotation_ai.py /srv/app/news_skill_os/annotation_ai.py
+COPY jin10-server/app/news_skill_os/event_workflow.py /srv/app/news_skill_os/event_workflow.py
+COPY jin10-server/app/web/news.html /srv/app/web/news.html
+COPY jin10-server/app/web/news.js /srv/app/web/news.js
+COPY jin10-server/app/web/news.css /srv/app/web/news.css
+RUN chmod a+rX /srv/app/api/news_skill_os.py \
+    /srv/app/news_skill_os/article_ai.py /srv/app/news_skill_os/link_ingest.py \
+    /srv/app/news_skill_os/fresh_ai.py /srv/app/news_skill_os/annotation_ai.py \
+    /srv/app/news_skill_os/event_workflow.py \
+    /srv/app/web/news.html /srv/app/web/news.js /srv/app/web/news.css
+USER plus

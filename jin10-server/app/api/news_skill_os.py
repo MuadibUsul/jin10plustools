@@ -24,14 +24,19 @@ from app.briefs.delivery import default_notes
 from app.config import get_settings
 from app.db.models import BriefConfig
 from app.deps import CurrentUser, DbSession, Editor
+from app.news_skill_os.annotation_ai import analyze as analyze_annotation
+from app.news_skill_os.article_ai import extract as extract_article
 from app.news_skill_os.event_workflow import research_input
+from app.news_skill_os.fresh_ai import analyze as analyze_fresh_link
+from app.news_skill_os.link_ingest import fetch_article
 from app.news_skill_os.models import (
-    Analysis, Claim, ClaimEvidenceLink, Draft, Evidence, Source,
+    Analysis, Claim, ClaimEvidenceLink, ClaimStatus, Draft, Evidence, NumericFact, Source,
 )
 from app.news_skill_os.store import (
     StoreConflict, StoreError, StoreNotFound, add_draft_revision, append_revision,
     create_draft, create_event, get_draft, get_event, get_event_revision,
     get_workflow_node, get_workflow_run, list_audit, list_draft_revisions, list_drafts,
+    now_utc,
     list_event_revisions, list_events, list_workflow_nodes, list_workflow_runs,
     record_workflow_run, review_draft, submit_draft,
 )
@@ -78,6 +83,34 @@ class EventCreate(StrictModel):
         if value.tzinfo is None:
             raise ValueError("event_time 必须带时区")
         return value
+
+
+class ArticleCreate(StrictModel):
+    title: str = Field(min_length=1, max_length=300)
+    event_time: dt.datetime
+    event_key: str | None = Field(default=None, max_length=200)
+    article: str = Field(min_length=1, max_length=100_000)
+    source_name: str = Field(min_length=1, max_length=200)
+    source_kind: Literal["official", "named_media", "anonymous"]
+    source_url: str | None = Field(default=None, max_length=2048)
+    source_original_id: str | None = Field(default=None, max_length=300)
+
+    @field_validator("event_time")
+    @classmethod
+    def timezone_required(cls, value: dt.datetime) -> dt.datetime:
+        if value.tzinfo is None:
+            raise ValueError("event_time 必须带时区")
+        return value
+
+
+class LinkAnalyze(StrictModel):
+    url: str = Field(min_length=8, max_length=2048)
+    focus: str = Field(default="", max_length=1000)
+
+
+class AnnotationCreate(StrictModel):
+    text: str = Field(min_length=1, max_length=5000)
+    source_url: str | None = Field(default=None, max_length=2048)
 
 
 class RevisionCreate(StrictModel):
@@ -239,6 +272,135 @@ def create_event_route(payload: EventCreate, db: DbSession, user: Editor):
                            event_time=payload.event_time, event_key=payload.event_key,
                            payload=payload.payload)
         return _event_out(row)
+
+
+@router.post("/events/from-article", status_code=201)
+def create_event_from_article(body: ArticleCreate, db: DbSession, user: Editor):
+    """Extract claim proposals from a pasted article and persist them unverified."""
+    _enabled()
+    with _errors():
+        from app.db.models import Team
+        team = db.get(Team, user.team_id)
+        extracted = extract_article(team, body.title.strip(), body.article,
+                                    body.source_name.strip(), body.source_kind)
+        source = Source(
+            id="s1", name=body.source_name.strip(), kind=body.source_kind,
+            url=body.source_url,
+            original_id=(body.source_original_id or body.source_url or body.source_name).strip()[:300],
+        )
+        stamp = now_utc()
+        evidence = []
+        claims = []
+        links = []
+        for index, item in enumerate(extracted["claims"], start=1):
+            evidence_id = f"e{index}"
+            claim_id = item["id"]
+            numeric = None
+            if isinstance(item.get("numeric"), dict):
+                try:
+                    numeric = NumericFact.model_validate(item["numeric"])
+                except ValueError:
+                    numeric = None
+            evidence.append(Evidence(id=evidence_id, source_id=source.id,
+                                     excerpt=item["evidence"], captured_at=stamp,
+                                     locator=body.source_url))
+            claims.append(Claim(id=claim_id, subject=item["subject"], predicate=item["predicate"],
+                                text=item["text"], status=ClaimStatus.UNVERIFIED,
+                                numeric=numeric))
+            links.append(ClaimEvidenceLink(claim_id=claim_id, evidence_id=evidence_id, stance="supports"))
+        analyses = [
+            Analysis(id=item["id"], section=item["section"], text=item["text"], label=item["label"],
+                     claim_ids=tuple(item["claim_ids"]), evidence_ids=tuple(item["evidence_ids"]))
+            for item in extracted.get("analyses", [])
+        ]
+        event = create_event(db, team_id=user.team_id, user=user, title=extracted["title"],
+                             event_time=body.event_time, event_key=body.event_key,
+                             payload={"ingest": "article", "source_name": body.source_name})
+        revision = append_revision(
+            db, event=event, user=user, expected_previous=0, sources=[source],
+            evidence=evidence, claims=claims, links=links, analyses=analyses, draft=None,
+            reason=f"AI 从新闻稿提取 {len(claims)} 条待核查断言",
+        )
+        return {"event": _event_out(event), "revision": _revision_out(revision),
+                "claim_count": len(claims), "evidence_count": len(evidence),
+                "human_approval_required": True, "publication_allowed": False}
+
+
+@router.post("/annotations/analyze")
+def analyze_annotation_route(body: AnnotationCreate, db: DbSession, user: Editor):
+    """Generate a plain three-part annotation for one news flash; does not save."""
+    _enabled()
+    with _errors():
+        from app.db.models import Team
+        return analyze_annotation(db.get(Team, user.team_id), body.text,
+                                  body.source_url or "")
+
+
+@router.post("/from-link/analyze", status_code=201)
+def analyze_link(body: LinkAnalyze, db: DbSession, user: Editor):
+    """Fetch a public link, analyze it and store unverified claims for review."""
+    _enabled()
+    with _errors():
+        from app.db.models import Team
+        article = fetch_article(body.url)
+        team = db.get(Team, user.team_id)
+        result = analyze_fresh_link(team, article, body.focus)
+        result["analysis"]["sources"] = result["sources"]
+        source = Source(id="s1", name=(article.get("site") or "新闻链接")[:200],
+                        kind="named_media", url=article["url"], original_id=article["url"][:300])
+        stamp = now_utc()
+        evidence, claims, links = [], [], []
+        for index, item in enumerate(result["claims"], start=1):
+            evidence_id = f"e{index}"
+            evidence.append(Evidence(id=evidence_id, source_id=source.id,
+                                     excerpt=item["evidence"], captured_at=stamp,
+                                     locator=article["url"]))
+            claims.append(Claim(id=item["id"], subject=item["subject"], predicate=item["predicate"],
+                                text=item["text"], status=ClaimStatus.UNVERIFIED))
+            links.append(ClaimEvidenceLink(claim_id=item["id"], evidence_id=evidence_id, stance="supports"))
+        published = None
+        if article.get("published_at"):
+            try:
+                published = dt.datetime.fromisoformat(article["published_at"].replace("Z", "+00:00"))
+            except ValueError:
+                published = None
+        event = create_event(db, team_id=user.team_id, user=user, title=result["event_title"],
+                             event_time=published or stamp,
+                             payload={**result["analysis"], "source_url": article["url"],
+                                      "site": article.get("site", ""), "focus": body.focus,
+                                      "ingest": "link"})
+        revision = append_revision(
+            db, event=event, user=user, expected_previous=0, sources=[source],
+            evidence=evidence, claims=claims, links=links, analyses=[], draft=None,
+            reason="AI 从新闻链接提取待核查断言",
+        )
+        return {"event": _event_out(event), "revision": _revision_out(revision),
+                "analysis": result["analysis"], "claims": result["claims"],
+                "sources": result["sources"], "claim_count": len(claims),
+                "publication_allowed": False, "human_approval_required": True}
+
+
+@router.post("/events/{event_id}/fresh-draft", status_code=201)
+def fresh_draft(event_id: uuid.UUID, db: DbSession, user: Editor):
+    _enabled()
+    with _errors():
+        event = get_event(db, user.team_id, event_id)
+        revisions = list_event_revisions(db, user.team_id, event_id)
+        if not revisions:
+            raise StoreConflict("事件尚无分析修订")
+        analysis = (event.payload or {}).get("fresh_analysis") if isinstance(event.payload, dict) else None
+        if not analysis:
+            analysis = event.payload
+        if not isinstance(analysis, dict) or not analysis.get("body") or not analysis.get("title"):
+            raise StoreError("该事件没有可用的 Plus新鲜事分析")
+        body = analysis["body"] + "\n\n" + analysis.get("notes", "")
+        draft = create_draft(
+            db, team_id=user.team_id, user=user, title=analysis["title"], body=body,
+            target="fresh", event_id=event.id, event_revision=revisions[-1].number,
+            payload={"source_url": (event.payload or {}).get("source_url"),
+                     "analysis": analysis, "claim_count": len(revisions[-1].snapshot.get("claims", []))},
+        )
+        return _draft_out(draft)
 
 
 @router.get("/events/{event_id}")

@@ -48,6 +48,7 @@
 | 持久化文档与验证记录 | `54f68eb` | 已推送 |
 | 固定快讯 Skill 文案预览上线 | `7d6be58` / `742def8` / `65288b6` | 已推送；生产镜像 `plus-api:skill-preview-20261020` |
 | 固定快讯 Skill AI 润色与数字守卫 | `422f3ff` | 已推送；生产镜像 `plus-api:skill-ai-preview-20261020` |
+| 设置页 Skill 库与团队规范管理 | `d06e1ad` | 已推送；生产镜像 `plus-api:skill-library-20261020` |
 
 ## 当前边界
 

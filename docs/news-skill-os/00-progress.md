@@ -62,7 +62,7 @@
 | 研究型 Skill 纳入只读卡片库 | `f765f7d` | 已推送；生产镜像 `plus-api:skill-research-20261020` |
 | News Skill OS 生产部署与产品页 | `2a8245c` | 生产镜像 `plus-api:news-os-live-20261020`；迁移 0012 |
 | 固定快讯动态正文模板与关闭硬编码 | `c0ac57d` | 生产镜像 `plus-api:body-templates-20261020` |
-| 历史文段详情与 20 条提示词 | 待提交 | 生产镜像 `plus-api:skill-history-20261020` |
+| 历史文段详情与 20 条提示词 | `6622064` | 生产镜像 `plus-api:skill-history-20261020` |
 
 ## 当前边界
 

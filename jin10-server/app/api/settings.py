@@ -74,8 +74,12 @@ def read(db: DbSession, user: CurrentUser):
 
 @router.put('')
 def update(body: Update, db: DbSession, user: Editor):
-    if (body.ai is not None or body.ai_provider is not None or body.schedule_enabled is not None) and user.role != Role.ADMIN:
-        raise HTTPException(403, '仅管理员可修改排期和 AI 接入')
+    if user.role != Role.ADMIN:
+        if body.schedule_enabled is not None:
+            raise HTTPException(403, '仅管理员可修改排期')
+        for change in (body.ai or {}).values():
+            if change.key is not None or change.use_server_key or change.enabled is not None:
+                raise HTTPException(403, '仅管理员可修改 AI Key 或启用状态')
     if body.notes and any(len(value) > 2000 for value in body.notes.values()):
         raise HTTPException(422, '每个栏目注释最多2000字')
     team = db.get(Team, user.team_id, with_for_update=True)

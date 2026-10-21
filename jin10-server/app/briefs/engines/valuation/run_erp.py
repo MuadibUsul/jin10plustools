@@ -153,6 +153,88 @@ def _load_bond_rows(path, expected_date):
     return by_date, evidence
 
 
+def _merge_recent_bonds(bonds, recent_rows, checked_dates):
+    """Replace the latest two official rows and report any prior-session revision.
+
+    The earlier of ``checked_dates`` is deliberately re-read every production run:
+    a published treasury close can be corrected after its first appearance.  A
+    numeric change is a correction; a formatting-only change is not.  Missing
+    dates are added, never silently treated as unchanged.
+    """
+    incoming = {row['date']: row for row in recent_rows}
+    checks, corrections, added, unchanged = [], [], [], []
+    for day in checked_dates:
+        if day not in incoming:
+            raise ERPWorkflowError('missing_bond_revision_date',
+                                   f'Official bond source did not return {day}.')
+        before = bonds.get(day)
+        after = incoming[day]
+        before_value = number(before['yield_percent_number'], 'yield_percent_number') if before else None
+        after_value = number(after['yield_percent_number'], 'yield_percent_number')
+        changed = before is None or before_value != after_value
+        entry = {
+            'date': day,
+            'old_yield': before.get('yield_source_text') if before else None,
+            'new_yield': after.get('yield_source_text'),
+            'old_value': str(before_value) if before else None,
+            'new_value': str(after_value),
+            'changed': changed,
+        }
+        checks.append(entry)
+        if before is None:
+            added.append(day)
+        elif changed:
+            corrections.append(entry)
+        else:
+            unchanged.append(day)
+        bonds[day] = after
+    return {'checked_dates': list(checked_dates), 'checks': checks,
+            'corrections': corrections, 'added_dates': added,
+            'unchanged_dates': unchanged}
+
+
+def _load_bonds_with_revision(bond_history, expected, previous, output, notify, *, recheck):
+    """Load the official series and, when requested, re-read the latest two rows.
+
+    Running this before close/PE acquisition means a later source failure cannot
+    hide a treasury correction. The rolling file is written atomically and is
+    copied back to the persistent history by the caller even if the job fails.
+    """
+    provided_history = bond_history is not None
+    if bond_history is None:
+        notify('正在获取中债国债收益率曲线并检查历史日期覆盖')
+        capture = fetch_bond_history(HISTORY_START, expected, output / 'raw' / 'bond')
+        bond_history = capture['normalized_path']
+    bonds, bond_evidence = _load_bond_rows(bond_history, expected)
+    revision_report = None
+    if recheck and provided_history:
+        notify(f'正在复核中债国债收益率：{previous}（上一交易日）、{expected}（最新交易日）')
+        recent = fetch_bond([previous, expected], output / 'raw' / 'bond-update')
+        revision_report = _merge_recent_bonds(bonds, recent['normalized'], (previous, expected))
+        revision_report.update({
+            'source': BOND_METHOD_ID,
+            'latest_session': expected,
+            'previous_session_rechecked': previous,
+            'checked_at': datetime.now(CHINA).isoformat(),
+        })
+        rolling_path = output / 'raw' / 'bond' / 'official-rolling-normalized.json'
+        _write_json(rolling_path, [bonds[d] for d in sorted(bonds)])
+        _write_json(output / 'raw' / 'bond-update' / 'revision-check.json', revision_report)
+        bonds, updated_evidence = _load_bond_rows(rolling_path, expected)
+        bond_evidence = {'initial_history': bond_evidence, 'latest_two_session_update': recent,
+                         'combined_history': updated_evidence, 'same_official_method_only': True,
+                         'revision_check': revision_report}
+        for correction in revision_report['corrections']:
+            notify(f"国债历史修正：{correction['date']} {correction['old_yield']}→{correction['new_yield']}")
+        if revision_report['corrections']:
+            notify('国债历史已按官方修正值重算，并回写历史序列')
+        elif revision_report['added_dates']:
+            notify('国债复核完成：缺失的最近交易日已补入')
+        else:
+            notify('国债复核完成：最近两个交易日收盘价未修正')
+    return bonds, bond_evidence, revision_report
+
+
 def _write_csv(path, rows):
     fields = ['date', 'close', 'pe_ttm_mcw', 'pe_ttm_mcw_raw', 'bond_yield_number',
               'erp', 'erp_percent', 'close_source', 'pe_source', 'bond_source']
@@ -267,6 +349,7 @@ def run_erp(workbook, out_dir, *, mode, expected_date, bond_history=None, force_
             'missing_bond_dates': [], 'missing_close_dates': [], 'missing_pe_dates': [],
             'no_forward_fill': True, 'all_required_dates_present': False}
     rows = []
+    bonds = bond_evidence = revision_report = None
     if mode == 'workbook-replay':
         if expected not in by_date:
             gaps['missing_close_dates'] = [expected]
@@ -278,6 +361,11 @@ def run_erp(workbook, out_dir, *, mode, expected_date, bond_history=None, force_
         source_report['online_data_acquisition_performed'] = False
         source_report['note'] = 'Faithful calculation replay only; no claim that uploaded figures are current online observations.'
     else:
+        if mode == 'free-official':
+            # Check the treasury rows first: the bond monitor must still run if
+            # the later PE or close source is temporarily unavailable.
+            bonds, bond_evidence, revision_report = _load_bonds_with_revision(
+                bond_history, expected, previous, output, notify, recheck=True)
         # No old workbook close or PE can serve as a live acquisition fallback.
         notify(f'正在获取沪深300收盘点位：{previous}、{expected}')
         close = fetch_close(expected, previous, output / 'raw' / 'close')
@@ -306,26 +394,14 @@ def run_erp(workbook, out_dir, *, mode, expected_date, bond_history=None, force_
                                 'new_close': close_rows[day]['close'], 'old_pe': original['pe_ttm_mcw'] if original else None,
                                 'new_pe_input': str(pe_input), 'new_pe_raw': str(pe_raw),
                                 'new_pe_source': pe_rows[day].get('source', pe['source'])})
-        if bond_history is None:
-            notify('正在获取中债国债收益率曲线并检查历史日期覆盖')
-            capture = fetch_bond_history(HISTORY_START, expected, output / 'raw' / 'bond')
-            bond_history = capture['normalized_path']
-        bonds, bond_evidence = _load_bond_rows(bond_history, expected)
-        if mode == 'free-official' and max(bonds) < expected:
-            # Routine update: one batch containing the latest and previous source
-            # session. An older history gap remains a gap, never a filled value.
-            recent = fetch_bond([previous, expected], output / 'raw' / 'bond-update')
-            updated = {r['date']: r for r in recent['normalized']}
-            bonds.update(updated)
-            rolling_path = output / 'raw' / 'bond' / 'official-rolling-normalized.json'
-            _write_json(rolling_path, [bonds[d] for d in sorted(bonds)])
-            bonds, updated_evidence = _load_bond_rows(rolling_path, expected)
-            bond_evidence = {'initial_history': bond_evidence, 'latest_two_session_update': recent,
-                             'combined_history': updated_evidence, 'same_official_method_only': True}
+        if bonds is None:
+            bonds, bond_evidence, revision_report = _load_bonds_with_revision(
+                bond_history, expected, previous, output, notify, recheck=mode == 'free-official')
         required = sorted(by_date)
         gaps['missing_bond_dates'] = [day for day in required if day not in bonds]
         source_report.update({'online_data_acquisition_performed': True,
                               'close_acquisition': close, 'pe_acquisition': pe, 'bond_acquisition': bond_evidence,
+                              'bond_revision_check': revision_report,
                               'candidate_bond_definition': BOND_METHOD_ID,
                               'is_original_benchmark_close': False,
                               'bond_history_recalculated_in_full': not gaps['missing_bond_dates'],
@@ -358,7 +434,9 @@ def run_erp(workbook, out_dir, *, mode, expected_date, bond_history=None, force_
     metadata.update({'actual_start': rows[0]['date'] if rows else None,
                      'actual_end': rows[-1]['date'] if rows else None, 'points': len(rows),
                      'expected_date_present': any(r['date'] == expected for r in rows),
-                     'all_required_dates_present': gaps['all_required_dates_present']})
+                     'all_required_dates_present': gaps['all_required_dates_present'],
+                     'bond_revision_check': revision_report})
+    gaps['bond_revision_check'] = revision_report
     source_report['historical_difference_count'] = sum(
         Decimal(r['erp_change_percentage_points']) != 0 for r in source_report['historical_differences'])
     _write_json(output / '来源兼容性报告.json', source_report)

@@ -108,6 +108,12 @@ def describe(category, payload):
                 '本期ERP减去前一交易日ERP得到百分点变动；与6%参考线比较。缺少任一必要交易日时停止生成，不用旧值冒充当天。']
             if latest.get('pe_ttm_mcw') and latest.get('bond_yield_number') is not None:
                 calculations.append(f"本期代入：100 ÷ {latest['pe_ttm_mcw']} − {latest['bond_yield_number']} = {number(latest['erp_percent'])}%。")
+            revision = facts.get('bond_revision_check') or {}
+            if revision.get('corrections'):
+                corrected = '、'.join(f"{item['date']}（{item['old_yield']}→{item['new_yield']}）" for item in revision['corrections'])
+                calculations.append(f"中债十年期国债收益率每日复核最近两个交易日，已修正：{corrected}；修正后历史ERP已重算并回写。")
+            elif revision.get('checked_dates'):
+                calculations.append(f"中债十年期国债收益率每日复核最近两个交易日：{'、'.join(revision['checked_dates'])}，未发现修正。")
         elif category == 'liquidity':
             source('中国货币网 · 质押式回购行情', 'https://www.chinamoney.com.cn/chinese/mkdatapm/')
             quotes, bank = facts.get('quotes', {}), facts.get('central_bank')

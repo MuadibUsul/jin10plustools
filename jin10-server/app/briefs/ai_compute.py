@@ -49,31 +49,35 @@ def token_cost(day, out, state, refresh=False):
     if not valid:
         raise ValueError('Token 支出价格尚无已导入数据')
     latest = valid[-1]
-    if latest['date'] != day:
+    manual = os.getenv('MANUAL_GENERATION') == '1'
+    if latest['date'] != day and not manual:
         raise ValueError(f"Token 数据尚未更新到 {day}；最新已导入为 {latest['date']}")
+    actual_day = latest['date']
     record(out, 3, 'Token 支出价格数据校验通过，正在生成历史图')
-    previous = next((row for row in valid if row['date'] == (date.fromisoformat(day) - timedelta(days=7)).isoformat()), None)
+    previous = next((row for row in valid if row['date'] == (date.fromisoformat(actual_day) - timedelta(days=7)).isoformat()), None)
     weekly = _pct(latest['token_price'], previous['token_price'] if previous else None)
-    recent = [row for row in valid if date.fromisoformat(row['date']) >= date.fromisoformat(day) - timedelta(days=6)]
+    recent = [row for row in valid if date.fromisoformat(row['date']) >= date.fromisoformat(actual_day) - timedelta(days=6)]
     low = min((row['token_price'] for row in recent), default=latest['token_price'])
     high = max((row['token_price'] for row in recent), default=latest['token_price'])
     peak = max(valid, key=lambda row: (row['token_price'], row['date']))
     price = _decimal(latest['token_price'])
     title_dir = '上涨' if weekly and weekly.startswith('+') and weekly != '+0.00' else '下跌' if weekly and weekly.startswith('-') and weekly != '-0.00' else '持平'
     title = f"【AI算力CPI】Token支出价格指数{title_dir}" if weekly else "【AI算力CPI】Token支出价格指数更新"
-    body = f"截至{day}，Token支出价格指数报{price:.4f}美元/百万Token"
+    body = f"截至{actual_day}，Token支出价格指数报{price:.4f}美元/百万Token"
     if weekly:
         body += f"，较七个自然日前{'上涨' if title_dir == '上涨' else '下跌' if title_dir == '下跌' else '持平'}{abs(Decimal(weekly)):.2f}%"
     else:
         body += "，七个自然日前的基准值缺失，本次不报告周变化"
     body += f"；最近7日已收录价格区间为{_decimal(low):.4f}—{_decimal(high):.4f}美元。"
     warnings = []
+    if actual_day != day:
+        warnings.append(f"使用最新可用数据日 {actual_day}，目标数据日 {day} 尚无更新")
     if not previous:
-        warnings.append(f"缺少 {day} 七个自然日前的 Token 基准值，本期未报告周变化")
+        warnings.append(f"缺少 {actual_day} 七个自然日前的 Token 基准值，本期未报告周变化")
     (out/'ai-compute-source.json').write_text(json.dumps(valid,ensure_ascii=False,default=str),encoding='utf-8')
     chart = token_chart(valid, out)
     return {
-        'title': title, 'dynamic_body': body, 'images': [chart.name], 'data_date': day,
+        'title': title, 'dynamic_body': body, 'images': [chart.name], 'data_date': actual_day,
         'warnings': warnings,
         'facts': {
             'token_price': f'{price:.4f}', 'previous_date': previous['date'] if previous else '',
@@ -97,26 +101,30 @@ def gpu_rental(day, out, state, refresh=False):
     if not complete:
         raise ValueError('GPU 租赁价格尚无完整三卡数据')
     latest = complete[-1]
-    if latest['date'] != day:
+    manual = os.getenv('MANUAL_GENERATION') == '1'
+    if latest['date'] != day and not manual:
         raise ValueError(f"GPU 数据尚未更新到 {day} 的完整三卡数据；最新完整日为 {latest['date']}")
+    actual_day = latest['date']
     record(out, 3, 'GPU 三卡租赁价格校验通过，正在生成历史图')
-    baseline_day = (date.fromisoformat(day) - timedelta(days=7)).isoformat()
+    baseline_day = (date.fromisoformat(actual_day) - timedelta(days=7)).isoformat()
     previous = next((row for row in complete if row['date'] == baseline_day), None)
     changes = {key: _pct(latest[key], previous[key]) if previous else None for key in ('a100', 'h100', 'b200')}
     peaks = {}
     warnings = []
     for key in ('a100', 'h100', 'b200'):
-        values = [row for row in rows if row[key] is not None and row['date'] < day]
+        values = [row for row in rows if row[key] is not None and row['date'] < actual_day]
         if not values:
             raise ValueError(f'{key} 缺少历史峰值数据')
         peaks[key] = max(values, key=lambda row: (row[key], row['date']))
+    if actual_day != day:
+        warnings.append(f"使用最新可用完整三卡日 {actual_day}，目标数据日 {day} 尚无更新")
     if not previous:
         warnings.append(f"缺少 {baseline_day} 的完整三卡基准，本期未报告周变化")
     title = f"【AI景气度指标】B200租赁价格报{_decimal(latest['b200']):.2f}美元/GPU每小时"
     parts = [f"B200租赁价格报{_decimal(latest['b200']):.2f}美元/GPU每小时"]
     for label, key in (('H100', 'h100'), ('A100', 'a100')):
         parts.append(f"{label}报{_decimal(latest[key]):.2f}美元/GPU每小时")
-    body = f"截至{day}，" + "；".join(parts)
+    body = f"截至{actual_day}，" + "；".join(parts)
     if previous:
         body += "。"
         for label, key in (('B200', 'b200'), ('H100', 'h100'), ('A100', 'a100')):
@@ -135,7 +143,7 @@ def gpu_rental(day, out, state, refresh=False):
     (out/'ai-compute-source.json').write_text(json.dumps(rows,ensure_ascii=False,default=str),encoding='utf-8')
     chart = gpu_chart(rows, out)
     return {
-        'title': title, 'dynamic_body': body, 'images': [chart.name], 'data_date': day,
+        'title': title, 'dynamic_body': body, 'images': [chart.name], 'data_date': actual_day,
         'warnings': warnings,
         'facts': {
             'a100': f"{_decimal(latest['a100']):.2f}", 'h100': f"{_decimal(latest['h100']):.2f}",

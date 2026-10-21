@@ -69,7 +69,7 @@ def execute(factory,id):
         config=db.get(BriefConfig,team_id)
         category_notes=(config.notes or {}).get(category,default_notes(category)) if config else default_notes(category)
     root=root_for(team_id);out=root/'runs'/str(id);out.mkdir(parents=True,exist_ok=True)
-    record(out,1,f'任务开始：生产日 {day}，数据日 {expected_date(category,day)}')
+    record(out,1,f'任务开始：生产日 {day}，目标数据日 {expected_date(category,day)}')
     if category=='valuation' and action=='produce':
         with factory() as db:
             restored=restore_pe_capture(db,db.get(BriefJob,id),out,
@@ -80,6 +80,7 @@ def execute(factory,id):
     env['AI_MODEL']=ai['model'];env['AI_BASE_URL']=ai['base_url']
     env['CATEGORY_NOTES']=category_notes
     env['AI_COMPUTE_TEAM_ID']=str(team_id)
+    env['MANUAL_GENERATION']='1' if job.created_by is not None else '0'
     # The runner keeps the fixed rule payload; Skill copy runs after it returns.
     env['SKILL_PRODUCTION']='1'
     command=[sys.executable,'-m','app.briefs.runner','--category',category,'--date',expected_date(category,day).isoformat(),
@@ -131,7 +132,8 @@ def execute(factory,id):
                 if not source_dir.is_relative_to(root.resolve()):
                     raise ValueError('被复用的来源快照路径不安全')
             source_archive=archive_run(db,job,out,history_dir=root/'history'/category,
-                                       source_dir=source_dir)
+                                       source_dir=source_dir,
+                                       data_date=payload.get('data_date') if payload else None)
             if payload and payload.get('valid') and category == 'valuation':
                 from .valuation_observations import save_history
                 save_history(db, team_id, id, out/'erp-plot-data.json')

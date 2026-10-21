@@ -46,6 +46,20 @@ def test_raw_normalized_and_history_are_archived_exactly(db_factory, seed, tmp_p
             archive_run(db, job, folder, history_dir=history, source_dir=source)
 
 
+def test_archive_records_the_actual_source_date_for_manual_latest_data(db_factory, seed, tmp_path):
+    folder = tmp_path / 'run'
+    folder.mkdir()
+    (folder / 'source.json').write_bytes(b'{"date":"2026-10-14"}')
+    with db_factory() as db:
+        job = BriefJob(team_id=seed['editor'].team_id, issue_date=date(2026, 10, 21),
+                       category='token_cost', dedupe_key='latest-source-date', attempts=1)
+        db.add(job); db.flush()
+        archive_run(db, job, folder, data_date='2026-10-14')
+        db.commit()
+        row = db.scalars(select(BriefSourceSnapshot).where(BriefSourceSnapshot.job_id == job.id)).one()
+        assert row.data_date == date(2026, 10, 14)
+
+
 def test_dated_pe_capture_can_be_restored_from_database(db_factory, seed, tmp_path):
     original = tmp_path / 'old-run'
     source = original / 'erp' / 'raw' / 'pe'

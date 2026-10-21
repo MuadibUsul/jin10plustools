@@ -4,7 +4,7 @@
 <main><div class="page-heading"><div><p class="eyebrow">FIXED BRIEFS</p><h1>固定快讯</h1><p class="muted">自动生产，逐项核对，确认后取稿。</p></div><div class="toolbar"><label>生产日期 <input type="date" id="day"></label><button id="refresh">刷新</button></div></div>
 <p id="message" role="status"></p><div id="brief-workspace" class="brief-workspace"><section id="cards" class="brief-grid"></section></div>
 
-<footer class="brief-footer">自动任务：工作日08:00—10:00（北京时间），到点停止重试；手动生成不限时。数据日取前一工作日，流动性取当天。</footer>
+<footer class="brief-footer">自动任务：工作日08:00—10:00（北京时间），到点停止重试；手动生成不限时，并自动刷新来源、采用最接近当前的可用数据。数据日取前一工作日，流动性取当天；AI算力栏目若当天未更新，会使用已导入的最新数据并在稿内标注实际数据日。</footer>
 </main><dialog id="detail-dialog" class="detail-dialog" aria-labelledby="detail-title"><section id="detail" class="detail"><div class="detail-head"><div><h2 id="detail-title"></h2><p id="detail-status" class="muted"></p></div><button id="close-detail">关闭</button></div>
 <div class="editor-grid"><div><label class="field">版本<select id="version" aria-label="稿件版本"></select></label>
 <label class="field">标题<input id="title" maxlength="300"></label><label class="field">动态正文<textarea id="body" rows="9"></textarea></label>

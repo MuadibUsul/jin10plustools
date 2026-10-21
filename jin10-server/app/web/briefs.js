@@ -87,7 +87,7 @@ function renderCards() {
     if (version?.warnings.length) body.append(node('p', '有来源或口径说明，请核对', 'warning'));
     const controls = node('div', undefined, 'toolbar');
     if (item?.versions.length) { const view = node('button', '查看与取稿'); view.onclick = () => safe(() => open(item)); controls.append(view); }
-    if (canEdit()) { const run = node('button', busy ? '任务执行中' : '生成稿件'); run.disabled = busy; run.onclick = () => safe(() => runJob(category.id, 'produce')); controls.append(run); }
+    if (canEdit()) { const run = node('button', busy ? '任务执行中' : '生成稿件'); run.disabled = busy; run.title = '自动刷新来源，并处理最接近当前的可用数据'; run.onclick = () => safe(() => runJob(category.id, 'produce')); controls.append(run); }
     body.append(controls);
   }
   renderProcess();

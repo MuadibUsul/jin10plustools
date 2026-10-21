@@ -148,6 +148,20 @@ def describe(category, payload):
                 '分级：巴菲特指数 70%以下低估、70-100%合理、100-150%偏高、150-200%高估、200%以上严重高估；ERP 7%以上很高、6-7%偏高、5.5-6%中性、4.5-5.5%偏低、4.5%以下很低。',
                 '综合结论 = 两项分级得分之和：≥4 高、2-3 较高、-1 到 1 中性、-3 到 -2 较低、≤-4 低。',
                 f"本期：巴菲特指数 {facts.get('buffett_pct')}%（{facts.get('buffett_grade')}），ERP {facts.get('erp_pct')}%（{facts.get('erp_grade')}），结论{facts.get('verdict')}。"]
+        elif category == 'token_cost':
+            source('Silicon Data · LLM Token Expenditure Index', facts.get('source'))
+            value('Token支出价格', facts.get('token_price'), '美元/百万Token')
+            value('七个自然日前价格', facts.get('previous_price'), '美元/百万Token')
+            value('周变化', facts.get('weekly_change_pct'), '%')
+            calculations = ['Token支出价格按当日和七个自然日前同口径比较；基准缺失时不替代。',
+                            '最近7日区间只使用已导入的非空价格；历史峰值保留日期。']
+        elif category == 'gpu_rental':
+            source('Silicon Data · GPU Index', facts.get('source'))
+            value('A100租赁价格', facts.get('a100'), '美元/GPU/小时')
+            value('H100租赁价格', facts.get('h100'), '美元/GPU/小时')
+            value('B200租赁价格', facts.get('b200'), '美元/GPU/小时')
+            calculations = ['周变化按七个自然日对齐，基准缺失时不补值。',
+                            '只使用同日三卡完整行；历史峰值按各卡已导入的非空序列计算。']
         elif category == 'us_structure':
             source('标普500等权指数（^SPXEW）', 'https://query1.finance.yahoo.com/v8/finance/chart/%5ESPXEW')
             source('标普500 / 纳指 / 道指 / 罗素2000（Yahoo Finance）', 'https://query1.finance.yahoo.com/v8/finance/chart/%5EGSPC')
@@ -189,7 +203,8 @@ def for_job(job, root):
     evidence = []
     # Fixed, registered snapshot names only; no user-provided paths or directory walk.
     for name in ('volume-raw.json', 'plot-data.json', 'source.json', 'liquidity-snapshot.json',
-                 'oil-source.json', 'oil-previous-source.json', 'buffett-plot-data.json', 'erp-plot-data.json'):
+                 'oil-source.json', 'oil-previous-source.json', 'buffett-plot-data.json', 'erp-plot-data.json',
+                 'ai-compute-source.json'):
         path = folder/name
         if not path.is_file():
             path = artifact/name

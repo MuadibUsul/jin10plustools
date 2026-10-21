@@ -50,9 +50,9 @@ def test_export_is_open_to_every_signed_in_member(client, rows):
     data = client.get('/api/export/datasets', headers=login(client, 'viewer@plus.test')).json()
     assert data['max_rows'] == data_export.MAX_ROWS
     keys = [item['key'] for item in data['datasets']]
-    assert keys[:2] == ['materials', 'assets'] and 'brief_versions' in keys and len(keys) == 24
+    assert keys[:2] == ['materials', 'assets'] and 'brief_versions' in keys and len(keys) == 25
     assert 'feedback' in keys and 'news_events' in keys
-    assert keys[-1] == 'news_audit_events'
+    assert keys[-1] == 'ai_compute_observations'
     labels = {item['key']: item for item in data['datasets']}
     assert labels['materials']['date_label'] == '采集时间'
     assert '标题' in labels['materials']['columns']

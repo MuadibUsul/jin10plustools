@@ -16,7 +16,7 @@ from app.db.models import BriefConfig,BriefIssue,BriefJob,BriefVersion,BriefSour
 from app.services.team_settings import briefs_ai
 from .delivery import default_notes
 from app.db.session import get_session_factory,get_engine
-from .policy import CATEGORIES,CHINA,expected_date,first_run,production_window,next_slot
+from .policy import AUTO_CATEGORIES,CATEGORIES,CHINA,expected_date,first_run,production_window,next_slot
 from .service import enqueue,ensure_issue,owned,append_version,root_for,find_issue
 from .source_archive import archive_run,restore_pe_capture
 from .progress import record,read
@@ -30,7 +30,7 @@ def schedule(factory,now=None):
     local=now.astimezone(CHINA);count=0
     with factory() as db:
         for config in db.scalars(select(BriefConfig).where(BriefConfig.enabled.is_(True))):
-            for category in CATEGORIES:
+            for category in AUTO_CATEGORIES:
                 if local.time().replace(tzinfo=None)<first_run(category):continue
                 issue=find_issue(db,config.team_id,local.date(),category)
                 if issue and issue.version:continue
@@ -79,6 +79,7 @@ def execute(factory,id):
     env=dict(os.environ);env['AI_PROVIDER']=ai['provider'];env['AI_API_KEY']=ai['key']
     env['AI_MODEL']=ai['model'];env['AI_BASE_URL']=ai['base_url']
     env['CATEGORY_NOTES']=category_notes
+    env['AI_COMPUTE_TEAM_ID']=str(team_id)
     # The runner keeps the fixed rule payload; Skill copy runs after it returns.
     env['SKILL_PRODUCTION']='1'
     command=[sys.executable,'-m','app.briefs.runner','--category',category,'--date',expected_date(category,day).isoformat(),

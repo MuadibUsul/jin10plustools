@@ -18,13 +18,15 @@ from .skill_ai import SKILL_NAMES, asset_dir
 
 MAX_INSTRUCTIONS = 8000
 MAX_HISTORY = 20
-CATEGORY_ORDER = ("volume", "turnover", "valuation", "liquidity", "oil_etf")
+CATEGORY_ORDER = ("volume", "turnover", "valuation", "liquidity", "oil_etf", "token_cost", "gpu_rental")
 SKILL_IDS = {
     "volume": "news.fixed-volume",
     "turnover": "news.fixed-turnover",
     "valuation": "news.fixed-valuation",
     "liquidity": "news.fixed-liquidity",
     "oil_etf": "news.fixed-oil-etf",
+    "token_cost": "news.fixed-token-cost",
+    "gpu_rental": "news.fixed-gpu-rental",
 }
 CATEGORY_GROUPS = {
     "volume": "A股温度计",
@@ -32,6 +34,8 @@ CATEGORY_GROUPS = {
     "valuation": "A股温度计",
     "liquidity": "流动性",
     "oil_etf": "原油ETF",
+    "token_cost": "AI算力",
+    "gpu_rental": "AI算力",
 }
 RESEARCH_LABELS = {
     "news.event-extraction": "事件提取",

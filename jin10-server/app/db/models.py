@@ -624,3 +624,26 @@ class NewsAuditEvent(Base):
     reason: Mapped[str] = mapped_column(Text, default='')
     details: Mapped[dict[str, Any]] = mapped_column(JsonType, default=dict)
     created_at: Mapped[dt.datetime] = mapped_column(default=utcnow)
+
+class AIComputeObservation(Base):
+    """Team-scoped Token and GPU rental observations imported from source workbooks."""
+    __tablename__ = 'ai_compute_observations'
+    __table_args__ = (
+        Index('uq_ai_compute_team_kind_date', 'team_id', 'kind', 'date', unique=True),
+        Index('ix_ai_compute_team_kind_date', 'team_id', 'kind', 'date'),
+        CheckConstraint("kind IN ('token', 'gpu')", name='ck_ai_compute_kind'),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    team_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('teams.id', ondelete='CASCADE'))
+    kind: Mapped[str] = mapped_column(String(20))
+    date: Mapped[dt.date] = mapped_column(Date)
+    token_price: Mapped[float | None] = mapped_column(Numeric(20, 6))
+    a100: Mapped[float | None] = mapped_column(Numeric(20, 6))
+    h100: Mapped[float | None] = mapped_column(Numeric(20, 6))
+    b200: Mapped[float | None] = mapped_column(Numeric(20, 6))
+    source: Mapped[str] = mapped_column(String(200), default='Silicon Data')
+    source_status: Mapped[str | None] = mapped_column(String(100))
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+    created_at: Mapped[dt.datetime] = mapped_column(default=utcnow)
+    updated_at: Mapped[dt.datetime] = mapped_column(default=utcnow)

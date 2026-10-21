@@ -24,6 +24,8 @@ SKILL_NAMES = {
     "valuation": "jin10-plus-valuation-text",
     "liquidity": "jin10-plus-liquidity-text",
     "oil_etf": "jin10-plus-oil-etf-text",
+    "token_cost": "jin10-plus-token-cost-text",
+    "gpu_rental": "jin10-plus-gpu-rental-text",
 }
 _NUMBER = re.compile(r"\d[\d,]*(?:\.\d+)?")
 _DAILY = re.compile(r"(?m)^### (\d{4}-\d{2}-\d{2})\s*$")

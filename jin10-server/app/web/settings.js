@@ -2,13 +2,15 @@ import { $, node, api, login, displayTime, copyDate, download, toast } from '/wo
 
 let data, dirty = false;
 const providers = { jev: ['日报选稿 · JEV', '栏目分类与重要度评分'], deepseek: ['固定快讯 · DeepSeek', '用于五项固定快讯的 Skill 文案产出'], chat2api: ['固定快讯 · chat2api', '通过本机 chat2api 节点使用 ChatGPT 网页版；留空则使用服务器节点密钥'], openai: ['固定快讯 · OpenAI', '官方 API；支持 gpt-5.6-sol 等节点无法访问的模型'] };
-const templateCategories = new Set(['volume', 'turnover', 'valuation', 'liquidity', 'oil_etf']);
+const templateCategories = new Set(['volume', 'turnover', 'valuation', 'liquidity', 'oil_etf', 'token_cost', 'gpu_rental']);
 const templateDefaults = {
   volume: '{date}，沪深两市成交额为{amount_wan_yi}万亿元，较前一交易日变动{change_yi}亿元（{change_pct}%）；连续{streak}个交易日{side}20日均线（{ma20_wan_yi}万亿元）。成交活跃度较前日{activity}。',
   turnover: '{date}，A股低于3%换手率股票占比的9日均线{low_direction}{low_ma9}%，高于5%换手率股票占比的9日均线{high_direction}{high_ma9}%，{threshold_side}17%参考阈值。',
   valuation: '{date}，巴菲特指数（A股总市值／上年度全年GDP）为{buffett}%；沪深300指数股权风险溢价（ERP）为{erp}%，前值为{previous_erp}%。',
   liquidity: '{date}，DR007加权利率报{dr007}%，DR001加权利率报{dr001}%。',
   oil_etf: '{date}，WTI（USO）名义敞口约{uso_wan_barrels}万桶，Brent（BNO）期货持仓约{bno_wan_barrels}万桶。',
+  token_cost: '截至{date}，Token支出价格指数报{token_price}美元/百万Token。',
+  gpu_rental: '截至{date}，B200租赁价格报{b200}美元/GPU每小时；H100报{h100}美元；A100报{a100}美元。',
 };
 const templateVars = {
   volume: '{date} {previous_date} {amount_yi} {amount_wan_yi} {change_yi} {change_pct} {streak} {side} {ma20_yi} {ma20_wan_yi} {activity} {builtin_body}',
@@ -16,6 +18,8 @@ const templateVars = {
   valuation: '{date} {erp_date} {buffett} {erp} {previous_erp} {erp_previous_date} {builtin_body}',
   liquidity: '{date} {quote_date} {quote_time} {dr007} {dr001} {builtin_body}',
   oil_etf: '{date} {previous_date} {uso_wan_barrels} {bno_wan_barrels} {previous_uso_wan_barrels} {previous_bno_wan_barrels} {uso_change_wan_barrels} {bno_change_wan_barrels} {builtin_body}',
+  token_cost: '{date} {token_price} {previous_date} {previous_price} {weekly_change_pct} {range_low} {range_high} {peak_price} {peak_date} {builtin_body}',
+  gpu_rental: '{date} {a100} {h100} {b200} {a100_change_pct} {h100_change_pct} {b200_change_pct} {b200_peak} {b200_peak_date} {builtin_body}',
 };
 const modelOptions = { jev: ['jev-latest'], deepseek: ['deepseek-chat', 'deepseek-reasoner', 'deepseek-v4-pro'], chat2api: ['gpt-4o-mini', 'gpt-4o', 'gpt-4', 'gpt-3.5-turbo', 'o1', 'o1-mini', 'o3-mini', 'auto'], openai: ['gpt-5.6-sol', 'gpt-5.6', 'gpt-5.6-terra', 'gpt-5.6-luna', 'gpt-4o-mini', 'gpt-4o', 'o1', 'o3-mini'] };
 function message(text, error = false) { const target = $('#settings-message'); target.textContent = text; target.className = error ? 'error' : 'success'; }

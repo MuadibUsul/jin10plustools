@@ -17,7 +17,7 @@ def test_settings_are_team_scoped_versioned_and_do_not_expose_keys(client, seed,
         'revision': initial['revision'], 'notes': {'valuation': '团队估值注释'},
         'schedule_enabled': True, 'ai': {'deepseek': {'key': key, 'model': 'deepseek-chat'}}})
     assert result.status_code == 200
-    assert key not in result.text and 'token' not in result.text
+    assert key not in result.text
     data = result.json()
     assert data['ai']['deepseek']['configured'] and data['ai']['deepseek']['source'] == 'team'
     assert data['note_revisions'][0]['after']['valuation'] == '团队估值注释'
@@ -122,7 +122,7 @@ def test_live_settings_are_scoped_validated_and_editable(client, seed):
 def test_notes_accept_every_registered_category(client):
     admin=login(client,'admin@plus.test')
     categories=client.get('/api/settings',headers=admin).json()['categories']
-    assert [c['id'] for c in categories][-2:]==['us_barometer','us_structure']
+    assert [c['id'] for c in categories][-2:]==['token_cost','gpu_rental']
     response=client.put('/api/settings',headers=admin,
                         json={'revision':0,'notes':{c['id']:'注：'+c['label'] for c in categories}})
     assert response.status_code==200, response.text

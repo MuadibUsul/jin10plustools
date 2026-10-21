@@ -9,7 +9,7 @@ from __future__ import annotations
 import string
 from typing import Any
 
-CATEGORIES = ("volume", "turnover", "valuation", "liquidity", "oil_etf")
+CATEGORIES = ("volume", "turnover", "valuation", "liquidity", "oil_etf", "token_cost", "gpu_rental")
 MAX_TEMPLATE = 4000
 
 
@@ -87,6 +87,19 @@ def _values(category: str, payload: dict) -> dict[str, Any]:
         values.update({"dr007": (rows.get("DR007") or {}).get("weighted_rate", ""),
                        "dr001": (rows.get("DR001") or {}).get("weighted_rate", ""),
                        "quote_date": quotes.get("quote_date", ""), "quote_time": quotes.get("updated_at", "")})
+    elif category == "token_cost":
+        values.update({"token_price": facts.get("token_price", ""),
+                       "previous_price": facts.get("previous_price", ""),
+                       "weekly_change_pct": facts.get("weekly_change_pct", ""),
+                       "range_low": facts.get("range_low", ""), "range_high": facts.get("range_high", ""),
+                       "peak_price": facts.get("peak_price", ""), "peak_date": facts.get("peak_date", "")})
+    elif category == "gpu_rental":
+        values.update({"a100": facts.get("a100", ""), "h100": facts.get("h100", ""),
+                       "b200": facts.get("b200", ""),
+                       "a100_change_pct": facts.get("a100_change_pct", ""),
+                       "h100_change_pct": facts.get("h100_change_pct", ""),
+                       "b200_change_pct": facts.get("b200_change_pct", ""),
+                       "b200_peak": facts.get("b200_peak", ""), "b200_peak_date": facts.get("b200_peak_date", "")})
     elif category == "oil_etf":
         funds = {fund.get("ticker"): fund for fund in facts.get("funds") or [] if isinstance(fund, dict)}
         previous = facts.get("previous_source") or {}

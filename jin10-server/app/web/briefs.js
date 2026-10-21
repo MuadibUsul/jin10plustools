@@ -8,7 +8,7 @@ let imageKey = null, pendingImageKey = null, imageRequest = 0;
 const pendingCategories = new Set();
 const active = (job) => ['queued', 'running', 'waiting'].includes(job?.status);
 const processSteps = ['准备任务', '正在取数', '正在制图', '整理文案', '保存稿件', '生成完成'];
-const channelNames = { volume: '成交额', turnover: '换手率', valuation: '估值', liquidity: '流动性', oil_etf: '原油ETF', us_barometer: '美股晴雨表', us_structure: '美股结构' };
+const channelNames = { volume: '成交额', turnover: '换手率', valuation: '估值', liquidity: '流动性', oil_etf: '原油ETF', us_barometer: '美股晴雨表', us_structure: '美股结构', token_cost: 'AI算力CPI', gpu_rental: 'AI景气度指标' };
 const terminalSeen = new Map(), terminalPending = new Set();
 let terminalDay = null, polling = false;
 const today = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai' }).format(new Date());

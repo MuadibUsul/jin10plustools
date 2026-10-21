@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 
 from app.briefs.policy import CHINA
 from app.db.models import (
-    Asset, Board, BriefAudit, BriefIssue, BriefJob, BriefSourceSnapshot, BriefVersion,
+    AIComputeObservation, Asset, Board, BriefAudit, BriefIssue, BriefJob, BriefSourceSnapshot, BriefVersion,
     Feedback, Issue, Material, NewsAuditEvent, NewsDraft, NewsDraftRevision, NewsEvent,
     NewsEventAnalysis, NewsEventClaim, NewsEventClaimEvidence, NewsEventEvidence,
     NewsEventRevision, NewsSkillVersion, NewsWorkflowNode, NewsWorkflowRun,
@@ -445,6 +445,21 @@ NEWS_AUDIT = build_dataset(
     ),
 )
 
+AI_COMPUTE = build_dataset(
+    key='ai_compute_observations', label='AI算力原始数据', date_label='数据日期',
+    description='团队导入的 Token 支出价格与 A100/H100/B200 GPU 租赁价格，保留缺项、来源和修订号。',
+    model=AIComputeObservation, team_column=AIComputeObservation.team_id,
+    date_column=AIComputeObservation.date, day=True,
+    columns=_columns(
+        ('id', '记录ID', 'text'), ('kind', '指标类型', 'text'), ('date', '数据日期', 'date'),
+        ('token_price', 'Token支出价格', 'text'), ('a100', 'A100价格', 'text'),
+        ('h100', 'H100价格', 'text'), ('b200', 'B200价格', 'text'),
+        ('source', '来源', 'text'), ('source_status', '来源状态', 'text'),
+        ('revision', '修订号', 'int'), ('created_at', '入库时间', 'datetime'),
+        ('updated_at', '更新时间', 'datetime'),
+    ),
+)
+
 DATASETS: dict[str, Dataset] = {dataset.key: dataset for dataset in (
     MATERIALS, ASSETS, ISSUES, BOARDS, PARSE_REPORTS,
     BRIEF_ISSUES, BRIEF_VERSIONS, BRIEF_JOBS, BRIEF_SNAPSHOTS, VALUATION_OBSERVATIONS,
@@ -452,6 +467,7 @@ DATASETS: dict[str, Dataset] = {dataset.key: dataset for dataset in (
     NEWS_EVENTS, NEWS_EVENT_REVISIONS, NEWS_EVENT_EVIDENCE, NEWS_EVENT_CLAIMS,
     NEWS_EVENT_LINKS, NEWS_EVENT_ANALYSES, NEWS_DRAFTS, NEWS_DRAFT_REVISIONS,
     NEWS_SKILL_VERSIONS, NEWS_WORKFLOW_RUNS, NEWS_WORKFLOW_NODES, NEWS_AUDIT,
+    AI_COMPUTE,
 )}
 
 

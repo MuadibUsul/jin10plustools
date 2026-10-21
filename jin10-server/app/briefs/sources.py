@@ -259,5 +259,7 @@ def us_structure(day,out,state,refresh=False):
     return payload
 
 
+from .ai_compute import token_cost,gpu_rental
 ADAPTERS={'volume':volume,'turnover':turnover,'valuation':valuation,'liquidity':liquidity,'oil_etf':oil_etf,
-          'us_barometer':us_barometer,'us_structure':us_structure}
+          'us_barometer':us_barometer,'us_structure':us_structure,
+          'token_cost':token_cost,'gpu_rental':gpu_rental}

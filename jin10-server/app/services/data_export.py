@@ -23,7 +23,7 @@ from app.db.models import (
     Feedback, Issue, Material, NewsAuditEvent, NewsDraft, NewsDraftRevision, NewsEvent,
     NewsEventAnalysis, NewsEventClaim, NewsEventClaimEvidence, NewsEventEvidence,
     NewsEventRevision, NewsSkillVersion, NewsWorkflowNode, NewsWorkflowRun,
-    ParseReport, User,
+    ParseReport, User, ValuationObservation,
 )
 
 MAX_ROWS = 50_000
@@ -35,7 +35,7 @@ EXCEL_CELL_LIMIT = 32_767
 class Column:
     key: str
     label: str
-    kind: str = 'text'  # text | int | bool | date | datetime | json | user
+    kind: str = 'text'  # text | int | decimal | bool | date | datetime | json | user
     value: Callable[[object], object] = field(default=lambda row: None)
 
 
@@ -238,6 +238,19 @@ BRIEF_SNAPSHOTS = build_dataset(
     ),
 )
 
+VALUATION_OBSERVATIONS = build_dataset(
+    key='valuation_observations', label='股债性价比原始数据', date_label='日期',
+    description='沪深300收盘价、市值加权PE、十年期国债收益率及ERP。国债收益率填百分数数值（如1.65），ERP以小数存储（如0.06代表6%）。',
+    model=ValuationObservation, team_column=ValuationObservation.team_id,
+    date_column=ValuationObservation.date, day=True,
+    columns=_columns(
+        ('date', '日期', 'date'), ('close', '沪深300收盘价', 'decimal'),
+        ('pe_ttm_mcw', 'PE-TTM市值加权', 'decimal'),
+        ('bond_yield_number', '中国十年期国债收益率（不需加百分号）', 'decimal'),
+        ('erp', '沪深300风险溢价指数', 'decimal'),
+    ),
+)
+
 BRIEF_AUDITS = build_dataset(
     key='brief_audits', label='快讯审核记录', date_label='操作时间',
     description='固定快讯的确认、撤回与保存等操作记录。',
@@ -434,7 +447,8 @@ NEWS_AUDIT = build_dataset(
 
 DATASETS: dict[str, Dataset] = {dataset.key: dataset for dataset in (
     MATERIALS, ASSETS, ISSUES, BOARDS, PARSE_REPORTS,
-    BRIEF_ISSUES, BRIEF_VERSIONS, BRIEF_JOBS, BRIEF_SNAPSHOTS, BRIEF_AUDITS, FEEDBACK,
+    BRIEF_ISSUES, BRIEF_VERSIONS, BRIEF_JOBS, BRIEF_SNAPSHOTS, VALUATION_OBSERVATIONS,
+    BRIEF_AUDITS, FEEDBACK,
     NEWS_EVENTS, NEWS_EVENT_REVISIONS, NEWS_EVENT_EVIDENCE, NEWS_EVENT_CLAIMS,
     NEWS_EVENT_LINKS, NEWS_EVENT_ANALYSES, NEWS_DRAFTS, NEWS_DRAFT_REVISIONS,
     NEWS_SKILL_VERSIONS, NEWS_WORKFLOW_RUNS, NEWS_WORKFLOW_NODES, NEWS_AUDIT,
@@ -469,6 +483,8 @@ def text_cell(column: Column, value, users: dict[str, str]) -> str | int | None:
         return users.get(str(value), str(value))
     if column.kind == 'int':
         return value
+    if column.kind == 'decimal':
+        return str(value)
     return str(value)
 
 
@@ -483,6 +499,8 @@ def json_cell(column: Column, value, users: dict[str, str]):
         return users.get(str(value), str(value))
     if column.kind == 'json':
         return value
+    if column.kind == 'decimal':
+        return float(value)
     if isinstance(value, uuid.UUID):
         return str(value)
     return value
@@ -514,6 +532,8 @@ def xlsx_bytes(dataset: Dataset, rows: Iterable[dict], users: dict[str, str]) ->
         values = []
         for column in dataset.columns:
             value = text_cell(column, row.get(column.key), users)
+            if column.kind == 'decimal' and value is not None:
+                value = float(value)
             if isinstance(value, str) and len(value) > EXCEL_CELL_LIMIT:
                 value = value[:EXCEL_CELL_LIMIT - 1] + '…'
             values.append(value)

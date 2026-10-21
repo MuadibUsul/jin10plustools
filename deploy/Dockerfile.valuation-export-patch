@@ -1,0 +1,12 @@
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
+USER root
+COPY jin10-server/app/db/models.py /srv/app/db/models.py
+COPY jin10-server/app/services/data_export.py /srv/app/services/data_export.py
+COPY jin10-server/app/briefs/worker.py /srv/app/briefs/worker.py
+COPY jin10-server/app/briefs/valuation_observations.py /srv/app/briefs/valuation_observations.py
+COPY jin10-server/alembic/versions/0013_valuation_observations.py /srv/alembic/versions/0013_valuation_observations.py
+RUN chmod a+r /srv/app/db/models.py /srv/app/services/data_export.py \
+    /srv/app/briefs/worker.py /srv/app/briefs/valuation_observations.py \
+    /srv/alembic/versions/0013_valuation_observations.py
+USER plus

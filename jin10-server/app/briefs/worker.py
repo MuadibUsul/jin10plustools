@@ -131,6 +131,9 @@ def execute(factory,id):
                     raise ValueError('被复用的来源快照路径不安全')
             source_archive=archive_run(db,job,out,history_dir=root/'history'/category,
                                        source_dir=source_dir)
+            if payload and payload.get('valid') and category == 'valuation':
+                from .valuation_observations import save_history
+                save_history(db, team_id, id, out/'erp-plot-data.json')
         except Exception as exc:
             db.rollback()
             job=db.get(BriefJob,id)

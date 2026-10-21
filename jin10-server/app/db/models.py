@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import datetime as dt
 import uuid
+from decimal import Decimal
 from enum import StrEnum
 from typing import Any
 
 from sqlalchemy import (
     JSON, Boolean, CheckConstraint, Date, DateTime, Float, ForeignKey, Index, Integer,
-    LargeBinary, String, Text, text,
+    LargeBinary, Numeric, String, Text, text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
@@ -287,6 +288,22 @@ class BriefSourceSnapshot(Base):
     byte_count: Mapped[int] = mapped_column(Integer)
     content: Mapped[bytes] = mapped_column(LargeBinary)
     captured_at: Mapped[dt.datetime] = mapped_column(default=utcnow)
+
+
+class ValuationObservation(Base):
+    """One team-scoped, validated ERP input/output row per trading date."""
+    __tablename__ = 'valuation_observations'
+    __table_args__ = (Index('uq_valuation_observation_team_date', 'team_id', 'date', unique=True),)
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    team_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('teams.id', ondelete='CASCADE'))
+    date: Mapped[dt.date] = mapped_column(Date)
+    close: Mapped[Decimal] = mapped_column(Numeric(20, 6))
+    pe_ttm_mcw: Mapped[Decimal] = mapped_column(Numeric(20, 6))
+    bond_yield_number: Mapped[Decimal] = mapped_column(Numeric(20, 6))
+    erp: Mapped[Decimal] = mapped_column(Numeric(20, 12))
+    source_status: Mapped[str | None] = mapped_column(String(100))
+    source_job_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey('brief_jobs.id', ondelete='SET NULL'))
 
 
 class BriefAudit(Base):

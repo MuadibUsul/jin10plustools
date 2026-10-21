@@ -50,7 +50,7 @@ def test_export_is_open_to_every_signed_in_member(client, rows):
     data = client.get('/api/export/datasets', headers=login(client, 'viewer@plus.test')).json()
     assert data['max_rows'] == data_export.MAX_ROWS
     keys = [item['key'] for item in data['datasets']]
-    assert keys[:2] == ['materials', 'assets'] and 'brief_versions' in keys and len(keys) == 23
+    assert keys[:2] == ['materials', 'assets'] and 'brief_versions' in keys and len(keys) == 24
     assert 'feedback' in keys and 'news_events' in keys
     assert keys[-1] == 'news_audit_events'
     labels = {item['key']: item for item in data['datasets']}
@@ -126,3 +126,40 @@ def test_count_range_and_errors(client, rows, monkeypatch):
     assert client.get('/api/export/materials', headers=headers, params={'format': 'xml'}).status_code == 422
     monkeypatch.setattr(data_export, 'MAX_ROWS', 1)
     assert client.get('/api/export/materials', headers=headers).status_code == 413
+
+
+def test_valuation_series_exports_five_numeric_columns_and_team_dates(client, db_factory, seed, tmp_path):
+    from app.briefs.valuation_observations import save_history
+
+    source = tmp_path / 'erp-plot-data.json'
+    source.write_text(json.dumps([
+        {'date': '2026-10-19', 'close': '4500.25', 'pe_ttm_mcw': '12.5',
+         'bond_yield_number': '2.0', 'source_status': 'verified'},
+        {'date': '2026-10-20', 'close': '4510.5', 'pe_ttm_mcw': '10',
+         'bond_yield_number': '2.0', 'source_status': 'verified'},
+    ]), encoding='utf-8')
+    with db_factory() as db:
+        assert save_history(db, seed['admin'].team_id, None, source) == 2
+        db.commit()
+
+    headers = login(client, 'viewer@plus.test')
+    key = 'valuation_observations'
+    dataset = {item['key']: item for item in client.get('/api/export/datasets', headers=headers).json()['datasets']}[key]
+    assert dataset['columns'] == ['日期', '沪深300收盘价', 'PE-TTM市值加权',
+                                  '中国十年期国债收益率（不需加百分号）', '沪深300风险溢价指数']
+    params = {'start': '2026-10-20', 'end': '2026-10-20'}
+    assert client.get(f'/api/export/{key}/count', headers=headers, params=params).json()['count'] == 1
+    payload = client.get(f'/api/export/{key}', headers=headers,
+                         params={**params, 'format': 'json'}).json()
+    assert payload == [{'date': '2026-10-20', 'close': 4510.5, 'pe_ttm_mcw': 10.0,
+                        'bond_yield_number': 2.0, 'erp': 0.08}]
+    csv_text = client.get(f'/api/export/{key}', headers=headers, params=params).content.decode('utf-8-sig')
+    assert csv_text.splitlines()[0] == ','.join(dataset['columns'])
+    assert csv_text.splitlines()[1].startswith('2026-10-20,4510.500000,10.000000,2.000000,0.080000000000')
+    book = load_workbook(io.BytesIO(client.get(f'/api/export/{key}', headers=headers,
+                                                 params={**params, 'format': 'xlsx'}).content), read_only=True)
+    lines = list(book['数据'].iter_rows(values_only=True))
+    assert lines[0] == tuple(dataset['columns'])
+    assert lines[1] == ('2026-10-20', 4510.5, 10, 2, 0.08)
+    assert client.get(f'/api/export/{key}', headers=login(client, 'out@plus.test'),
+                      params={**params, 'format': 'json'}).json() == []

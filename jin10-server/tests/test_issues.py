@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import base64
+import io
 import uuid
 from pathlib import Path
+from zipfile import ZipFile
 
 import pymupdf
 import pytest
 from fastapi.testclient import TestClient
+from PIL import Image
 from pptx import Presentation
 
 from app.ppt.pdf import PdfConversionError
@@ -197,3 +201,25 @@ def test_preview_matches_generated_pages(client: TestClient) -> None:
     issue = client.post("/api/issues", json=body, headers=h).json()
     assert preview["page_count"] == issue["page_count"] == len(preview["pages"])
     assert all(p.startswith("data:image/png;base64,") for p in preview["pages"])
+    first_page = base64.b64decode(preview["pages"][0].split(",", 1)[1])
+    with Image.open(io.BytesIO(first_page)) as image:
+        assert image.width >= 1200  # 96 DPI preview supports readable page zoom.
+
+
+def test_preview_images_zip_is_clear_and_under_one_mb_per_page(client: TestClient) -> None:
+    h, ids = seed(client)
+    body = {"issue_date": "2026-09-21", "sections": [{"id": "macro", "material_ids": [ids[0]]}]}
+    response = client.post('/api/issues/preview/images', json=body, headers=h)
+    assert response.status_code == 200, response.text
+    assert response.headers['content-type'].startswith('application/zip')
+    assert 'filename*=' in response.headers['content-disposition']
+    with ZipFile(io.BytesIO(response.content)) as archive:
+        names = archive.namelist()
+        assert len(names) == 7
+        assert names[0].endswith('/第01页.webp')
+        for name in names:
+            data = archive.read(name)
+            assert len(data) <= 1_000_000
+            with Image.open(io.BytesIO(data)) as image:
+                assert image.size == (1800, 3200)
+    assert client.get('/api/issues', headers=h).json() == []

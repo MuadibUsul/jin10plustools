@@ -33,6 +33,7 @@ from app.schemas import GenerateRequest
 
 from .storage import asset_path
 from .cover_selection import recommend_cover_ids
+from .issue_images import ImageSizeError, image_zip
 
 
 class IssueBuildError(ValueError):
@@ -153,7 +154,8 @@ def default_issue_date() -> dt.date:
 
 
 _PREVIEW_CACHE: OrderedDict[str, tuple[list[bytes], int, list[str]]] = OrderedDict()
-_PREVIEW_CACHE_SIZE = 16
+_PREVIEW_CACHE_SIZE = 4
+PREVIEW_DPI = 96
 
 
 def _preview_key(db: Session, user: User, req: GenerateRequest, dpi: int) -> str:
@@ -167,7 +169,7 @@ def _preview_key(db: Session, user: User, req: GenerateRequest, dpi: int) -> str
     return hashlib.sha256(raw.encode()).hexdigest()
 
 
-def preview_issue(db: Session, user: User, req: GenerateRequest, dpi: int = 40) -> tuple[list[bytes], int, list[str]]:
+def preview_issue(db: Session, user: User, req: GenerateRequest, dpi: int = PREVIEW_DPI) -> tuple[list[bytes], int, list[str]]:
     """生成一份临时 PDF 并逐页渲染为 PNG（与正式生成同一流程，所见即所得）；内容未变时直接返回缓存"""
     key = _preview_key(db, user, req, dpi)
     if key in _PREVIEW_CACHE:
@@ -188,3 +190,15 @@ def _render_preview(db: Session, user: User, req: GenerateRequest, dpi: int) -> 
         with pymupdf.open(pdf) as doc:
             images = [page.get_pixmap(dpi=dpi).tobytes("png") for page in doc]
     return images, pages, warnings
+
+
+def preview_image_zip(db: Session, user: User, req: GenerateRequest) -> bytes:
+    """Render the same PDF as preview and package its pages at delivery resolution."""
+    with tempfile.TemporaryDirectory(prefix='plus-page-images-') as tmp:
+        _pptx, pdf, _pages, warnings = render_issue(db, user, req, Path(tmp))
+        if pdf is None:
+            raise IssueBuildError('图片生成失败：' + '；'.join(warnings))
+        try:
+            return image_zip(pdf, req.issue_date)
+        except ImageSizeError as err:
+            raise IssueBuildError(str(err)) from err

@@ -12,6 +12,7 @@ import json
 import uuid
 from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta
+from decimal import Decimal
 from typing import Callable, Iterable, Iterator
 
 from sqlalchemy import Select, func, select
@@ -76,12 +77,12 @@ def day_conditions(column, start: date | None, end: date | None) -> list:
 def build_dataset(*, key: str, label: str, description: str, date_label: str, model,
                   team_column, date_column, columns: tuple[Column, ...],
                   join: tuple | None = None, day: bool = False, extra_select: tuple = (),
-                  order_column=None) -> Dataset:
+                  order_column=None, fixed_conditions: tuple = ()) -> Dataset:
     """Register a single-table (or one-join) dataset filtered by its business date."""
     conditions = (day_conditions if day else dt_conditions)
 
     def filters(team_id: uuid.UUID, start: date | None, end: date | None) -> list:
-        return [team_column == team_id, *conditions(date_column, start, end)]
+        return [team_column == team_id, *fixed_conditions, *conditions(date_column, start, end)]
 
     def count(db: Session, team_id: uuid.UUID, start: date | None, end: date | None) -> int:
         stmt = select(func.count()).select_from(model).where(*filters(team_id, start, end))
@@ -447,7 +448,7 @@ NEWS_AUDIT = build_dataset(
 
 AI_COMPUTE = build_dataset(
     key='ai_compute_observations', label='AI算力原始数据', date_label='数据日期',
-    description='团队导入的 Token 支出价格与 A100/H100/B200 GPU 租赁价格，保留缺项、来源和修订号。',
+    description='Token 支出价格与 A100/H100/B200 GPU 租赁价格的合并原始记录，包含导入、网页公开展示及人工替代数据。',
     model=AIComputeObservation, team_column=AIComputeObservation.team_id,
     date_column=AIComputeObservation.date, day=True,
     columns=_columns(
@@ -462,6 +463,68 @@ AI_COMPUTE = build_dataset(
     ),
 )
 
+
+def compute_reading(row: AIComputeObservation, metric: str) -> dict | None:
+    """Use only the capture currently supplying the observation's price."""
+    display = row.manual_display if row.source_status == 'manual_entry' else row.public_display
+    for reading in (display or {}).get('readings') or []:
+        if reading.get('metric') == metric:
+            return reading
+    return None
+
+
+def compute_price(row: AIComputeObservation, metric: str) -> str | None:
+    value = getattr(row, 'token_price' if metric == 'token' else metric)
+    if value is None:
+        return None
+    reading = compute_reading(row, metric)
+    if reading is not None and reading.get('price') is not None:
+        if Decimal(str(reading['price'])) == value:
+            return str(reading['price'])
+    return format(value.normalize(), 'f')
+
+
+def compute_week_change(row: AIComputeObservation, metric: str) -> str | None:
+    """Expose a reported 7-day change; leave missing workbook values blank."""
+    reading = compute_reading(row, metric)
+    return reading.get('week_change_pct') if reading else None
+
+
+TOKEN_COST = build_dataset(
+    key='token_cost_observations', label='AI算力CPI·Token价格', date_label='数据日期',
+    description='每个数据日一行，导出当前生效的 Token 支出价格、页面或人工提供的七日变化、来源及修订号；未提供的七日变化留空。',
+    model=AIComputeObservation, team_column=AIComputeObservation.team_id,
+    date_column=AIComputeObservation.date, day=True,
+    fixed_conditions=(AIComputeObservation.kind == 'token',),
+    columns=(
+        *_columns(('date', '数据日期', 'date')),
+        Column('token_price', 'Token支出价格', 'text', lambda row: compute_price(row, 'token')),
+        Column('week_change_pct', '七日变化（%）', 'text',
+               lambda row: compute_week_change(row, 'token')),
+        *_columns(('source', '来源', 'text'), ('source_status', '来源状态', 'text'),
+                  ('revision', '修订号', 'int'), ('updated_at', '更新时间', 'datetime')),
+    ),
+)
+
+GPU_RENTAL = build_dataset(
+    key='gpu_rental_observations', label='AI景气度指标·GPU租赁价格', date_label='数据日期',
+    description='每个数据日一行，导出当前生效的 A100/H100/B200 租赁价格、页面或人工提供的七日变化、来源及修订号；缺项留空。',
+    model=AIComputeObservation, team_column=AIComputeObservation.team_id,
+    date_column=AIComputeObservation.date, day=True,
+    fixed_conditions=(AIComputeObservation.kind == 'gpu',),
+    columns=(
+        *_columns(('date', '数据日期', 'date')),
+        *(Column(metric, f'{metric.upper()}价格', 'text',
+                 lambda row, metric=metric: compute_price(row, metric))
+          for metric in ('a100', 'h100', 'b200')),
+        *(Column(f'{metric}_week_change_pct', f'{metric.upper()}七日变化（%）', 'text',
+                 lambda row, metric=metric: compute_week_change(row, metric))
+          for metric in ('a100', 'h100', 'b200')),
+        *_columns(('source', '来源', 'text'), ('source_status', '来源状态', 'text'),
+                  ('revision', '修订号', 'int'), ('updated_at', '更新时间', 'datetime')),
+    ),
+)
+
 DATASETS: dict[str, Dataset] = {dataset.key: dataset for dataset in (
     MATERIALS, ASSETS, ISSUES, BOARDS, PARSE_REPORTS,
     BRIEF_ISSUES, BRIEF_VERSIONS, BRIEF_JOBS, BRIEF_SNAPSHOTS, VALUATION_OBSERVATIONS,
@@ -469,7 +532,7 @@ DATASETS: dict[str, Dataset] = {dataset.key: dataset for dataset in (
     NEWS_EVENTS, NEWS_EVENT_REVISIONS, NEWS_EVENT_EVIDENCE, NEWS_EVENT_CLAIMS,
     NEWS_EVENT_LINKS, NEWS_EVENT_ANALYSES, NEWS_DRAFTS, NEWS_DRAFT_REVISIONS,
     NEWS_SKILL_VERSIONS, NEWS_WORKFLOW_RUNS, NEWS_WORKFLOW_NODES, NEWS_AUDIT,
-    AI_COMPUTE,
+    AI_COMPUTE, TOKEN_COST, GPU_RENTAL,
 )}
 
 

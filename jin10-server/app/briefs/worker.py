@@ -29,7 +29,7 @@ PUBLIC_COMPUTE_CATEGORIES = frozenset({'token_cost', 'gpu_rental'})
 def public_read_requested(job) -> bool:
     """Only an editor's Generate action reads the public compute pages."""
     return (job.category in PUBLIC_COMPUTE_CATEGORIES and job.action == 'produce'
-            and job.created_by is not None)
+            and job.created_by is not None and getattr(job, 'manual_capture', None) is None)
 
 
 def capture_public_for_job(factory, job_id, out):
@@ -52,6 +52,23 @@ def capture_public_for_job(factory, job_id, out):
         result = store_visible(db, team_id, capture)
         db.commit()
     save(out/'public-compute-read.json', {**capture, 'storage_result': result})
+    return capture
+
+
+def capture_manual_for_job(factory, job_id, out):
+    from .manual_compute import store_manual
+    from .sources import save
+
+    with factory() as db:
+        job = db.get(BriefJob, job_id)
+        capture, team_id = job.manual_capture, job.team_id
+        if not capture or job.category not in PUBLIC_COMPUTE_CATEGORIES:
+            raise ValueError('任务没有有效的人工录入数据')
+        if capture['category'] != job.category:
+            raise ValueError('人工录入栏目与生成任务不一致')
+        result = store_manual(db, team_id, capture)
+        db.commit()
+    save(out/'manual-compute-read.json', {**capture, 'storage_result': result})
     return capture
 
 
@@ -95,6 +112,8 @@ def execute(factory,id):
         # Scheduled jobs have no requesting user; manual jobs keep their editor id.
         automatic=job.created_by is None and not preview
         requested_public_read=public_read_requested(job)
+        requested_manual_read=(category in PUBLIC_COMPUTE_CATEGORIES and action=='produce'
+                               and job.manual_capture is not None)
         team=db.get(Team,team_id)
         ai=briefs_ai(team)
         team_settings=dict(team.settings or {})
@@ -102,10 +121,13 @@ def execute(factory,id):
         category_notes=(config.notes or {}).get(category,default_notes(category)) if config else default_notes(category)
     root=root_for(team_id);out=root/'runs'/str(id);out.mkdir(parents=True,exist_ok=True)
     record(out,1,f'任务开始：生产日 {day}，目标数据日 {expected_date(category,day)}')
-    if requested_public_read:
+    capture = None
+    if requested_public_read or requested_manual_read:
         try:
-            capture = capture_public_for_job(factory, id, out)
-            record(out,2,f'公开网页数据已核对，截至{capture["data_date"]}')
+            capture = (capture_manual_for_job(factory, id, out) if requested_manual_read
+                       else capture_public_for_job(factory, id, out))
+            origin = '人工录入' if requested_manual_read else '公开网页'
+            record(out,2,f'{origin}数据已核对，截至{capture["data_date"]}')
         except Exception as exc:
             if not isinstance(exc, ValueError):
                 log.exception('Public compute read failed for job %s', id)
@@ -127,6 +149,9 @@ def execute(factory,id):
     env['AI_MODEL']=ai['model'];env['AI_BASE_URL']=ai['base_url']
     env['CATEGORY_NOTES']=category_notes
     env['AI_COMPUTE_TEAM_ID']=str(team_id)
+    env.pop('AI_COMPUTE_DATA_DATE', None)
+    if capture is not None:
+        env['AI_COMPUTE_DATA_DATE']=capture['data_date']
     env['MANUAL_GENERATION']='1' if job.created_by is not None else '0'
     # The runner keeps the fixed rule payload; Skill copy runs after it returns.
     env['SKILL_PRODUCTION']='1'

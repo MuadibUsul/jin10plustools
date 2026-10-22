@@ -34,7 +34,9 @@ def store_visible(db, team_id, capture: dict) -> dict:
         raise ValueError(f'公开页面截至{stamp}，晚于它的{latest.date}数据已入库，本次停止生成')
     values = {row['metric']: Decimal(row['price']) for row in readings}
     display = {'captured_at': capture['captured_at'], 'readings': readings}
-    # Keep a more precise manual/verified price while attaching the public
+    if existing is not None and existing.source_status == 'manual_entry':
+        return {'status': 'preserved_manual', 'revision': existing.revision}
+    # Keep a more precise workbook/verified price while attaching the public
     # card's displayed 7D change when its rounded price agrees exactly.
     if existing is not None and existing.source_status != 'public_visible_summary':
         for row in readings:

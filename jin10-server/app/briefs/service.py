@@ -41,7 +41,7 @@ def ensure_issue(db,team_id,day,category):
     return find_issue(db,team_id,day,category)
 
 
-def enqueue(db,team_id,day,category,*,action='produce',preview=False,user_id=None,unique=False):
+def enqueue(db,team_id,day,category,*,action='produce',preview=False,user_id=None,unique=False,manual_capture=None):
     key=f'{team_id}:{day}:{category}:{action}:{"preview" if preview else "production"}'
     active_key=f'{team_id}:{day}:{category}'
     # A failed explicit retry is a new attempt; active duplicate clicks reuse a job.
@@ -61,7 +61,8 @@ def enqueue(db,team_id,day,category,*,action='produce',preview=False,user_id=Non
     try:
         with db.begin_nested():
             item=BriefJob(team_id=team_id,issue_date=day,category=category,action=action,
-                          preview=preview,dedupe_key=key,active_key=active_key,created_by=user_id)
+                          preview=preview,dedupe_key=key,active_key=active_key,created_by=user_id,
+                          manual_capture=manual_capture)
             db.add(item);db.flush()
         ensure_issue(db,team_id,day,category)
         return item

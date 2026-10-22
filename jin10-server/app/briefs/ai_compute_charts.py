@@ -36,7 +36,8 @@ def token_chart(rows, out):
     last_day, last = values[-1]
     ax.scatter([last_day], [last], color=ORANGE, zorder=3, s=42)
     latest = rows[-1]
-    shown = ((latest.get('public_display') or {}).get('readings') or [None])[0]
+    shown = (((latest.get('public_display') or {}).get('readings') or
+              (latest.get('manual_display') or {}).get('readings') or [None])[0])
     label = shown['price'] if shown and shown.get('metric') == 'token' else f'{last:.4f}'
     ax.annotate(label, (last_day, last), textcoords='offset points',
                 xytext=(0, 12), ha='center', fontproperties=cjk(13), color=ORANGE)
@@ -59,7 +60,9 @@ def token_chart(rows, out):
     for spine in ax2.spines.values():
         spine.set_visible(False)
     fig.text(.1, .93, 'PLUS 快讯 / AI算力CPI', fontproperties=cjk(14), color=MUTED)
-    fig.text(.1, .04, '数据来源：Silicon Data · LLM Token Expenditure Index', fontproperties=cjk(11), color=MUTED)
+    source = ('历史工作簿及本期编辑人工录入' if latest.get('status') == 'manual_entry' and not latest.get('public_display')
+              else 'Silicon Data · LLM Token Expenditure Index')
+    fig.text(.1, .04, '数据来源：'+source, fontproperties=cjk(11), color=MUTED)
     path = Path(out) / 'AI算力CPI.png'
     fig.savefig(path, dpi=100)
     plt.close(fig)
@@ -71,6 +74,10 @@ def gpu_chart(rows, out):
     fig = plt.figure(figsize=(12, 8.4), dpi=100, facecolor='white')
     ax = fig.add_axes([.1, .15, .84, .68])
     labels = []
+    latest = rows[-1]
+    displayed = {item['metric']: item['price'] for item in
+                 ((latest.get('public_display') or {}).get('readings') or
+                  (latest.get('manual_display') or {}).get('readings') or [])}
     for label, key, color in series:
         points = [(row['date'], float(row[key])) for row in rows if row.get(key) is not None]
         if not points:
@@ -78,7 +85,7 @@ def gpu_chart(rows, out):
         labels.append(label)
         ax.plot([day for day, _ in points], [value for _, value in points],
                 color=color, lw=2, label=label)
-        ax.annotate(f'{points[-1][1]:.2f}', (points[-1][0], points[-1][1]),
+        ax.annotate(displayed.get(key, f'{points[-1][1]:.2f}'), (points[-1][0], points[-1][1]),
                     textcoords='offset points', xytext=(6, 4), fontproperties=cjk(11), color=color)
     ax.set_title('AI芯片租赁价格（美元/GPU/小时，NeoCloud）', fontproperties=cjk(20), loc='left', pad=18)
     all_days = [row['date'] for row in rows]
@@ -90,7 +97,9 @@ def gpu_chart(rows, out):
     for spine in ax.spines.values():
         spine.set_visible(False)
     fig.text(.1, .93, 'PLUS 快讯 / AI景气度指标', fontproperties=cjk(14), color=MUTED)
-    fig.text(.1, .04, '数据来源：Silicon Data · A100/H100/B200 NeoCloud', fontproperties=cjk(11), color=MUTED)
+    source = ('历史工作簿及本期编辑人工录入' if latest.get('status') == 'manual_entry' and not latest.get('public_display')
+              else 'Silicon Data · A100/H100/B200 NeoCloud')
+    fig.text(.1, .04, '数据来源：'+source, fontproperties=cjk(11), color=MUTED)
     path = Path(out) / 'AI景气度指标.png'
     fig.savefig(path, dpi=100)
     plt.close(fig)

@@ -6,6 +6,8 @@ let me, config, items = [], selected = null, current = null, dirty = false;
 const blobs = new Set();
 let imageKey = null, pendingImageKey = null, imageRequest = 0;
 const pendingCategories = new Set();
+const computeCategories = new Set(['token_cost', 'gpu_rental']);
+let manualCategory = null;
 const active = (job) => ['queued', 'running', 'waiting'].includes(job?.status);
 const processSteps = ['准备任务', '正在取数', '正在制图', '整理文案', '保存稿件', '生成完成'];
 const channelNames = { volume: '成交额', turnover: '换手率', valuation: '估值', liquidity: '流动性', oil_etf: '原油ETF', us_barometer: '美股晴雨表', us_structure: '美股结构', token_cost: 'AI算力CPI', gpu_rental: 'AI景气度指标' };
@@ -87,7 +89,8 @@ function renderCards() {
     if (version?.warnings.length) body.append(node('p', '有来源或口径说明，请核对', 'warning'));
     const controls = node('div', undefined, 'toolbar');
     if (item?.versions.length) { const view = node('button', '查看与取稿'); view.onclick = () => safe(() => open(item)); controls.append(view); }
-    if (canEdit()) { const run = node('button', busy ? '任务执行中' : '生成稿件'); run.disabled = busy; run.title = '自动刷新来源，并处理最接近当前的可用数据'; run.onclick = () => safe(() => runJob(category.id, 'produce')); controls.append(run); }
+    if (canEdit()) { const run = node('button', busy ? '任务执行中' : '生成稿件'); run.disabled = busy; run.title = computeCategories.has(category.id) ? '读取公开网页展示值并生成稿件' : '自动刷新来源，并处理最接近当前的可用数据'; run.onclick = () => safe(() => runJob(category.id, 'produce')); controls.append(run); }
+    if (canEdit() && computeCategories.has(category.id)) { const manual = node('button', '人工填数并生成'); manual.disabled = busy; manual.onclick = () => openManual(category.id); controls.append(manual); }
     body.append(controls);
   }
   renderProcess();
@@ -180,6 +183,39 @@ async function runJob(category, action) {
   message(`任务已加入队列：${labels[result.status] || result.status}。不必重复点击。`); toast('任务已加入队列。'); await refresh();
   } finally { pendingCategories.delete(category); renderCards(); }
 }
+function openManual(category) {
+  manualCategory = category;
+  const form = $('#manual-form'); form.reset();
+  $('#manual-title').textContent = `${channelNames[category]} · 人工填数`;
+  form.elements.data_date.max = $('#day').value;
+  $('#manual-token').hidden = category !== 'token_cost';
+  $('#manual-gpu').hidden = category !== 'gpu_rental';
+  for (const name of ['token_price', 'a100', 'h100', 'b200']) form.elements[name].required =
+    category === 'token_cost' ? name === 'token_price' : name !== 'token_price';
+  $('#manual-dialog').showModal();
+}
+function closeManual() { $('#manual-dialog').close(); manualCategory = null; }
+$('#manual-close').onclick = $('#manual-cancel').onclick = closeManual;
+$('#manual-form').onsubmit = (event) => {
+  event.preventDefault();
+  if (!manualCategory || pendingCategories.has(manualCategory)) return;
+  const category = manualCategory, form = $('#manual-form');
+  const fields = category === 'token_cost'
+    ? ['token_price', 'token_change_pct']
+    : ['a100', 'h100', 'b200', 'a100_change_pct', 'h100_change_pct', 'b200_change_pct'];
+  const payload = {category, issue_date: $('#day').value,
+    data_date: form.elements.data_date.value, source_note: form.elements.source_note.value};
+  for (const name of fields) payload[name] = form.elements[name].value.trim();
+  const submit = $('#manual-submit'); submit.disabled = true;
+  safe(async () => {
+    pendingCategories.add(category); renderCards();
+    try {
+      const job = await api('/api/briefs/manual-compute', {method:'POST', json:payload});
+      closeManual(); message(`人工数据已加入生成队列：${labels[job.status] || job.status}。`);
+      toast('人工数据已提交，正在生成稿件。'); await refresh();
+    } finally { pendingCategories.delete(category); renderCards(); }
+  }).finally(() => { submit.disabled = false; });
+};
 function clearImages() {
   imageRequest++; imageKey = pendingImageKey = null; current = null;
   for (const url of blobs) URL.revokeObjectURL(url);

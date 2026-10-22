@@ -456,6 +456,7 @@ AI_COMPUTE = build_dataset(
         ('h100', 'H100价格', 'text'), ('b200', 'B200价格', 'text'),
         ('source', '来源', 'text'), ('source_status', '来源状态', 'text'),
         ('public_display', '网页公开展示值', 'json'),
+        ('manual_display', '人工录入展示值', 'json'),
         ('revision', '修订号', 'int'), ('created_at', '入库时间', 'datetime'),
         ('updated_at', '更新时间', 'datetime'),
     ),

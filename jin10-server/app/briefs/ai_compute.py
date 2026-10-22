@@ -29,6 +29,7 @@ def _rows(kind: str) -> list[dict]:
                 'date': row.date.isoformat(), 'token_price': row.token_price,
                 'a100': row.a100, 'h100': row.h100, 'b200': row.b200,
                 'source': row.source, 'status': row.source_status, 'revision': row.revision,
+                'public_display': row.public_display,
             })
         return result
 
@@ -43,6 +44,24 @@ def _pct(current, previous) -> str | None:
     return f"{(Decimal(current) / Decimal(previous) - 1) * 100:+.2f}"
 
 
+def _public_week(row, metric):
+    if not row.get('public_display'):
+        return None
+    matches = [item for item in (row.get('public_display') or {}).get('readings', [])
+               if item.get('metric') == metric and item.get('date') == row['date']]
+    if len(matches) != 1:
+        raise ValueError('公开页面七日变化快照不完整')
+    item = matches[0]
+    if Decimal(item['price']) != _decimal(row['token_price' if metric == 'token' else metric]):
+        raise ValueError('公开页面价格与已入库数据不一致')
+    return item
+
+
+def _direction(change):
+    value = Decimal(change)
+    return '上涨' if value > 0 else '下跌' if value < 0 else '持平'
+
+
 def token_cost(day, out, state, refresh=False):
     rows = _rows('token')
     valid = [row for row in rows if row['token_price'] is not None]
@@ -54,25 +73,34 @@ def token_cost(day, out, state, refresh=False):
         raise ValueError(f"Token 数据尚未更新到 {day}；最新已导入为 {latest['date']}")
     actual_day = latest['date']
     record(out, 3, 'Token 支出价格数据校验通过，正在生成历史图')
+    public = _public_week(latest, 'token')
     previous = next((row for row in valid if row['date'] == (date.fromisoformat(actual_day) - timedelta(days=7)).isoformat()), None)
-    weekly = _pct(latest['token_price'], previous['token_price'] if previous else None)
+    weekly = public['week_change_pct'] if public else _pct(latest['token_price'], previous['token_price'] if previous else None)
     recent = [row for row in valid if date.fromisoformat(row['date']) >= date.fromisoformat(actual_day) - timedelta(days=6)]
     low = min((row['token_price'] for row in recent), default=latest['token_price'])
     high = max((row['token_price'] for row in recent), default=latest['token_price'])
     peak = max(valid, key=lambda row: (row['token_price'], row['date']))
     price = _decimal(latest['token_price'])
-    title_dir = '上涨' if weekly and weekly.startswith('+') and weekly != '+0.00' else '下跌' if weekly and weekly.startswith('-') and weekly != '-0.00' else '持平'
+    title_dir = _direction(weekly) if weekly is not None else '持平'
     title = f"【AI算力CPI】Token支出价格指数{title_dir}" if weekly else "【AI算力CPI】Token支出价格指数更新"
-    body = f"截至{actual_day}，Token支出价格指数报{price:.4f}美元/百万Token"
-    if weekly:
-        body += f"，较七个自然日前{'上涨' if title_dir == '上涨' else '下跌' if title_dir == '下跌' else '持平'}{abs(Decimal(weekly)):.2f}%"
+    price_text = public['price'] if public else f'{price:.4f}'
+    body = f"截至{actual_day}，Token支出价格指数报{price_text}美元/百万Token"
+    if public:
+        body += f"，官网公开页展示的七日变化为{title_dir}{abs(Decimal(weekly)):.1f}%"
+    elif weekly:
+        body += f"，较七个自然日前{title_dir}{abs(Decimal(weekly)):.2f}%"
     else:
         body += "，七个自然日前的基准值缺失，本次不报告周变化"
-    body += f"；最近7日已收录价格区间为{_decimal(low):.4f}—{_decimal(high):.4f}美元。"
+    if public:
+        body += '。'
+    else:
+        body += f"；最近7日已收录价格区间为{_decimal(low):.4f}—{_decimal(high):.4f}美元。"
     warnings = []
     if actual_day != day:
         warnings.append(f"使用最新可用数据日 {actual_day}，目标数据日 {day} 尚无更新")
-    if not previous:
+    if public:
+        warnings.append('公开产品页仅展示Token价格两位小数及七日变化一位小数；未补成工作簿四位精度')
+    elif not previous:
         warnings.append(f"缺少 {actual_day} 七个自然日前的 Token 基准值，本期未报告周变化")
     (out/'ai-compute-source.json').write_text(json.dumps(valid,ensure_ascii=False,default=str),encoding='utf-8')
     chart = token_chart(valid, out)
@@ -80,17 +108,19 @@ def token_cost(day, out, state, refresh=False):
         'title': title, 'dynamic_body': body, 'images': [chart.name], 'data_date': actual_day,
         'warnings': warnings,
         'facts': {
-            'token_price': f'{price:.4f}', 'previous_date': previous['date'] if previous else '',
-            'previous_price': f"{_decimal(previous['token_price']):.4f}" if previous else '',
-            'weekly_change_pct': weekly or '', 'range_low': f'{_decimal(low):.4f}',
-            'range_high': f'{_decimal(high):.4f}', 'peak_price': f"{_decimal(peak['token_price']):.4f}",
+            'token_price': price_text, 'previous_date': '' if public else previous['date'] if previous else '',
+            'previous_price': '' if public else f"{_decimal(previous['token_price']):.4f}" if previous else '',
+            'weekly_change_pct': weekly or '', 'range_low': '' if public else f'{_decimal(low):.4f}',
+            'range_high': '' if public else f'{_decimal(high):.4f}', 'peak_price': f"{_decimal(peak['token_price']):.4f}",
             'peak_date': peak['date'], 'source': 'Silicon Data LLM Token Expenditure Index',
+            'source_precision': public['precision'] if public else 4,
         },
         'process_details': {
             'sources': [{'label': 'Silicon Data LLM Token Expenditure Index', 'url': 'https://www.silicondata.com/products/silicon-index/llm-token-expenditure-index'}],
-            'inputs': [{'label': 'Token 支出价格', 'value': f'{price:.4f}', 'unit': '美元/百万Token'}],
-            'calculations': ['周变化 = 当日价格 ÷ 七个自然日前价格 − 1；基准日缺失时不替代。',
-                             '最近7日区间只使用已导入的非空价格；历史极值保留日期。'],
+            'inputs': [{'label': 'Token 支出价格', 'value': price_text, 'unit': '美元/百万Token'}],
+            'calculations': (['官网公开页直接展示价格及七日变化，保留页面精度；不从两位小数反推四位价格。']
+                             if public else ['周变化 = 当日价格 ÷ 七个自然日前价格 − 1；基准日缺失时不替代。',
+                                             '最近7日区间只使用已导入的非空价格；历史极值保留日期。']),
         },
     }
 
@@ -108,7 +138,10 @@ def gpu_rental(day, out, state, refresh=False):
     record(out, 3, 'GPU 三卡租赁价格校验通过，正在生成历史图')
     baseline_day = (date.fromisoformat(actual_day) - timedelta(days=7)).isoformat()
     previous = next((row for row in complete if row['date'] == baseline_day), None)
-    changes = {key: _pct(latest[key], previous[key]) if previous else None for key in ('a100', 'h100', 'b200')}
+    public = {key: _public_week(latest, key) for key in ('a100', 'h100', 'b200')}
+    public_mode = all(public.values())
+    changes = {key: public[key]['week_change_pct'] if public_mode else _pct(latest[key], previous[key]) if previous else None
+               for key in ('a100', 'h100', 'b200')}
     peaks = {}
     warnings = []
     for key in ('a100', 'h100', 'b200'):
@@ -118,14 +151,22 @@ def gpu_rental(day, out, state, refresh=False):
         peaks[key] = max(values, key=lambda row: (row[key], row['date']))
     if actual_day != day:
         warnings.append(f"使用最新可用完整三卡日 {actual_day}，目标数据日 {day} 尚无更新")
-    if not previous:
+    if public_mode:
+        warnings.append('七日变化取自官网公开卡片的一位小数展示值，未用两位价格反推精确涨跌幅')
+    elif not previous:
         warnings.append(f"缺少 {baseline_day} 的完整三卡基准，本期未报告周变化")
     title = f"【AI景气度指标】B200租赁价格报{_decimal(latest['b200']):.2f}美元/GPU每小时"
     parts = [f"B200租赁价格报{_decimal(latest['b200']):.2f}美元/GPU每小时"]
     for label, key in (('H100', 'h100'), ('A100', 'a100')):
         parts.append(f"{label}报{_decimal(latest[key]):.2f}美元/GPU每小时")
     body = f"截至{actual_day}，" + "；".join(parts)
-    if previous:
+    if public_mode:
+        body += '。'
+        for label, key in (('B200', 'b200'), ('H100', 'h100'), ('A100', 'a100')):
+            change = changes[key]
+            body += f'{label}官网展示的七日变化为{_direction(change)}{abs(Decimal(change)):.1f}%；'
+        body = body.rstrip('；') + '。'
+    elif previous:
         body += "。"
         for label, key in (('B200', 'b200'), ('H100', 'h100'), ('A100', 'a100')):
             change = changes[key]
@@ -151,11 +192,14 @@ def gpu_rental(day, out, state, refresh=False):
             'a100_change_pct': changes['a100'] or '', 'h100_change_pct': changes['h100'] or '',
             'b200_change_pct': changes['b200'] or '', 'b200_peak': f"{_decimal(peaks['b200']['b200']):.2f}",
             'b200_peak_date': peaks['b200']['date'], 'source': 'Silicon Data A100/H100/B200 NeoCloud',
+            'weekly_source': 'public_visible_summary' if public_mode else 'calculated_from_seven_day_baseline',
         },
         'process_details': {
             'sources': [{'label': 'Silicon Data GPU Index', 'url': 'https://www.silicondata.com/products/silicon-index'}],
             'inputs': [{'label': 'A100/H100/B200 租赁价格', 'value': f"{_decimal(latest['a100']):.2f}/{_decimal(latest['h100']):.2f}/{_decimal(latest['b200']):.2f}", 'unit': '美元/GPU/小时'}],
-            'calculations': ['周变化按七个自然日对齐，不按行号；基准日缺失时不补值。',
-                             '仅使用同日三卡完整行；历史峰值按各卡已导入的非空序列计算，等于高点记为并列。'],
+            'calculations': (['三卡同日公开页面展示价格及七日变化；按页面一位小数精度保留。',
+                              '历史峰值按已收录数据计算，等于高点记为并列。'] if public_mode else
+                             ['周变化按七个自然日对齐，不按行号；基准日缺失时不补值。',
+                              '仅使用同日三卡完整行；历史峰值按各卡已导入的非空序列计算，等于高点记为并列。']),
         },
     }

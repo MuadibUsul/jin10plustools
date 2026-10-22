@@ -644,6 +644,7 @@ class AIComputeObservation(Base):
     b200: Mapped[float | None] = mapped_column(Numeric(20, 6))
     source: Mapped[str] = mapped_column(String(200), default='Silicon Data')
     source_status: Mapped[str | None] = mapped_column(String(100))
+    public_display: Mapped[dict | None] = mapped_column(JSON)
     revision: Mapped[int] = mapped_column(Integer, default=1)
     created_at: Mapped[dt.datetime] = mapped_column(default=utcnow)
     updated_at: Mapped[dt.datetime] = mapped_column(default=utcnow)

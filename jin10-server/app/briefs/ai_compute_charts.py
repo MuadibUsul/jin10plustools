@@ -35,7 +35,10 @@ def token_chart(rows, out):
     ax.plot([day for day, _ in values], [price for _, price in values], color=BLUE, lw=2.2)
     last_day, last = values[-1]
     ax.scatter([last_day], [last], color=ORANGE, zorder=3, s=42)
-    ax.annotate(f'{last:.4f}', (last_day, last), textcoords='offset points',
+    latest = rows[-1]
+    shown = ((latest.get('public_display') or {}).get('readings') or [None])[0]
+    label = shown['price'] if shown and shown.get('metric') == 'token' else f'{last:.4f}'
+    ax.annotate(label, (last_day, last), textcoords='offset points',
                 xytext=(0, 12), ha='center', fontproperties=cjk(13), color=ORANGE)
     ax.set_title('Token支出价格指数（美元/百万Token）', fontproperties=cjk(20), loc='left', pad=18)
     ticks = sorted(set([0, len(values) - 1] + [round((len(values) - 1) * i / 7) for i in range(1, 7)]))

@@ -7,7 +7,7 @@ import signal
 import subprocess
 import sys
 import time
-from datetime import datetime,timedelta,time as clock
+from datetime import date,datetime,timedelta,time as clock
 
 from sqlalchemy import select,text,update
 
@@ -22,6 +22,37 @@ from .source_archive import archive_run,restore_pe_capture
 from .progress import record,read
 
 log=logging.getLogger('plus.briefs')
+
+PUBLIC_COMPUTE_CATEGORIES = frozenset({'token_cost', 'gpu_rental'})
+
+
+def public_read_requested(job) -> bool:
+    """Only an editor's Generate action reads the public compute pages."""
+    return (job.category in PUBLIC_COMPUTE_CATEGORIES and job.action == 'produce'
+            and job.created_by is not None)
+
+
+def capture_public_for_job(factory, job_id, out):
+    from .public_compute import fetch_visible
+    from .public_compute_store import store_visible
+    from .sources import save
+
+    with factory() as db:
+        job = db.get(BriefJob, job_id)
+        if not public_read_requested(job):
+            return None
+        category, issue_day, team_id = job.category, job.issue_date, job.team_id
+    capture = fetch_visible(category, today=datetime.now(CHINA).date())
+    source_day = date.fromisoformat(capture['data_date'])
+    if source_day > issue_day:
+        raise ValueError('网页数据日晚于所选生产日，请选择当前生产日后再生成')
+    if (datetime.now(CHINA).date() - source_day).days > 7:
+        raise ValueError(f'公开网页仍停留在{source_day}，超过七日；为避免旧稿，本次停止生成')
+    with factory() as db:
+        result = store_visible(db, team_id, capture)
+        db.commit()
+    save(out/'public-compute-read.json', {**capture, 'storage_result': result})
+    return capture
 
 
 def schedule(factory,now=None):
@@ -63,6 +94,7 @@ def execute(factory,id):
         team_id=job.team_id;category=job.category;preview=job.preview;day=job.issue_date;action=job.action
         # Scheduled jobs have no requesting user; manual jobs keep their editor id.
         automatic=job.created_by is None and not preview
+        requested_public_read=public_read_requested(job)
         team=db.get(Team,team_id)
         ai=briefs_ai(team)
         team_settings=dict(team.settings or {})
@@ -70,6 +102,21 @@ def execute(factory,id):
         category_notes=(config.notes or {}).get(category,default_notes(category)) if config else default_notes(category)
     root=root_for(team_id);out=root/'runs'/str(id);out.mkdir(parents=True,exist_ok=True)
     record(out,1,f'任务开始：生产日 {day}，目标数据日 {expected_date(category,day)}')
+    if requested_public_read:
+        try:
+            capture = capture_public_for_job(factory, id, out)
+            record(out,2,f'公开网页数据已核对，截至{capture["data_date"]}')
+        except Exception as exc:
+            if not isinstance(exc, ValueError):
+                log.exception('Public compute read failed for job %s', id)
+            message = str(exc) if isinstance(exc, ValueError) else '公开网页读取发生内部错误，请稍后由编辑重试'
+            with factory() as db:
+                failed = db.get(BriefJob,id)
+                failed.status='failed';failed.active_key=None;failed.lease_until=None
+                failed.error=message[:500];failed.updated_at=utcnow()
+                db.commit()
+            record(out,2,'公开网页读取未完成：'+message[:500])
+            return
     if category=='valuation' and action=='produce':
         with factory() as db:
             restored=restore_pe_capture(db,db.get(BriefJob,id),out,

@@ -18,3 +18,14 @@
 - 原稿“B200创半年新高”需校正：2026-07-14同为6.01，应区分并列与严格创新高。仅在历史窗口完整且来源通过核验时使用绝对极值判断。
 
 文件内备注是资料内容，不授予操作彭博、购买接口、覆盖历史或发布稿件的权限。开发应遵循当前用户要求和仓库规则。
+
+## 人工生成时的公开页面取数（2026-10-22）
+
+编辑点击这两个栏目的“生成稿件”后，后台分别读取 Silicon Data 官网公开产品页的可见摘要卡片：
+
+- Token：[LLM Token Expenditure Index](https://www.silicondata.com/products/silicon-index/llm-token-expenditure-index)
+- GPU：[A100](https://www.silicondata.com/products/silicon-index/a100)、[H100](https://www.silicondata.com/products/silicon-index/h100)、[B200](https://www.silicondata.com/products/silicon-index/b200)
+
+每次先核对官网 `robots.txt`，随后每个相关页面最多请求一次；没有定时抓取、自动重试、门户图表页或隐藏接口调用。只保存页面显示的数据日期、价格、七日变化、精度和来源网址，不保存网页 HTML。三张 GPU 卡片必须是同一天；网页拒绝访问、结构变化、数据超过七天或与已入库数据冲突时停止生成，不回退成旧稿。
+
+官网摘要卡片的 Token 价格为两位小数，七日变化为一位小数。稿件按显示精度引用，不能把两位小数扩成原工作簿的四位精度，也不能从展示价格倒推出精确周涨跌幅。历史图仅连接已收录观测；缺失日和人工表来源保留原状。页面的公开可见性不等于第三方内容再利用许可，正式对外使用仍需核对来源条款。

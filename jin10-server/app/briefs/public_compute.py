@@ -117,6 +117,8 @@ def fetch_visible(category: str, *, today: date | None = None,
                               headers={'User-Agent': USER_AGENT, 'Accept': 'text/html'})
     try:
         robots = _bounded(client, ROBOT, MAX_ROBOTS).decode('utf-8-sig')
+        if not re.search(r'(?im)^user-agent\s*:', robots):
+            raise ValueError('来源网站robots规则无法核对，本次停止读取')
         parser = RobotFileParser()
         parser.parse(robots.splitlines())
         readings = []

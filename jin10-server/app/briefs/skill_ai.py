@@ -37,6 +37,28 @@ def _numbers(text: str) -> set[str]:
     return {match.group(0).replace(",", "").lstrip("+-") for match in _NUMBER.finditer(text)}
 
 
+def approved_wording(title: str, body: str) -> tuple[set[str], set[str]]:
+    """Only code-reviewed, fact-preserving substitutions are eligible for AI selection.
+
+    Comparing numbers cannot bind them to an indicator, unit or direction. Keep
+    complete candidate sentences intact instead of attempting to trust free text.
+    """
+    bodies = {body}
+    for old, new in (("沪深两市成交额为", "沪深两市成交额"), ("较前值减少", "较前值下降"),
+                     ("；连续", "，连续")):
+        bodies.update(text.replace(old, new) for text in tuple(bodies))
+    for text in tuple(bodies):
+        bodies.add(re.sub(r'变动-([\d.]+)%', r'降幅\1%', text))
+        bodies.add(re.sub(r'变动\+([\d.]+)%', r'涨幅\1%', text))
+    titles = {title}
+    # This alternate title inherits its direction from the validated source body.
+    if "两市成交额报" in title:
+        direction = '回落' if '较前值减少' in body else '回升' if '较前值增加' in body else None
+        if direction:
+            titles.add(title.replace('两市成交额报', f'成交额{direction}至'))
+    return titles, bodies
+
+
 def asset_dir(category: str) -> Path:
     name = SKILL_NAMES.get(category)
     if not name:
@@ -73,6 +95,9 @@ def validate_answer(source_title: str, source_body: str, answer: dict) -> tuple[
         raise ValueError("AI 结果不应包含固定注释")
     if any(term in title + body for term in _BANNED):
         raise ValueError("AI 结果包含未授权的导流或投资建议")
+    titles, bodies = approved_wording(source_title, source_body)
+    if title not in titles or body not in bodies:
+        raise ValueError('AI 结果不在已验证表达中，指标归属、单位、方向和事实必须保持')
     return title, body
 
 
@@ -101,7 +126,7 @@ def polish(team, category: str, source_title: str, source_body: str) -> dict:
         "你是金十 PLUS 固定快讯编辑。严格遵守下面的 Skill 编辑规范：\n"
         f"{skill_md}\n\n"
         "历史文段只用于语气和结构参考，不得把其中日期、数值或结论当作当日事实。\n"
-        "用户给出的是已经完成事实校验的规则稿。只能改写表达、句序和衔接；"
+        "用户给出的是已经完成事实校验的规则稿及允许的完整候选。只能从候选中选择；"
         "必须逐字保留所有数字、日期、百分比、单位、方向和事实归属；"
         "不得新增事件、原因、预测、来源、行动号召、导流语或投资建议；"
         "不得增加“点击查看、关注、布局、机会”等原文没有的句子；不得把固定解释写进正文。"
@@ -113,9 +138,11 @@ def polish(team, category: str, source_title: str, source_body: str) -> dict:
         f"风格参考（只学写法）：\n{examples}\n\n"
         f"已校验规则稿标题：{source_title}\n"
         f"已校验规则稿正文：{source_body}\n\n"
-        "请在不改变任何数字和事实的前提下，把文案润色得更清楚、有信息层级，"
-        "不要为了文采删减关键事实。"
+        "请从允许的完整候选中选择最清楚的表达，不得自由改写。"
     )
+    titles, bodies = approved_wording(source_title, source_body)
+    user += '\n只可逐字选择下列完整标题和正文，不得自行组合句内片段：\n' + json.dumps(
+        {'approved_titles': sorted(titles), 'approved_bodies': sorted(bodies)}, ensure_ascii=False)
     payload = {
         "model": ai["model"], "stream": False, "max_tokens": 1200, "temperature": 0.2,
         "response_format": {"type": "json_object"},

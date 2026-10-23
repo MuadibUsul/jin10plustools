@@ -15,6 +15,7 @@ from .skill_ai import SKILL_NAMES, polish
 def apply_skill_copy(payload: dict, category: str, team_settings: dict | None) -> dict:
     if category not in SKILL_NAMES:
         return payload
+    payload['rule_copy']={'title':payload['title'],'body':payload['dynamic_body']}
     try:
         result = polish(SimpleNamespace(settings=dict(team_settings or {})), category,
                         payload["title"], payload["dynamic_body"])

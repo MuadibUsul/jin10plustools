@@ -87,7 +87,7 @@ function showAnalysis(analysis, eventId) {
     host.append(node('h3', '来源链接'));
     for (const url of analysis.sources) {
       const link = node('a', url); link.href = url; link.target = '_blank'; link.rel = 'noopener noreferrer';
-      host.append(node('p').append(link));
+      const paragraph = node('p'); paragraph.append(link); host.append(paragraph);
     }
   }
   if (canEdit && target === 'fresh') {
@@ -145,7 +145,7 @@ function showAnnotationResult(result) {
     host.append(node('h3', '检索参考'));
     for (const url of result.sources) {
       const link = node('a', url); link.href = url; link.target = '_blank'; link.rel = 'noopener noreferrer';
-      host.append(node('p').append(link));
+      const paragraph = node('p'); paragraph.append(link); host.append(paragraph);
     }
   }
   if (canEdit && target === 'annotation') {
@@ -232,7 +232,7 @@ try {
   canEdit = me.user.role !== 'viewer';
   $('#news-title').textContent = targetLabel;
   $('#news-subtitle').textContent = target === 'annotation'
-    ? '粘贴新闻链接先做事实梳理；Plus注解辅助的正式注解流程仍在上线中。'
+    ? '粘贴一条财经快讯，生成前因、后果和补充说明，核对来源后保存送审。'
     : '粘贴任意公开新闻链接，先得到时间线、关键数字、来源原话和编辑判断，确认后再生成不超过400字的快讯。';
   $('#news-target-label').textContent = targetLabel;
   for (const link of document.querySelectorAll('header nav a')) {

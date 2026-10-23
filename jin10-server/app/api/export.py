@@ -5,7 +5,10 @@ from datetime import date
 from typing import Annotated
 from urllib.parse import quote
 
-from fastapi import APIRouter, HTTPException, Query, Response
+from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import FileResponse
+from starlette.background import BackgroundTask
+from pathlib import Path
 
 from app.deps import CurrentUser, DbSession
 from app.services import data_export
@@ -63,13 +66,12 @@ def export(key: str, db: DbSession, user: CurrentUser,
         raise HTTPException(413, f'本次结果 {total} 行，超过 {data_export.MAX_ROWS} 行上限，请缩小时间范围')
     rows = dataset.rows(db, user.team_id, start, end)
     users = data_export.user_map(db, user.team_id)
-    writer = {'csv': data_export.csv_bytes, 'json': data_export.json_bytes,
-              'xlsx': data_export.xlsx_bytes}[fmt]
-    body = writer(dataset, rows, users)
+    try:path=data_export.write_export(dataset,rows,users,fmt)
+    except data_export.ExportLimitError as exc:raise HTTPException(413,str(exc)) from None
     span = f'{start:%Y-%m-%d}_{end:%Y-%m-%d}' if start and end else '全部已存'
     download = f'PLUS_{dataset.label}_{span}.{fmt}'
     fallback = f'plus-{dataset.key}-{start or "all"}-{end or "all"}.{fmt}'
     disposition = f"attachment; filename=\"{fallback}\"; filename*=UTF-8''{quote(download)}"
-    return Response(body, media_type=MEDIA[fmt],
+    return FileResponse(path, media_type=MEDIA[fmt],background=BackgroundTask(Path(path).unlink,missing_ok=True),
                     headers={'Content-Disposition': disposition,
-                             'Content-Length': str(len(body)), 'Cache-Control': 'no-store'})
+                             'Cache-Control': 'no-store'})

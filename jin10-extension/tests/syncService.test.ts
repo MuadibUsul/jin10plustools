@@ -21,10 +21,13 @@ vi.mock('@/services/api/serverApi', async (orig) => ({
 
 let session: AuthSession | null;
 let syncState: SyncState;
+const teamQueues = new Map<string,NewsMaterial[]>();
 vi.mock('@/services/settingsStore', () => ({
   getSession: async () => session,
   getSyncState: async () => syncState,
   updateSyncState: async (p: Partial<SyncState>) => (syncState = { ...syncState, ...p }),
+  saveTeamQueue: async (scope:string,items:NewsMaterial[])=>{teamQueues.set(scope,items);},
+  readTeamQueue: async (scope:string)=>teamQueues.get(scope) || [],
 }));
 vi.mock('@/services/assetStore', () => ({ getImage: async () => null }));
 
@@ -112,6 +115,7 @@ function server(id: string, patch: Partial<ServerMaterial> = {}): ServerMaterial
 
 let repo: Repo;
 beforeEach(() => {
+  teamQueues.clear();
   repo = new Repo();
   session = {
     api_base_url: 'https://plus.test',
@@ -160,15 +164,21 @@ describe('syncService', () => {
     expect(repo.items.get('c')).toEqual(fromServer(server('c')));
   });
 
-  it('切换团队时清除上一个团队的已同步素材并重置游标', async () => {
+  it('切换团队隔离离线队列，切回原团队才恢复上传', async () => {
     syncState = { ...syncState, team_id: 'old-team', cursor: 'old' };
     await repo.save(local('old', { sync_status: 'synced' }));
     await repo.save(local('unsent'));
     api.pushMaterials.mockResolvedValue([{ client_id: 'unsent', outcome: 'created', material: server('unsent') }]);
     await createSyncService(repo).sync();
     expect(repo.items.has('old')).toBe(false);
-    expect(repo.items.has('unsent')).toBe(true);
+    expect(repo.items.has('unsent')).toBe(false);
+    expect(api.pushMaterials).not.toHaveBeenCalled();
+    expect(teamQueues.get('https://plus.test:old-team')?.map(m=>m.id)).toEqual(['unsent']);
     expect(api.fetchChanges).toHaveBeenCalledWith(null);
+    session={...session!,team:{id:'old-team',name:'旧团队'}};
+    await createSyncService(repo).sync();
+    expect(api.pushMaterials).toHaveBeenCalledTimes(1);
+    expect(api.pushMaterials.mock.calls[0]![0].map(m=>m.id)).toEqual(['unsent']);
   });
 
   it('只读账号不推送，只拉取', async () => {

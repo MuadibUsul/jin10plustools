@@ -121,6 +121,11 @@ def execute(factory,id):
         if payload.get('skill'):
             record(out,4,'Skill AI 文案已采用' if payload['skill'].get('status')=='ok'
                    else 'Skill AI 未完成，已保留固定组合文案')
+    if payload and payload.get('valid'):
+        from .sources import save
+        # The date cache deliberately keeps the validated pre-Skill rule product;
+        # this run's durable result must match what is committed as the final edition.
+        save(out/'result.json',payload)
     with factory() as db:
         job=db.get(BriefJob,id);job.lease_until=None;job.updated_at=utcnow()
         stopped_step=read(out).get('step',1)

@@ -68,7 +68,10 @@ def config(body:ConfigRequest,db:DbSession,user:Editor):
     if user.role!=Role.ADMIN:raise HTTPException(403,'仅管理员可修改排期')
     item=db.get(BriefConfig,user.team_id)
     if not item:item=BriefConfig(team_id=user.team_id);db.add(item)
-    item.enabled=body.enabled;item.updated_at=utcnow();db.commit()
+    item.enabled=body.enabled;item.updated_at=utcnow()
+    from app.services.business_history import record
+    record(db,db.get(Team,user.team_id),user.id)
+    db.commit()
     return {'enabled':item.enabled}
 
 
@@ -113,7 +116,10 @@ def job_process(id:uuid.UUID,db:DbSession,user:CurrentUser):
     if not row:raise HTTPException(404,'任务不存在')
     from app.briefs.process_details import for_job
     from app.briefs.service import root_for
-    return {'job':job_out(row),'details':for_job(row,root_for(row.team_id))}
+    saved=db.scalars(select(BriefVersion).join(BriefIssue).where(BriefIssue.team_id==user.team_id,
+        BriefIssue.issue_date==row.issue_date,BriefIssue.category==row.category).order_by(BriefVersion.number.desc())).all()
+    payload=next((v.payload for v in saved if (v.payload.get('source_archive') or {}).get('job_id')==str(row.id)),None)
+    return {'job':job_out(row),'details':for_job(row,root_for(row.team_id),payload)}
 
 
 @router.get('/issues/{id}/versions')
@@ -122,46 +128,9 @@ def versions(id:uuid.UUID,db:DbSession,user:CurrentUser):
 
 
 @router.get('/issues/{id}/skill-preview')
-def skill_preview(id:uuid.UUID,db:DbSession,user:CurrentUser,
-                  version:int=Query(ge=1)):
-    """Suggest wording from one fixed-brief version; read-only and never published."""
-    issue=get_issue(db,user,id)
-    if user.role==Role.VIEWER and version!=issue.confirmed_version:
-        raise HTTPException(403,'只读账号仅可预览已确认稿')
-    row=db.scalars(select(BriefVersion).where(BriefVersion.issue_id==id,
-        BriefVersion.number==version)).first()
-    if not row:raise HTTPException(404,'版本不存在')
-    from app.briefs.skill_ai import polish as polish_skill
-    from app.briefs.skill_preview import preview
-    from app.services.copy_dates import copy_dates
-    from app.briefs.delivery import complete_body
-    try:
-        result=preview(issue,row)
-        rule_title=copy_dates(row.title)
-        rule_body=copy_dates(row.dynamic_body)
-        try:
-            polished=polish_skill(db.get(Team,user.team_id),issue.category,rule_title,rule_body)
-        except Exception:
-            polished={'status':'failed','reason':'unexpected_error'}
-        result['rule_title']=rule_title
-        result['rule_body']=rule_body
-        result['ai']=polished
-        if polished.get('status')=='ok':
-            result['title']=polished['title']
-            result['dynamic_body']=polished['body']
-            result['warnings']=[w for w in result.get('warnings',[]) if '不替代' not in w]
-        else:
-            # A model failure must still yield the complete, already-validated rule copy.
-            result['title']=rule_title
-            result['dynamic_body']=rule_body
-            reason=('Skill 已停用，显示当前生产规则稿' if polished.get('reason')=='skill_disabled'
-                    else 'AI 未配置，显示当前生产规则稿' if polished.get('status') in ('not_configured','disabled')
-                    else 'AI 润色未完成，显示当前生产规则稿')
-            result['warnings']=[f'{reason}；采用前请人工核对。']
-        result['body']=complete_body(issue.category,result['dynamic_body'],result['fixed_note'])
-        return result
-    except ValueError as exc:
-        raise HTTPException(422,str(exc)) from exc
+def skill_preview(id:uuid.UUID,db:DbSession,user:CurrentUser,version:int=Query(ge=1)):
+    get_issue(db,user,id)
+    raise HTTPException(410,'独立AI预览已停用，文案由生成稿件流程统一处理')
 
 
 @router.post('/issues/{id}/revisions',status_code=201)

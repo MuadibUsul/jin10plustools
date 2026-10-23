@@ -23,6 +23,7 @@ export interface AuthSession {
 }
 
 export interface SyncState {
+  server_url?: string;
   /** 增量拉取游标 */
   cursor: string | null;
   /** 游标所属团队；切换团队时重置 */

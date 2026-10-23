@@ -153,7 +153,7 @@ def test_chat2api_model_is_validated_and_falls_back_to_a_supported_one(client, s
         db.commit()
         ai = briefs_ai(team)
         assert ai['requested_model'] == 'gpt-5.6-sol'
-        assert ai['model'] == 'gpt-4o-mini' and ai['model_supported'] is False
+        assert ai['model'] == 'gpt-4o' and ai['model_supported'] is False
     get_settings.cache_clear()
 
 

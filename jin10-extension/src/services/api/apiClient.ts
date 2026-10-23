@@ -5,6 +5,7 @@ import { clearSession, getSession } from '../settingsStore';
 const TIMEOUT_MS = 30_000;
 
 interface RequestOptions {
+  session?: AuthSession;
   method?: string;
   json?: unknown;
   body?: BodyInit;
@@ -31,7 +32,7 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
   let session: AuthSession | null = null;
   let baseUrl = options.baseUrl;
   if (!baseUrl) {
-    session = await getSession();
+    session = options.session ?? await getSession();
     if (!session) throw new AppException('UNAUTHORIZED', '未登录团队账号');
     baseUrl = session.api_base_url;
   }
@@ -56,7 +57,7 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
   }
 
   if (res.status === 401 && session) {
-    await clearSession();
+    if ((await getSession())?.access_token === session.access_token) await clearSession();
     throw new AppException('UNAUTHORIZED', await errorMessage(res));
   }
   if (!res.ok) throw new AppException(res.status === 401 ? 'UNAUTHORIZED' : 'NETWORK', await errorMessage(res));

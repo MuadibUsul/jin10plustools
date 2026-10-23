@@ -151,6 +151,8 @@ def update(body: Update, db: DbSession, user: Editor):
             current['enabled'] = change.enabled
         ai[name] = current
     team.settings = {**saved, 'ai': ai, 'settings_revision': body.revision + 1}
+    from app.services.business_history import record
+    record(db,team,user.id)
     db.commit()
     return output(db, team, user)
 

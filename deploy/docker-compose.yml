@@ -21,7 +21,9 @@ services:
     mem_limit: 512m
 
   api:
-    build: ./jin10-server
+    build:
+      context: .
+      dockerfile: jin10-server/Dockerfile
     image: ${PLUS_RELEASE_IMAGE:-plus-api}
     container_name: plus-api
     restart: unless-stopped
@@ -48,7 +50,9 @@ services:
     mem_limit: 1536m
 
   brief-worker:
-    build: ./jin10-server
+    build:
+      context: .
+      dockerfile: jin10-server/Dockerfile
     image: ${PLUS_RELEASE_IMAGE:-plus-api}
     restart: unless-stopped
     command: ["python", "-m", "app.briefs.worker"]

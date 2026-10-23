@@ -14,7 +14,7 @@ from pathlib import Path
 from openpyxl import load_workbook
 from sqlalchemy import select
 
-from app.db.models import AIComputeObservation, Team, utcnow
+from app.db.models import AIComputeObservation, AIComputeRevision, Team, utcnow
 
 
 def _num(value):
@@ -66,19 +66,29 @@ def _upsert(db, team_id, kind: str, rows: list[dict]) -> dict[str, int]:
             AIComputeObservation.team_id == team_id, AIComputeObservation.kind == kind))}
     inserted = updated = unchanged = 0
     stamp = utcnow()
+    def remember(record):
+        exists=db.scalar(select(AIComputeRevision.id).where(AIComputeRevision.observation_id==record.id,
+            AIComputeRevision.revision==record.revision))
+        if exists:return
+        db.add(AIComputeRevision(team_id=team_id,observation_id=record.id,date=record.date,
+            kind=record.kind,revision=record.revision,source=record.source,
+            values={key:str(getattr(record,key)) if getattr(record,key) is not None else None
+                    for key in ('token_price','a100','h100','b200')},created_at=record.updated_at))
     for item in rows:
         day = item['date']
         values = {key: value for key, value in item.items() if key != 'date'}
         record = existing.get(day)
         if record is None:
-            db.add(AIComputeObservation(
+            record=AIComputeObservation(
                 team_id=team_id, kind=kind, date=day, token_price=values.get('token_price'),
                 a100=values.get('a100'), h100=values.get('h100'), b200=values.get('b200'),
                 source='Silicon Data workbook', source_status='imported_workbook',
-                revision=1, created_at=stamp, updated_at=stamp))
+                revision=1, created_at=stamp, updated_at=stamp)
+            db.add(record);db.flush();remember(record);existing[day]=record
             inserted += 1
             continue
         current = {key: getattr(record, key) for key in values}
+        remember(record)
         if current == values:
             unchanged += 1
             continue
@@ -86,6 +96,7 @@ def _upsert(db, team_id, kind: str, rows: list[dict]) -> dict[str, int]:
             setattr(record, key, value)
         record.revision += 1
         record.updated_at = stamp
+        remember(record)
         updated += 1
     db.flush()
     return {'inserted': inserted, 'updated': updated, 'unchanged': unchanged,

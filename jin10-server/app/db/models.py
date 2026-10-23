@@ -647,3 +647,27 @@ class AIComputeObservation(Base):
     revision: Mapped[int] = mapped_column(Integer, default=1)
     created_at: Mapped[dt.datetime] = mapped_column(default=utcnow)
     updated_at: Mapped[dt.datetime] = mapped_column(default=utcnow)
+
+
+class AIComputeRevision(Base):
+    __tablename__ = 'ai_compute_observation_revisions'
+    __table_args__ = (Index('uq_ai_compute_revision', 'observation_id', 'revision', unique=True),)
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    team_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('teams.id', ondelete='CASCADE'), index=True)
+    observation_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('ai_compute_observations.id', ondelete='CASCADE'))
+    date: Mapped[dt.date] = mapped_column(Date, index=True)
+    kind: Mapped[str] = mapped_column(String(20))
+    revision: Mapped[int] = mapped_column(Integer)
+    values: Mapped[dict[str, Any]] = mapped_column(JsonType)
+    source: Mapped[str] = mapped_column(String(200))
+    created_at: Mapped[dt.datetime] = mapped_column(default=utcnow)
+
+
+class TeamBusinessRevision(Base):
+    __tablename__ = 'team_business_revisions'
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    team_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('teams.id', ondelete='CASCADE'), index=True)
+    snapshot: Mapped[dict[str, Any]] = mapped_column(JsonType)
+    digest: Mapped[str] = mapped_column(String(64))
+    created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey('users.id', ondelete='SET NULL'))
+    created_at: Mapped[dt.datetime] = mapped_column(default=utcnow, index=True)

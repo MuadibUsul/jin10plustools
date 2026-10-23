@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 from pathlib import Path
+from datetime import date, timedelta
+import math
 
 import matplotlib
 matplotlib.use('Agg')
@@ -27,7 +29,7 @@ ORANGE = '#E3A13D'
 
 
 def token_chart(rows, out):
-    values = [(row['date'], float(row.get('price', row.get('token_price')))) for row in rows]
+    values = [(date.fromisoformat(row['date']), float(row.get('price', row.get('token_price')))) for row in rows]
     if not values:
         raise ValueError('Token历史为空')
     fig = plt.figure(figsize=(12, 8.4), dpi=100, facecolor='white')
@@ -36,31 +38,31 @@ def token_chart(rows, out):
     last_day, last = values[-1]
     ax.scatter([last_day], [last], color=ORANGE, zorder=3, s=42)
     latest = rows[-1]
-    shown = (((latest.get('public_display') or {}).get('readings') or
-              (latest.get('manual_display') or {}).get('readings') or [None])[0])
+    display = latest.get('manual_display') if latest.get('status') == 'manual_entry' else latest.get('public_display')
+    shown = ((display or {}).get('readings') or [None])[0]
     label = shown['price'] if shown and shown.get('metric') == 'token' else f'{last:.4f}'
     ax.annotate(label, (last_day, last), textcoords='offset points',
                 xytext=(0, 12), ha='center', fontproperties=cjk(13), color=ORANGE)
     ax.set_title('Token支出价格指数（美元/百万Token）', fontproperties=cjk(20), loc='left', pad=18)
     ticks = sorted(set([0, len(values) - 1] + [round((len(values) - 1) * i / 7) for i in range(1, 7)]))
-    ax.set_xticks(ticks, [values[i][0] for i in ticks])
+    ax.set_xticks([values[i][0] for i in ticks], [values[i][0].isoformat() for i in ticks])
     ax.grid(axis='y', color='#E9EDF3')
     ax.tick_params(colors=MUTED, labelsize=9)
     for spine in ax.spines.values():
         spine.set_visible(False)
     # Local 30-day view beneath the full history.
-    local = values[-31:]
+    local = [item for item in values if item[0] >= last_day-timedelta(days=29)]
     ax2 = fig.add_axes([.1, .1, .84, .16])
     ax2.plot([day for day, _ in local], [price for _, price in local], color=GREEN, lw=2)
     ax2.set_title('最近30日', fontproperties=cjk(14), loc='left', pad=8)
     local_ticks = sorted(set([0, len(local) - 1] + [round((len(local) - 1) * i / 4) for i in range(1, 4)]))
-    ax2.set_xticks(local_ticks, [local[i][0] for i in local_ticks])
+    ax2.set_xticks([local[i][0] for i in local_ticks], [local[i][0].isoformat() for i in local_ticks])
     ax2.grid(axis='y', color='#E9EDF3')
     ax2.tick_params(colors=MUTED, labelsize=8)
     for spine in ax2.spines.values():
         spine.set_visible(False)
     fig.text(.1, .93, 'PLUS 快讯 / AI算力CPI', fontproperties=cjk(14), color=MUTED)
-    source = ('历史工作簿及本期编辑人工录入' if latest.get('status') == 'manual_entry' and not latest.get('public_display')
+    source = ('历史工作簿及本期编辑人工录入' if latest.get('status') == 'manual_entry'
               else 'Silicon Data · LLM Token Expenditure Index')
     fig.text(.1, .04, '数据来源：'+source, fontproperties=cjk(11), color=MUTED)
     path = Path(out) / 'AI算力CPI.png'
@@ -75,29 +77,30 @@ def gpu_chart(rows, out):
     ax = fig.add_axes([.1, .15, .84, .68])
     labels = []
     latest = rows[-1]
-    displayed = {item['metric']: item['price'] for item in
-                 ((latest.get('public_display') or {}).get('readings') or
-                  (latest.get('manual_display') or {}).get('readings') or [])}
+    display = latest.get('manual_display') if latest.get('status') == 'manual_entry' else latest.get('public_display')
+    displayed = {item['metric']: item['price'] for item in (display or {}).get('readings') or []}
     for label, key, color in series:
-        points = [(row['date'], float(row[key])) for row in rows if row.get(key) is not None]
-        if not points:
+        points = [(date.fromisoformat(row['date']), float(row[key]) if row.get(key) is not None else math.nan) for row in rows]
+        valid = [item for item in points if math.isfinite(item[1])]
+        if not valid:
             continue
         labels.append(label)
         ax.plot([day for day, _ in points], [value for _, value in points],
                 color=color, lw=2, label=label)
-        ax.annotate(displayed.get(key, f'{points[-1][1]:.2f}'), (points[-1][0], points[-1][1]),
+        label_price = displayed.get(key) if valid[-1][0] == points[-1][0] else None
+        ax.annotate(label_price or f'{valid[-1][1]:.2f}', (valid[-1][0], valid[-1][1]),
                     textcoords='offset points', xytext=(6, 4), fontproperties=cjk(11), color=color)
     ax.set_title('AI芯片租赁价格（美元/GPU/小时，NeoCloud）', fontproperties=cjk(20), loc='left', pad=18)
-    all_days = [row['date'] for row in rows]
+    all_days = [date.fromisoformat(row['date']) for row in rows]
     ticks = sorted(set([0, len(all_days) - 1] + [round((len(all_days) - 1) * i / 7) for i in range(1, 7)]))
-    ax.set_xticks(ticks, [all_days[i] for i in ticks])
+    ax.set_xticks([all_days[i] for i in ticks], [all_days[i].isoformat() for i in ticks])
     ax.grid(axis='y', color='#E9EDF3')
     ax.tick_params(colors=MUTED, labelsize=9)
     ax.legend(prop=font(12), frameon=False)
     for spine in ax.spines.values():
         spine.set_visible(False)
     fig.text(.1, .93, 'PLUS 快讯 / AI景气度指标', fontproperties=cjk(14), color=MUTED)
-    source = ('历史工作簿及本期编辑人工录入' if latest.get('status') == 'manual_entry' and not latest.get('public_display')
+    source = ('历史工作簿及本期编辑人工录入' if latest.get('status') == 'manual_entry'
               else 'Silicon Data · A100/H100/B200 NeoCloud')
     fig.text(.1, .04, '数据来源：'+source, fontproperties=cjk(11), color=MUTED)
     path = Path(out) / 'AI景气度指标.png'

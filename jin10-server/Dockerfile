@@ -9,19 +9,20 @@ ENV PYTHONUNBUFFERED=1 \
 
 # PDF 导出：LibreOffice + 思源同款开源字体（Noto CJK 全字重）+ 模板字体名映射
 RUN apt-get update  && apt-get install -y --no-install-recommends libreoffice-impress python3-uno fonts-noto-cjk fonts-noto-cjk-extra fontconfig  && rm -rf /var/lib/apt/lists/*
-COPY docker/fonts.conf /etc/fonts/conf.d/60-plus-template-fonts.conf
+COPY jin10-server/docker/fonts.conf /etc/fonts/conf.d/60-plus-template-fonts.conf
 RUN fc-cache -f
 
 WORKDIR /srv
 
 # 先装依赖（利用镜像层缓存）
-COPY pyproject.toml ./
+COPY jin10-server/pyproject.toml ./
 RUN mkdir app && touch app/__init__.py && pip install -e . && python -m playwright install --with-deps chromium && rm -rf app
 
-COPY app ./app
-COPY alembic.ini ./
-COPY alembic ./alembic
-COPY templates ./templates
+COPY jin10-server/app ./app
+COPY jin10-server/alembic.ini ./
+COPY jin10-server/alembic ./alembic
+COPY jin10-server/templates ./templates
+COPY skills ./skills
 
 RUN useradd --uid 1000 --create-home plus && mkdir -p /data/storage \
     && chmod -R a+rX /srv /opt/playwright && chown -R plus /data

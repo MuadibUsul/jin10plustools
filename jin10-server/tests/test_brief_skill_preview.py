@@ -70,34 +70,11 @@ def issues(db_factory, seed):
 
 
 @pytest.mark.parametrize("category", ["volume", "turnover", "valuation", "liquidity", "oil_etf"])
-def test_five_skill_previews_are_read_only_and_traceable(client, db_factory, issues, category):
-    headers = login(client, "editor@plus.test")
-    before = None
-    with db_factory() as db:
-        before = (db.scalar(select(func.count()).select_from(BriefVersion)),
-                  db.scalar(select(func.count()).select_from(NewsEvent)))
-    response = client.get(f"/api/briefs/issues/{issues[category]}/skill-preview",
-                          headers=headers, params={"version": 1})
-    assert response.status_code == 200, response.text
-    data = response.json()
-    assert data["category"] == category
-    expected_skill = "news.fixed-oil-etf" if category == "oil_etf" else f"news.fixed-{category}"
-    assert data["skill_id"] == expected_skill
-    assert data["skill_version"] == "0.1.0"
-    assert data["publication_allowed"] is False and data["human_approval_required"] is True
-    assert data["title"] and data["dynamic_body"] and data["fixed_note"]
-    assert data["evidence_ids"] and all(item.startswith("brief:") for item in data["evidence_ids"])
-    with db_factory() as db:
-        assert (db.scalar(select(func.count()).select_from(BriefVersion)),
-                db.scalar(select(func.count()).select_from(NewsEvent))) == before
-
-
-def test_skill_preview_permissions_and_team_scope(client, db_factory, issues, seed):
-    editor = login(client, "editor@plus.test")
-    viewer = login(client, "viewer@plus.test")
-    outsider = login(client, "out@plus.test")
-    url = f"/api/briefs/issues/{issues['volume']}/skill-preview"
-    assert client.get(url, headers=editor, params={"version": 99}).status_code == 404
-    assert client.get(url, headers=outsider, params={"version": 1}).status_code == 404
-    assert client.get(url, headers=viewer, params={"version": 1}).status_code == 200
-    assert client.get(url, headers=viewer).status_code == 422
+def test_retired_preview_never_calls_ai(client, issues, category, monkeypatch):
+    monkeypatch.setattr('app.briefs.skill_ai.polish',lambda *args:pytest.fail('retired GET must not call AI'))
+    for email in ('editor@plus.test','viewer@plus.test'):
+        response=client.get(f'/api/briefs/issues/{issues[category]}/skill-preview',
+            headers=login(client,email),params={'version':1})
+        assert response.status_code==410
+    assert client.get(f'/api/briefs/issues/{issues[category]}/skill-preview',
+        headers=login(client,'out@plus.test'),params={'version':1}).status_code==404

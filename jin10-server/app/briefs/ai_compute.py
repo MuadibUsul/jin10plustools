@@ -223,7 +223,7 @@ def gpu_rental(day, out, state, refresh=False):
     else:
         body += f"B200较已收录数据高点{_decimal(peak['b200']):.2f}美元低{(_decimal(peak['b200'])-_decimal(latest['b200'])) / _decimal(peak['b200']) * 100:.2f}%。"
     (out/'ai-compute-source.json').write_text(json.dumps(rows,ensure_ascii=False,default=str),encoding='utf-8')
-    chart = gpu_chart(rows, out)
+    chart = gpu_chart([row for row in rows if row['date']<=actual_day], out)
     return {
         'title': title, 'dynamic_body': body, 'images': [chart.name], 'data_date': actual_day,
         'warnings': warnings,

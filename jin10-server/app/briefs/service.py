@@ -97,6 +97,8 @@ def prune_versions(db,issue):
         notes=list(saved.get('retired_issue_notes',[]))
         notes.append({'issue_id':str(issue.id),'version':old.number,'notes':(old.payload or {}).get('fixed_notes',''),'created_at':old.created_at.isoformat()})
         team.settings={**saved,'retired_issue_notes':notes}
+        from app.services.business_history import record
+        record(db,team)
         db.add(BriefAudit(issue_id=issue.id,action='retired_notes',version=old.number,user_id=old.created_by))
         db.execute(update(BriefSourceSnapshot).where(BriefSourceSnapshot.version_id==old.id).values(version_id=None))
         if issue.confirmed_version==old.number:

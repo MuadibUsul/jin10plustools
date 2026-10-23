@@ -68,32 +68,34 @@ export function fromServer(s: ServerMaterial): NewsMaterial {
   return { ...rest, collector_id: created_by, sync_status: 'synced', schema_version: 1 };
 }
 
-export async function pushMaterials(materials: NewsMaterial[]): Promise<SyncResult[]> {
+export async function pushMaterials(materials: NewsMaterial[], session?: AuthSession): Promise<SyncResult[]> {
   const res = await apiRequest<{ results: SyncResult[] }>('/api/materials/sync', {
     method: 'POST',
+    session,
     json: { materials: materials.map(toMaterialIn) },
   });
   return res.results;
 }
 
-export function fetchChanges(cursor: string | null, limit = 200) {
+export function fetchChanges(cursor: string | null, limit = 200, session?: AuthSession) {
   const params = new URLSearchParams({ limit: String(limit) });
   if (cursor) params.set('cursor', cursor);
   return apiRequest<{ items: ServerMaterial[]; next_cursor: string | null; has_more: boolean }>(
-    `/api/materials/changes?${params}`,
+    `/api/materials/changes?${params}`, { session },
   );
 }
 
-export async function missingAssets(ids: string[]): Promise<string[]> {
+export async function missingAssets(ids: string[], session?: AuthSession): Promise<string[]> {
   if (ids.length === 0) return [];
-  const res = await apiRequest<{ missing: string[] }>('/api/assets/exists', { method: 'POST', json: { ids } });
+  const res = await apiRequest<{ missing: string[] }>('/api/assets/exists', { method: 'POST', json: { ids }, session });
   return res.missing;
 }
 
-export async function uploadAsset(asset: ImageAsset): Promise<void> {
+export async function uploadAsset(asset: ImageAsset, session?: AuthSession): Promise<void> {
   const blob = await (await fetch(asset.data_url)).blob();
   await apiRequest<void>(`/api/assets/${asset.id}`, {
     method: 'PUT',
+    session,
     body: blob,
     headers: { 'Content-Type': asset.mime, 'X-Source-Url': encodeURIComponent(asset.source_url) },
   });

@@ -1,4 +1,5 @@
 import type { AuthSession, SyncState } from '@/types/settings';
+import type { NewsMaterial } from '@/types/material';
 import { STORAGE_KEYS } from '@/shared/constants';
 import { DEFAULT_CAPTURE_SHORTCUT, type CaptureShortcut } from '@/shared/shortcut';
 
@@ -9,6 +10,13 @@ const DEFAULT_SYNC: SyncState = {
   last_error: null,
   syncing: false,
 };
+
+export async function saveTeamQueue(scope: string, materials: NewsMaterial[]): Promise<void> {
+  await chrome.storage.local.set({ [`plus.teamQueue.${scope}`]: materials });
+}
+export async function readTeamQueue(scope: string): Promise<NewsMaterial[]> {
+  return (await read<NewsMaterial[]>(`plus.teamQueue.${scope}`)) ?? [];
+}
 
 async function read<T>(key: string): Promise<T | undefined> {
   const result = await chrome.storage.local.get(key);

@@ -1,8 +1,8 @@
 """Team-managed overrides for the five fixed-brief text Skills.
 
 The code always carries a bundled SKILL.md. A team may enable/disable a skill
-and replace its instructions; the effective text is used only by the optional
-AI polish layer in `/briefs/`, never by automatic generation. Every write keeps
+and replace its instructions; the effective text is used by the optional
+AI wording stage during production in `/briefs/`. Every write keeps
 a small immutable history in the team settings JSON.
 """
 from __future__ import annotations
@@ -251,5 +251,7 @@ def update_skill(db, team, user, category: str, *, revision: int, enabled: bool,
         entry["instructions"] = text
     saved[category] = entry
     team.settings = {**(getattr(team, "settings", None) or {}), "skills": saved}
+    from app.services.business_history import record
+    record(db,team,getattr(user,'id',None))
     db.flush()
     return effective(team, category)

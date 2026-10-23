@@ -17,7 +17,9 @@ services:
       retries: 10
 
   api:
-    build: ./jin10-server
+    build:
+      context: .
+      dockerfile: jin10-server/Dockerfile
     restart: unless-stopped
     depends_on:
       db:
@@ -33,7 +35,9 @@ services:
       - "${PLUS_API_PORT:-8000}:8000"
 
   brief-worker:
-    build: ./jin10-server
+    build:
+      context: .
+      dockerfile: jin10-server/Dockerfile
     restart: unless-stopped
     command: ["python", "-m", "app.briefs.worker"]
     healthcheck:

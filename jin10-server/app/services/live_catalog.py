@@ -62,7 +62,7 @@ def player_url(channel):
 def state(db,team_id):
     stamp=now()
     busy=db.scalar(select(BriefJob.id).where(BriefJob.team_id==team_id,
-        BriefJob.issue_date==stamp.date(),BriefJob.status.in_(['queued','running','waiting'])).limit(1)) is not None
+        BriefJob.status.in_(['queued','running','waiting'])).limit(1)) is not None
     return dict(server_time=stamp.isoformat(),allowed=8<=stamp.hour<23 and not busy,
         busy=busy,closes_at=stamp.replace(hour=23,minute=0,second=0,microsecond=0).isoformat(),
         reason='快讯正在生成，已返回处理动态' if busy else '' if 8<=stamp.hour<23 else '直播开放时间：北京时间 8:00—23:00')

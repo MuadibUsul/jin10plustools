@@ -18,14 +18,14 @@ export function toast(text, type = 'success') {
   requestAnimationFrame(() => item.classList.add('show'));
   setTimeout(() => { item.classList.remove('show'); setTimeout(() => item.remove(), 220); }, 2800);
 }
-export async function api(path, { method = 'GET', json, raw = false } = {}) {
+export async function api(path, { method = 'GET', json, raw = false, headers: extraHeaders = {} } = {}) {
   if (method === 'POST' && path === '/api/briefs/jobs') {
     // Notify every local tab before generation is submitted, including a tab still loading a player.
     localStorage.setItem('plus.live.stop', crypto.randomUUID());
     window.dispatchEvent(new Event('plus-brief-generation'));
   }
   const token = localStorage.getItem('plus.token');
-  const headers = token ? { Authorization: `Bearer ${token}` } : {};
+  const headers = { ...extraHeaders, ...(token ? { Authorization: `Bearer ${token}` } : {}) };
   if (json !== undefined) headers['Content-Type'] = 'application/json';
   const res = await fetch(path, { method, headers, body: json === undefined ? undefined : JSON.stringify(json) });
   if (!res.ok) { let detail = `请求失败 (${res.status})`; try { const data = await res.json(); if (typeof data.detail === 'string') detail = data.detail; } catch { /* not json */ } if (res.status === 401) localStorage.removeItem('plus.token'); throw new Error(detail); }

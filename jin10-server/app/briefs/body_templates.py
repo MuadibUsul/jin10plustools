@@ -7,10 +7,14 @@ named values; arbitrary Python expressions or attribute access are rejected.
 from __future__ import annotations
 
 import string
+import re
 from typing import Any
 
 CATEGORIES = ("volume", "turnover", "valuation", "liquidity", "oil_etf", "token_cost", "gpu_rental")
 MAX_TEMPLATE = 4000
+CONSTANTS = {'volume': {'20'}, 'turnover': {'3','5','9','17','96'},
+             'valuation': {'300','6'}, 'liquidity': {'001','007','014','021','7'},
+             'oil_etf': set(), 'token_cost': set(), 'gpu_rental': {'100','200'}}
 
 
 def _config(team, category: str) -> dict:
@@ -70,7 +74,7 @@ def _values(category: str, payload: dict) -> dict[str, Any]:
             high, old_high = float(facts.get("high_ma9")), float(facts.get("previous_high_ma9"))
             values["low_direction"] = "降至" if low < old_low else "升至" if low > old_low else "维持"
             values["high_direction"] = "降至" if high < old_high else "升至" if high > old_high else "维持"
-            values["threshold_side"] = "低于" if high < 17 else "高于"
+            values["threshold_side"] = "低于" if high < 17 else "高于" if high > 17 else "等于"
         except (TypeError, ValueError):
             pass
     elif category == "valuation":
@@ -132,11 +136,19 @@ def validate(category: str, template: str) -> None:
         raise TemplateError("正文模板过长")
     formatter = string.Formatter()
     try:
-        fields = [field for _, field, _, _ in formatter.parse(template) if field]
+        parts = list(formatter.parse(template))
+        fields = [field for _, field, _, _ in parts if field]
     except ValueError as exc:
         raise TemplateError("正文模板格式不正确") from exc
     if any(any(ch in field for ch in ".[]") for field in fields):
         raise TemplateError("正文模板占位符不正确")
+    if not fields:
+        raise TemplateError('正文模板必须使用栏目数据占位符，不能写死当期数值')
+    for literal, field, spec, conversion in parts:
+        if field is not None and (not field or spec or conversion):
+            raise TemplateError('仅支持命名占位符，不支持格式表达式或类型转换')
+        if set(re.findall(r'\d+(?:\.\d+)?', literal)) - CONSTANTS[category]:
+            raise TemplateError('日期和当期数值必须使用命名占位符，不能写死数字')
     known = set(_values(category, {"facts": {}}).keys())
     unknown = sorted(set(fields) - known)
     if unknown:
@@ -144,6 +156,7 @@ def validate(category: str, template: str) -> None:
 
 
 def render(category: str, template: str, payload: dict) -> str:
+    validate(category, template)
     if category not in CATEGORIES:
         raise TemplateError("该栏目不支持正文模板")
     if len(template) > MAX_TEMPLATE:
@@ -162,8 +175,13 @@ def render(category: str, template: str, payload: dict) -> str:
                       if field and field not in values})
     if missing:
         raise TemplateError("模板缺少可用的栏目数据：" + "、".join(missing))
+    empty = [field for _, field, _, _ in formatter.parse(template) if field and values.get(field) in ('', None)]
+    if empty:
+        raise TemplateError('本期缺少模板所需数据：'+'、'.join(sorted(set(empty))))
     try:
-        return template.format_map(values).strip()
+        result = template.format_map(values).strip()
+        if not result or len(result)>20000:raise TemplateError('正文模板结果为空或过长')
+        return result
     except (KeyError, ValueError, IndexError) as exc:
         raise TemplateError("正文模板渲染失败") from exc
 

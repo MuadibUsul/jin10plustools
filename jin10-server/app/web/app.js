@@ -45,8 +45,8 @@ function el(tag, attrs = {}, ...children) {
   return node;
 }
 
-async function api(path, { method = 'GET', json, raw = false } = {}) {
-  const headers = { Authorization: `Bearer ${state.token}` };
+async function api(path, { method = 'GET', json, raw = false, headers: extraHeaders = {} } = {}) {
+  const headers = { ...extraHeaders, Authorization: `Bearer ${state.token}` };
   if (json !== undefined) headers['Content-Type'] = 'application/json';
   const res = await fetch(path, { method, headers, body: json === undefined ? undefined : JSON.stringify(json) });
   if (res.status === 401) {
@@ -386,14 +386,14 @@ const eff = {
 };
 
 async function saveEdits(m, changes) {
-  const updated = await api(`/api/materials/${m.id}/edits`, { method: 'PUT', json: { ...(m.edits ?? {}), ...changes } });
+  const updated = await api(`/api/materials/${m.id}/edits`, { method: 'PUT', headers: {'If-Match':m.updated_at}, json: { ...(m.edits ?? {}), ...changes } });
   Object.assign(m, updated);
   render();
 }
 
 async function clearEdits(m) {
   if (!confirm('恢复采集原文？当前的文字与配图修改会被清除。')) return;
-  Object.assign(m, await api(`/api/materials/${m.id}/edits`, { method: 'DELETE' }));
+  Object.assign(m, await api(`/api/materials/${m.id}/edits`, { method: 'DELETE', headers: {'If-Match':m.updated_at} }));
   render();
 }
 

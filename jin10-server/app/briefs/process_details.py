@@ -206,10 +206,10 @@ def describe(category, payload):
             'facts': safe_value(facts)}
 
 
-def for_job(job, root):
+def for_job(job, root, payload=None):
     root = Path(root).resolve()
     folder = root/'runs'/str(job.id)
-    payload = read_json(folder/'result.json') or {}
+    payload = payload if payload is not None else read_json(folder/'result.json') or {}
     artifact = (root/str(payload.get('artifact_dir', ''))).resolve()
     if not artifact.is_relative_to(root):
         artifact = folder
@@ -249,14 +249,15 @@ def for_job(job, root):
             data['fetched_at'] = parsed.get('fetched_at')
     actions = {'produce': '生成稿件', 'refresh': '重新取数', 'render': '从快照重新制图', 'ai': '补跑AI文案'}
     reused = bool(payload and artifact != folder.resolve())
-    ai = payload.get('deepseek') or {}
+    ai = payload.get('skill') or payload.get('deepseek') or {}
     return {**data, 'evidence': evidence, 'action': actions.get(job.action, job.action),
             'reused': reused, 'available': bool(payload),
             'result': {'title': copy_dates(payload.get('title', '')), 'body': copy_dates(payload.get('dynamic_body', '')),
                        'images': payload.get('images', []), 'warnings': safe_value(payload.get('warnings', [])),
                        'ai_status': ai.get('status', 'not_configured'), 'ai_model': ai.get('model', ''),
                        'ai_provider': ai.get('provider', 'deepseek')},
+            'rule_copy': safe_value(payload.get('rule_copy') or {}),
             'assembly': ['先以已校验指标生成规则标题与事实正文。',
-                         '图表读取同一批已校验数据；本期固定注释按栏目规则放入正文或估值图片。',
-                         '启用AI时，把规则事实交给所选引擎生成候选表达并校验；规则稿保留，AI候选由编辑决定是否采用。',
+                         '图表读取同一批已校验数据；本期固定注释按栏目规则放入正文或图片。',
+                         'Skill 从已验证表达中选择文案；通过校验后进入本期稿件，失败自动使用完整规则稿，始终等待人工审核，不自动发布。',
                          '保存本期版本和来源快照；下载图片时统一加原始水印并检查266000字节上限。']}

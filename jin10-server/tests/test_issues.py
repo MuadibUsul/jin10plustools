@@ -129,7 +129,7 @@ def test_web_page_served(client: TestClient) -> None:
 def test_edits_are_used_in_ppt_and_can_be_cleared(client: TestClient, tmp_path: Path) -> None:
     h, ids = seed(client)
     edits = {"title": "编辑后的标题", "news": "编辑后的新闻", "interpretation": ["第一段", "第二段"]}
-    res = client.put(f"/api/materials/{ids[1]}/edits", json=edits, headers=h).json()
+    res = client.put(f"/api/materials/{ids[1]}/edits", json=edits, headers={**h,"If-Match":client.get(f"/api/materials/{ids[1]}",headers=h).json()["updated_at"]}).json()
     assert res["edits"] == edits and res["title"] == "推理算力占比将大幅提升"  # 原文不变
 
     body = {"issue_date": "2026-09-21", "sections": [{"id": "ai", "material_ids": [ids[1]]}]}
@@ -141,13 +141,13 @@ def test_edits_are_used_in_ppt_and_can_be_cleared(client: TestClient, tmp_path: 
     assert "编辑后的标题" in texts and "【新闻】编辑后的新闻" in texts and "【解读】第一段" in texts and "第二段" in texts
     assert "报告显示" not in texts
 
-    cleared = client.delete(f"/api/materials/{ids[1]}/edits", headers=h).json()
+    cleared = client.delete(f"/api/materials/{ids[1]}/edits", headers={**h,"If-Match":client.get(f"/api/materials/{ids[1]}",headers=h).json()["updated_at"]}).json()
     assert cleared["edits"] is None
 
 
 def test_edit_images_must_be_uploaded(client: TestClient) -> None:
     h, ids = seed(client)
-    res = client.put(f"/api/materials/{ids[0]}/edits", json={"images": ["0" * 32]}, headers=h)
+    res = client.put(f"/api/materials/{ids[0]}/edits", json={"images": ["0" * 32]}, headers={**h,"If-Match":client.get(f"/api/materials/{ids[0]}",headers=h).json()["updated_at"]})
     assert res.status_code == 400
 
 

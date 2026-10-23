@@ -18,15 +18,16 @@ AI_PROVIDERS = ('deepseek', 'chat2api', 'openai')
 DEFAULT_MODELS = {'jev': 'jev-latest', 'deepseek': 'deepseek-chat', 'chat2api': 'gpt-4o-mini', 'openai': 'gpt-4o-mini'}
 # The node's ChatService maps unknown models to gpt-4o silently; only accept what it really routes.
 CHAT2API_MODELS = ('gpt-3.5', 'gpt-4', 'gpt-4.5o', 'gpt-4o-canmore', 'gpt-4-mobile', 'o1', 'o3', 'auto')
+CHAT2API_MODEL_IDS = frozenset((*CHAT2API_MODELS, 'gpt-3.5-turbo', 'gpt-4o', 'gpt-4o-mini', 'o1-mini', 'o3-mini'))
 
 
 def chat2api_supported(model):
     model=(model or '').strip()
-    return bool(model) and any(model.startswith(prefix) for prefix in CHAT2API_MODELS)
+    return model in CHAT2API_MODEL_IDS
 
 
 def chat2api_effective(model):
-    return model if chat2api_supported(model) else 'gpt-4o-mini'
+    return model if chat2api_supported(model) else 'gpt-4o'
 
 
 def provider(team, name):
@@ -81,4 +82,6 @@ def update_notes(db, team, notes, user_id):
         team.settings = {**saved, 'brief_note_revisions': history}
         config.notes = {**previous, **changes}
         config.updated_at = utcnow()
+        from app.services.business_history import record
+        record(db,team,user_id)
     return config

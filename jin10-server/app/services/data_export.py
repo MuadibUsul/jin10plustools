@@ -10,8 +10,12 @@ import csv
 import io
 import json
 import uuid
+import tempfile
+import os
+import re
 from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta
+from decimal import Decimal
 from typing import Callable, Iterable, Iterator
 
 from sqlalchemy import Select, func, select
@@ -19,20 +23,24 @@ from sqlalchemy.orm import Session
 
 from app.briefs.policy import CHINA
 from app.db.models import (
-    Asset, Board, BriefAudit, BriefIssue, BriefJob, BriefSourceSnapshot, BriefVersion,
-    Feedback, Issue, Material, ParseReport, User,
+    AIComputeObservation, AIComputeRevision, TeamBusinessRevision, Asset, Board, BriefAudit, BriefIssue, BriefJob, BriefSourceSnapshot, BriefVersion,
+    Feedback, Issue, Material, NewsAuditEvent, NewsDraft, NewsDraftRevision, NewsEvent,
+    NewsEventAnalysis, NewsEventClaim, NewsEventClaimEvidence, NewsEventEvidence,
+    NewsEventRevision, NewsSkillVersion, NewsWorkflowNode, NewsWorkflowRun,
+    ParseReport, User, ValuationObservation,
 )
 
 MAX_ROWS = 50_000
 UTC_OFFSET = timedelta(hours=8)  # Asia/Shanghai has no daylight saving time
 EXCEL_CELL_LIMIT = 32_767
+MAX_EXPORT_BYTES = 64 * 1024 * 1024
 
 
 @dataclass(frozen=True)
 class Column:
     key: str
     label: str
-    kind: str = 'text'  # text | int | bool | date | datetime | json | user
+    kind: str = 'text'  # text | int | decimal | bool | date | datetime | json | user
     value: Callable[[object], object] = field(default=lambda row: None)
 
 
@@ -45,7 +53,7 @@ class Dataset:
     day: bool                      # True when the filter column stores a plain date
     columns: tuple[Column, ...]
     count: Callable[[Session, uuid.UUID, date | None, date | None], int]
-    rows: Callable[[Session, uuid.UUID, date | None, date | None], list[dict]]
+    rows: Callable[[Session, uuid.UUID, date | None, date | None], Iterable[dict]]
 
 
 def attr(name: str) -> Callable[[object], object]:
@@ -73,12 +81,12 @@ def day_conditions(column, start: date | None, end: date | None) -> list:
 def build_dataset(*, key: str, label: str, description: str, date_label: str, model,
                   team_column, date_column, columns: tuple[Column, ...],
                   join: tuple | None = None, day: bool = False, extra_select: tuple = (),
-                  order_column=None) -> Dataset:
+                  order_column=None, fixed_conditions: tuple = ()) -> Dataset:
     """Register a single-table (or one-join) dataset filtered by its business date."""
     conditions = (day_conditions if day else dt_conditions)
 
     def filters(team_id: uuid.UUID, start: date | None, end: date | None) -> list:
-        return [team_column == team_id, *conditions(date_column, start, end)]
+        return [team_column == team_id, *fixed_conditions, *conditions(date_column, start, end)]
 
     def count(db: Session, team_id: uuid.UUID, start: date | None, end: date | None) -> int:
         stmt = select(func.count()).select_from(model).where(*filters(team_id, start, end))
@@ -86,20 +94,19 @@ def build_dataset(*, key: str, label: str, description: str, date_label: str, mo
             stmt = stmt.join(*join)
         return int(db.scalar(stmt) or 0)
 
-    def rows(db: Session, team_id: uuid.UUID, start: date | None, end: date | None) -> list[dict]:
+    def rows(db: Session, team_id: uuid.UUID, start: date | None, end: date | None) -> Iterator[dict]:
         stmt: Select = select(model, *extra_select).where(*filters(team_id, start, end))
         if join:
             stmt = stmt.join(*join)
         stmt = stmt.order_by(order_column if order_column is not None else date_column)
-        out = []
+        stmt=stmt.limit(MAX_ROWS+1).execution_options(yield_per=200)
         for row in db.execute(stmt):
             entity = row[0]
             values = {column.key: row[index + 1] for index, column in enumerate(extra_select)}
             for column in columns:
                 if column.key not in values:
                     values[column.key] = column.value(entity)
-            out.append({column.key: values.get(column.key) for column in columns})
-        return out
+            yield {column.key: values.get(column.key) for column in columns}
 
     return Dataset(key=key, label=label, description=description, date_label=date_label,
                    day=day, columns=columns, count=count, rows=rows)
@@ -235,6 +242,19 @@ BRIEF_SNAPSHOTS = build_dataset(
     ),
 )
 
+VALUATION_OBSERVATIONS = build_dataset(
+    key='valuation_observations', label='股债性价比原始数据', date_label='日期',
+    description='沪深300收盘价、市值加权PE、十年期国债收益率及ERP。国债收益率填百分数数值（如1.65），ERP以小数存储（如0.06代表6%）。',
+    model=ValuationObservation, team_column=ValuationObservation.team_id,
+    date_column=ValuationObservation.date, day=True,
+    columns=_columns(
+        ('date', '日期', 'date'), ('close', '沪深300收盘价', 'decimal'),
+        ('pe_ttm_mcw', 'PE-TTM市值加权', 'decimal'),
+        ('bond_yield_number', '中国十年期国债收益率（不需加百分号）', 'decimal'),
+        ('erp', '沪深300风险溢价指数', 'decimal'),
+    ),
+)
+
 BRIEF_AUDITS = build_dataset(
     key='brief_audits', label='快讯审核记录', date_label='操作时间',
     description='固定快讯的确认、撤回与保存等操作记录。',
@@ -260,9 +280,275 @@ FEEDBACK = build_dataset(
     ) + (Column('has_image', '有示意图', 'bool', lambda row: bool(row.image_path)),),
 )
 
+NEWS_EVENTS = build_dataset(
+    key='news_events', label='新闻事件', date_label='事件时间',
+    description='News Skill OS 团队新闻事件的稳定身份；正文事实见“新闻事件修订”。',
+    model=NewsEvent, team_column=NewsEvent.team_id, date_column=NewsEvent.event_time,
+    columns=_columns(
+        ('id', '事件ID', 'text'), ('event_key', '事件标识', 'text'), ('title', '标题', 'text'),
+        ('event_time', '事件时间', 'datetime'), ('status', '状态', 'text'),
+        ('current_revision', '当前修订', 'int'), ('payload', '事件元数据', 'json'),
+        ('created_by', '创建人', 'user'), ('created_at', '创建时间', 'datetime'),
+        ('updated_at', '更新时间', 'datetime'),
+    ),
+)
+
+NEWS_EVENT_REVISIONS = build_dataset(
+    key='news_event_revisions', label='新闻事件修订', date_label='创建时间',
+    description='不可变的事件事实快照（来源、证据、Claim、分析与草稿）；用于重建当时采用的事实。',
+    model=NewsEventRevision, team_column=NewsEventRevision.team_id,
+    date_column=NewsEventRevision.created_at,
+    columns=_columns(
+        ('id', '修订ID', 'text'), ('event_id', '事件ID', 'text'), ('number', '修订号', 'int'),
+        ('snapshot_sha256', '快照SHA-256', 'text'), ('audit_reason', '修订原因', 'text'),
+        ('snapshot', '事实快照', 'json'), ('created_by', '修订人', 'user'),
+        ('created_at', '创建时间', 'datetime'),
+    ),
+)
+
+NEWS_EVENT_EVIDENCE = build_dataset(
+    key='news_event_evidence', label='新闻事件证据', date_label='证据时间',
+    description='修订级证据与来源归属；转载共享原始来源标识，不导出原始网页 HTML。',
+    model=NewsEventEvidence, team_column=NewsEventEvidence.team_id,
+    date_column=NewsEventEvidence.captured_at,
+    columns=_columns(
+        ('id', '证据ID', 'text'), ('event_id', '事件ID', 'text'), ('revision_id', '修订ID', 'text'),
+        ('evidence_key', '证据键', 'text'), ('source_key', '来源键', 'text'),
+        ('source_name', '来源名称', 'text'), ('source_kind', '来源类型', 'text'),
+        ('source_original_id', '原始来源ID', 'text'), ('source_published_at', '来源发布时间', 'datetime'),
+        ('excerpt', '证据摘录', 'text'), ('captured_at', '证据时间', 'datetime'),
+        ('locator', '定位', 'text'), ('source_snapshot_hash', '来源快照SHA-256', 'text'),
+        ('payload', '证据数据', 'json'), ('created_at', '入库时间', 'datetime'),
+    ),
+)
+
+NEWS_EVENT_CLAIMS = build_dataset(
+    key='news_event_claims', label='新闻事件 Claim', date_label='创建时间',
+    description='修订级原子断言；数值口径、币种、期间与核验状态以结构化数据保存。',
+    model=NewsEventClaim, team_column=NewsEventClaim.team_id, date_column=NewsEventClaim.created_at,
+    columns=_columns(
+        ('id', 'ClaimID', 'text'), ('event_id', '事件ID', 'text'), ('revision_id', '修订ID', 'text'),
+        ('claim_key', 'Claim键', 'text'), ('subject', '主体', 'text'), ('predicate', '谓语', 'text'),
+        ('text', '断言', 'text'), ('status', '核验状态', 'text'), ('numeric', '数值口径', 'json'),
+        ('attributed_to', '归属', 'text'), ('superseded_by', '替代Claim', 'text'),
+        ('payload', 'Claim数据', 'json'), ('created_at', '创建时间', 'datetime'),
+    ),
+)
+
+NEWS_EVENT_LINKS = build_dataset(
+    key='news_event_claim_evidence', label='新闻事件证据关系', date_label='创建时间',
+    description='Claim 与 Evidence 的支持/矛盾关系，用于追溯事实链。',
+    model=NewsEventClaimEvidence, team_column=NewsEventClaimEvidence.team_id,
+    date_column=NewsEventClaimEvidence.created_at,
+    columns=_columns(
+        ('id', '关系ID', 'text'), ('event_id', '事件ID', 'text'), ('revision_id', '修订ID', 'text'),
+        ('claim_id', 'ClaimID', 'text'), ('evidence_id', '证据ID', 'text'),
+        ('stance', '立场', 'text'), ('created_at', '创建时间', 'datetime'),
+    ),
+)
+
+NEWS_EVENT_ANALYSES = build_dataset(
+    key='news_event_analyses', label='新闻事件分析', date_label='创建时间',
+    description='前因/后果/补充说明三段分析及事实/推断标签，必须携带 Claim 或 Evidence 依赖。',
+    model=NewsEventAnalysis, team_column=NewsEventAnalysis.team_id,
+    date_column=NewsEventAnalysis.created_at,
+    columns=_columns(
+        ('id', '分析ID', 'text'), ('event_id', '事件ID', 'text'), ('revision_id', '修订ID', 'text'),
+        ('analysis_key', '分析键', 'text'), ('section', '段落', 'text'), ('text', '正文', 'text'),
+        ('label', '事实或推断', 'text'), ('claim_ids', 'Claim依赖', 'json'),
+        ('evidence_ids', '证据依赖', 'json'), ('payload', '分析数据', 'json'),
+        ('created_at', '创建时间', 'datetime'),
+    ),
+)
+
+NEWS_DRAFTS = build_dataset(
+    key='news_drafts', label='新闻草稿', date_label='更新时间',
+    description='Plus新鲜事 / Plus注解等待审草稿的当前版本；通过审核不等于对外发布。',
+    model=NewsDraft, team_column=NewsDraft.team_id, date_column=NewsDraft.updated_at,
+    columns=_columns(
+        ('id', '草稿ID', 'text'), ('event_id', '事件ID', 'text'), ('title', '标题', 'text'),
+        ('body', '正文', 'text'), ('target', '目标栏目', 'text'), ('status', '状态', 'text'),
+        ('current_revision', '当前修订', 'int'), ('skill_id', 'SkillID', 'text'),
+        ('skill_version', 'Skill版本', 'text'), ('payload', '草稿数据', 'json'),
+        ('created_by', '创建人', 'user'), ('created_at', '创建时间', 'datetime'),
+        ('updated_at', '更新时间', 'datetime'),
+    ),
+)
+
+NEWS_DRAFT_REVISIONS = build_dataset(
+    key='news_draft_revisions', label='新闻草稿修订', date_label='创建时间',
+    description='不可变草稿版本与人工审核记录；审核只影响状态，不改正文历史。',
+    model=NewsDraftRevision, team_column=NewsDraftRevision.team_id,
+    date_column=NewsDraftRevision.created_at,
+    columns=_columns(
+        ('id', '修订ID', 'text'), ('draft_id', '草稿ID', 'text'), ('number', '修订号', 'int'),
+        ('event_revision_id', '事件修订ID', 'text'), ('title', '标题', 'text'),
+        ('body', '正文', 'text'), ('skill_id', 'SkillID', 'text'),
+        ('skill_version', 'Skill版本', 'text'), ('payload', '草稿数据', 'json'),
+        ('review_status', '审核状态', 'text'), ('review_note', '审核意见', 'text'),
+        ('reviewed_by', '审核人', 'user'), ('reviewed_at', '审核时间', 'datetime'),
+        ('created_by', '创建人', 'user'), ('created_at', '创建时间', 'datetime'),
+    ),
+)
+
+NEWS_SKILL_VERSIONS = build_dataset(
+    key='news_skill_versions', label='新闻 Skill 版本', date_label='登记时间',
+    description='团队使用过的 Skill Manifest 不可变快照、摘要与权限声明。',
+    model=NewsSkillVersion, team_column=NewsSkillVersion.team_id,
+    date_column=NewsSkillVersion.created_at,
+    columns=_columns(
+        ('id', '记录ID', 'text'), ('skill_id', 'SkillID', 'text'), ('version', '版本', 'text'),
+        ('digest', 'Manifest摘要', 'text'), ('manifest', 'Manifest', 'json'),
+        ('source', '来源', 'text'), ('created_by', '登记人', 'user'),
+        ('created_at', '登记时间', 'datetime'),
+    ),
+)
+
+NEWS_WORKFLOW_RUNS = build_dataset(
+    key='news_workflow_runs', label='新闻工作流运行', date_label='创建时间',
+    description='DAG 运行状态、输入/输出摘要与错误；没有发布动作。',
+    model=NewsWorkflowRun, team_column=NewsWorkflowRun.team_id,
+    date_column=NewsWorkflowRun.created_at,
+    columns=_columns(
+        ('id', '运行ID', 'text'), ('run_key', '运行键', 'text'), ('event_id', '事件ID', 'text'),
+        ('event_revision', '事件修订', 'int'),
+        ('workflow_id', '工作流ID', 'text'), ('workflow_digest', '工作流摘要', 'text'),
+        ('status', '状态', 'text'), ('input_digest', '输入摘要', 'text'),
+        ('output', '输出', 'json'), ('error', '错误', 'text'),
+        ('started_at', '开始时间', 'datetime'), ('finished_at', '结束时间', 'datetime'),
+        ('created_by', '发起人', 'user'), ('created_at', '创建时间', 'datetime'),
+    ),
+)
+
+NEWS_WORKFLOW_NODES = build_dataset(
+    key='news_workflow_nodes', label='新闻工作流节点', date_label='创建时间',
+    description='节点级 Skill 版本、输入/输出摘要、来源快照、缓存、耗时与重试。',
+    model=NewsWorkflowNode, team_column=NewsWorkflowNode.team_id,
+    date_column=NewsWorkflowNode.created_at,
+    columns=_columns(
+        ('id', '节点记录ID', 'text'), ('run_id', '运行ID', 'text'), ('node_id', '节点ID', 'text'),
+        ('skill_id', 'SkillID', 'text'), ('skill_version', 'Skill版本', 'text'),
+        ('status', '状态', 'text'), ('input_digest', '输入摘要', 'text'),
+        ('output_digest', '输出摘要', 'text'), ('source_snapshot_hashes', '来源快照', 'json'),
+        ('duration_ms', '耗时毫秒', 'int'), ('attempts', '尝试次数', 'int'),
+        ('cached', '缓存命中', 'bool'), ('error', '错误', 'text'), ('output', '输出', 'json'),
+        ('created_at', '创建时间', 'datetime'),
+    ),
+)
+
+NEWS_AUDIT = build_dataset(
+    key='news_audit_events', label='新闻操作审计', date_label='操作时间',
+    description='News Skill OS 的追加式人工写操作审计；不包含密钥或原始网页 HTML。',
+    model=NewsAuditEvent, team_column=NewsAuditEvent.team_id,
+    date_column=NewsAuditEvent.created_at,
+    columns=_columns(
+        ('id', '审计ID', 'text'), ('entity_type', '对象类型', 'text'),
+        ('entity_id', '对象ID', 'text'), ('action', '操作', 'text'), ('revision', '修订号', 'int'),
+        ('actor_name', '操作人', 'text'), ('reason', '原因', 'text'),
+        ('details', '详情', 'json'), ('created_at', '操作时间', 'datetime'),
+    ),
+)
+
+AI_COMPUTE = build_dataset(
+    key='ai_compute_observations', label='AI算力原始数据', date_label='数据日期',
+    description='Token 支出价格与 A100/H100/B200 GPU 租赁价格的合并原始记录，包含导入、网页公开展示及人工替代数据。',
+    model=AIComputeObservation, team_column=AIComputeObservation.team_id,
+    date_column=AIComputeObservation.date, day=True,
+    columns=_columns(
+        ('id', '记录ID', 'text'), ('kind', '指标类型', 'text'), ('date', '数据日期', 'date'),
+        ('token_price', 'Token支出价格', 'text'), ('a100', 'A100价格', 'text'),
+        ('h100', 'H100价格', 'text'), ('b200', 'B200价格', 'text'),
+        ('source', '来源', 'text'), ('source_status', '来源状态', 'text'),
+        ('public_display', '网页公开展示值', 'json'),
+        ('manual_display', '人工录入展示值', 'json'),
+        ('revision', '修订号', 'int'), ('created_at', '入库时间', 'datetime'),
+        ('updated_at', '更新时间', 'datetime'),
+    ),
+)
+
+def compute_reading(row: AIComputeObservation, metric: str) -> dict | None:
+    """Use only the capture currently supplying the observation's price."""
+    display = row.manual_display if row.source_status == 'manual_entry' else row.public_display
+    for reading in (display or {}).get('readings') or []:
+        if reading.get('metric') == metric:
+            return reading
+    return None
+
+
+def compute_price(row: AIComputeObservation, metric: str) -> str | None:
+    value = getattr(row, 'token_price' if metric == 'token' else metric)
+    if value is None:
+        return None
+    reading = compute_reading(row, metric)
+    if reading is not None and reading.get('price') is not None:
+        if Decimal(str(reading['price'])) == value:
+            return str(reading['price'])
+    return format(value.normalize(), 'f')
+
+
+def compute_week_change(row: AIComputeObservation, metric: str) -> str | None:
+    """Expose a reported 7-day change; leave missing workbook values blank."""
+    reading = compute_reading(row, metric)
+    return reading.get('week_change_pct') if reading else None
+
+
+TOKEN_COST = build_dataset(
+    key='token_cost_observations', label='AI算力CPI·Token价格', date_label='数据日期',
+    description='每个数据日一行，导出当前生效的 Token 支出价格、页面或人工提供的七日变化、来源及修订号；未提供的七日变化留空。',
+    model=AIComputeObservation, team_column=AIComputeObservation.team_id,
+    date_column=AIComputeObservation.date, day=True,
+    fixed_conditions=(AIComputeObservation.kind == 'token',),
+    columns=(
+        *_columns(('date', '数据日期', 'date')),
+        Column('token_price', 'Token支出价格', 'text', lambda row: compute_price(row, 'token')),
+        Column('week_change_pct', '七日变化（%）', 'text',
+               lambda row: compute_week_change(row, 'token')),
+        *_columns(('source', '来源', 'text'), ('source_status', '来源状态', 'text'),
+                  ('revision', '修订号', 'int'), ('updated_at', '更新时间', 'datetime')),
+    ),
+)
+
+GPU_RENTAL = build_dataset(
+    key='gpu_rental_observations', label='AI景气度指标·GPU租赁价格', date_label='数据日期',
+    description='每个数据日一行，导出当前生效的 A100/H100/B200 租赁价格、页面或人工提供的七日变化、来源及修订号；缺项留空。',
+    model=AIComputeObservation, team_column=AIComputeObservation.team_id,
+    date_column=AIComputeObservation.date, day=True,
+    fixed_conditions=(AIComputeObservation.kind == 'gpu',),
+    columns=(
+        *_columns(('date', '数据日期', 'date')),
+        *(Column(metric, f'{metric.upper()}价格', 'text',
+                 lambda row, metric=metric: compute_price(row, metric))
+          for metric in ('a100', 'h100', 'b200')),
+        *(Column(f'{metric}_week_change_pct', f'{metric.upper()}七日变化（%）', 'text',
+                 lambda row, metric=metric: compute_week_change(row, metric))
+          for metric in ('a100', 'h100', 'b200')),
+        *_columns(('source', '来源', 'text'), ('source_status', '来源状态', 'text'),
+                  ('revision', '修订号', 'int'), ('updated_at', '更新时间', 'datetime')),
+    ),
+)
+AI_COMPUTE_REVISIONS = build_dataset(
+    key='ai_compute_revisions',label='AI算力数据修订',date_label='数据日期',
+    description='各次导入的原始数值修订；迁移前已丢失的历史值不补造。',
+    model=AIComputeRevision,team_column=AIComputeRevision.team_id,date_column=AIComputeRevision.date,day=True,
+    columns=_columns(('id','修订ID','text'),('observation_id','数据ID','text'),('date','数据日期','date'),
+        ('kind','指标类型','text'),('revision','修订号','int'),('values','原始数值','json'),
+        ('source','来源','text'),('created_at','记录时间','datetime')))
+
+BUSINESS_REVISIONS = build_dataset(
+    key='team_business_revisions',label='团队业务设置修订',date_label='修改时间',
+    description='栏目注释及其历史、团队正文模板、Skill团队覆盖历史；排除所有接入密钥。',
+    model=TeamBusinessRevision,team_column=TeamBusinessRevision.team_id,date_column=TeamBusinessRevision.created_at,
+    columns=_columns(('id','修订ID','text'),('snapshot','业务设置','json'),('digest','校验值','text'),
+        ('created_by','修改人','user'),('created_at','修改时间','datetime')))
+
 DATASETS: dict[str, Dataset] = {dataset.key: dataset for dataset in (
     MATERIALS, ASSETS, ISSUES, BOARDS, PARSE_REPORTS,
-    BRIEF_ISSUES, BRIEF_VERSIONS, BRIEF_JOBS, BRIEF_SNAPSHOTS, BRIEF_AUDITS, FEEDBACK,
+    BRIEF_ISSUES, BRIEF_VERSIONS, BRIEF_JOBS, BRIEF_SNAPSHOTS, VALUATION_OBSERVATIONS,
+    BRIEF_AUDITS, FEEDBACK,
+    NEWS_EVENTS, NEWS_EVENT_REVISIONS, NEWS_EVENT_EVIDENCE, NEWS_EVENT_CLAIMS,
+    NEWS_EVENT_LINKS, NEWS_EVENT_ANALYSES, NEWS_DRAFTS, NEWS_DRAFT_REVISIONS,
+    NEWS_SKILL_VERSIONS, NEWS_WORKFLOW_RUNS, NEWS_WORKFLOW_NODES, NEWS_AUDIT,
+    AI_COMPUTE_REVISIONS, BUSINESS_REVISIONS, AI_COMPUTE, TOKEN_COST, GPU_RENTAL,
 )}
 
 
@@ -294,6 +580,8 @@ def text_cell(column: Column, value, users: dict[str, str]) -> str | int | None:
         return users.get(str(value), str(value))
     if column.kind == 'int':
         return value
+    if column.kind == 'decimal':
+        return str(value)
     return str(value)
 
 
@@ -308,6 +596,8 @@ def json_cell(column: Column, value, users: dict[str, str]):
         return users.get(str(value), str(value))
     if column.kind == 'json':
         return value
+    if column.kind == 'decimal':
+        return float(value)
     if isinstance(value, uuid.UUID):
         return str(value)
     return value
@@ -318,7 +608,7 @@ def csv_bytes(dataset: Dataset, rows: Iterable[dict], users: dict[str, str]) -> 
     writer = csv.writer(buffer, lineterminator='\r\n')
     writer.writerow(headers(dataset))
     for row in rows:
-        writer.writerow([text_cell(column, row.get(column.key), users) for column in dataset.columns])
+        writer.writerow([csv_safe(text_cell(column, row.get(column.key), users)) for column in dataset.columns])
     # The BOM keeps Chinese readable when Excel opens the file directly.
     return ('\ufeff' + buffer.getvalue()).encode('utf-8')
 
@@ -331,6 +621,7 @@ def json_bytes(dataset: Dataset, rows: Iterable[dict], users: dict[str, str]) ->
 
 def xlsx_bytes(dataset: Dataset, rows: Iterable[dict], users: dict[str, str]) -> bytes:
     from openpyxl import Workbook
+    from openpyxl.cell import WriteOnlyCell
 
     book = Workbook(write_only=True)
     sheet = book.create_sheet(title='数据')
@@ -339,10 +630,78 @@ def xlsx_bytes(dataset: Dataset, rows: Iterable[dict], users: dict[str, str]) ->
         values = []
         for column in dataset.columns:
             value = text_cell(column, row.get(column.key), users)
+            if column.kind == 'decimal' and value is not None:
+                value = float(value)
             if isinstance(value, str) and len(value) > EXCEL_CELL_LIMIT:
                 value = value[:EXCEL_CELL_LIMIT - 1] + '…'
+            if isinstance(value,str):
+                cell=WriteOnlyCell(sheet,value=value);cell.data_type='s';value=cell
             values.append(value)
         sheet.append(values)
     buffer = io.BytesIO()
     book.save(buffer)
     return buffer.getvalue()
+
+
+def csv_safe(value):
+    if isinstance(value,str) and value.lstrip().startswith(('=','+','-','@')):
+        if re.fullmatch(r'[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?', value):
+            return value
+        return "'"+value
+    return value
+
+
+class ExportLimitError(ValueError):
+    pass
+
+
+def write_export(dataset, rows, users, fmt):
+    """Bounded database batches and bounded disk output; no whole-export RAM buffer."""
+    from openpyxl import Workbook
+    from openpyxl.cell import WriteOnlyCell
+    task_file=tempfile.NamedTemporaryFile(prefix='plus-export-',suffix='.'+fmt,delete=False)
+    path=task_file.name
+    class BoundedFile:
+        def write(self,data):
+            if task_file.tell()+len(data)>MAX_EXPORT_BYTES:
+                raise ExportLimitError('导出文件超过64MB上限，请缩小时间范围')
+            return task_file.write(data)
+        def __getattr__(self,name):return getattr(task_file,name)
+    output=BoundedFile()
+    def checked():
+        for count,row in enumerate(rows,1):
+            if count>MAX_ROWS:raise ExportLimitError('导出行数超过上限，请缩小时间范围')
+            yield row
+    try:
+        if fmt=='xlsx':
+            book=Workbook(write_only=True);sheet=book.create_sheet(title='数据');sheet.append(headers(dataset))
+            for row in checked():
+                values=[]
+                for column in dataset.columns:
+                    value=text_cell(column,row.get(column.key),users)
+                    if column.kind=='decimal' and value is not None:value=float(value)
+                    if isinstance(value,str):
+                        value=value[:EXCEL_CELL_LIMIT-1]+'…' if len(value)>EXCEL_CELL_LIMIT else value
+                        cell=WriteOnlyCell(sheet,value=value);cell.data_type='s';value=cell
+                    values.append(value)
+                sheet.append(values)
+            book.save(output)
+        elif fmt=='json':
+            output.write(b'[');first=True
+            for row in checked():
+                if not first:output.write(b',')
+                first=False
+                data={c.key:json_cell(c,row.get(c.key),users) for c in dataset.columns}
+                output.write(json.dumps(data,ensure_ascii=False,default=str).encode('utf-8'))
+            output.write(b']')
+        else:
+            output.write(b'\xef\xbb\xbf')
+            buffer=io.StringIO();writer=csv.writer(buffer,lineterminator='\r\n')
+            writer.writerow(headers(dataset));output.write(buffer.getvalue().encode('utf-8'))
+            for row in checked():
+                buffer.seek(0);buffer.truncate(0)
+                writer.writerow([csv_safe(text_cell(c,row.get(c.key),users)) for c in dataset.columns])
+                output.write(buffer.getvalue().encode('utf-8'))
+        task_file.close();return path
+    except BaseException:
+        task_file.close();os.unlink(path);raise

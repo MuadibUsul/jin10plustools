@@ -8,7 +8,11 @@ CATEGORIES = {
     'valuation': '市场估值指标', 'liquidity': '流动性指标', 'oil_etf': '原油ETF持仓',
     'us_barometer': '美股晴雨表',
     'us_structure': '美股市场结构',
+    'token_cost': 'AI算力CPI',
+    'gpu_rental': 'AI景气度指标',
 }
+AUTO_CATEGORIES = ('volume', 'turnover', 'valuation', 'liquidity', 'oil_etf',
+                   'us_barometer', 'us_structure')
 
 
 def previous_weekday(day: date) -> date:

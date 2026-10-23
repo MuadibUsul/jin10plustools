@@ -1,0 +1,11 @@
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
+USER root
+COPY jin10-server/app/web/*.html /srv/app/web/
+COPY jin10-server/app/web/favicon.svg /srv/app/web/favicon.svg
+COPY jin10-server/app/web/favicon.ico /srv/app/web/favicon.ico
+COPY jin10-server/app/web/favicon-32.png /srv/app/web/favicon-32.png
+COPY jin10-server/app/web/favicon-192.png /srv/app/web/favicon-192.png
+COPY jin10-server/app/web/apple-touch-icon.png /srv/app/web/apple-touch-icon.png
+RUN chmod -R a+rX /srv/app/web
+USER plus

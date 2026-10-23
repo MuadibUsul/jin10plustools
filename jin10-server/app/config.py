@@ -5,7 +5,7 @@ from __future__ import annotations
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -49,6 +49,14 @@ class Settings(BaseSettings):
     # Optional official OpenAI-compatible endpoint for models the web node cannot reach.
     openai_api_key: str = ''
     openai_model: str = 'gpt-4o-mini'
+    # AI polishing for the five fixed-brief text-Skill previews. Tests set false.
+    briefs_skill_ai_enabled: bool = True
+
+    # Isolated News Skill OS preview. No worker or database writes when disabled.
+    news_skill_os_enabled: bool = Field(
+        default=False,
+        validation_alias=AliasChoices('NEWS_SKILL_OS_ENABLED', 'PLUS_NEWS_SKILL_OS_ENABLED'),
+    )
 
 
 @lru_cache

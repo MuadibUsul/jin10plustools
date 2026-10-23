@@ -1,0 +1,17 @@
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
+USER root
+COPY jin10-server/app/config.py /srv/app/config.py
+COPY jin10-server/app/main.py /srv/app/main.py
+COPY jin10-server/app/db/models.py /srv/app/db/models.py
+COPY jin10-server/app/services/data_export.py /srv/app/services/data_export.py
+COPY jin10-server/app/api/news_skill_os.py /srv/app/api/news_skill_os.py
+COPY jin10-server/app/news_skill_os /srv/app/news_skill_os
+COPY jin10-server/app/web/news.html /srv/app/web/news.html
+COPY jin10-server/app/web/news.js /srv/app/web/news.js
+COPY jin10-server/app/web/news.css /srv/app/web/news.css
+COPY jin10-server/app/web/portal.html /srv/app/web/portal.html
+COPY jin10-server/app/web/portal.js /srv/app/web/portal.js
+COPY jin10-server/alembic/versions/0012_news_skill_os.py /srv/alembic/versions/0012_news_skill_os.py
+RUN chmod -R a+rX /srv/app /srv/alembic
+USER plus

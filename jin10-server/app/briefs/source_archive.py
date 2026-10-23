@@ -23,7 +23,7 @@ MAX_RUN_BYTES = 100_000_000
 
 
 def archive_run(db, job, folder: Path, *, history_dir: Path | None = None,
-                source_dir: Path | None = None, version=None):
+                source_dir: Path | None = None, version=None, data_date: str | None = None):
     """Archive all data artifacts, including those captured before a failure.
 
     A failure to archive is fatal to the job; source files must never silently
@@ -71,7 +71,7 @@ def archive_run(db, job, folder: Path, *, history_dir: Path | None = None,
                 db.add(BriefSourceSnapshot(team_id=job.team_id, job_id=job.id,
                     version_id=version.id if version is not None else None,
                     attempt=job.attempts, category=job.category,
-                    data_date=expected_date(job.category, job.issue_date),
+                    data_date=date.fromisoformat(data_date) if data_date else expected_date(job.category, job.issue_date),
                     relative_path=name, sha256=digest, byte_count=len(content),
                     content=content))
             count += 1

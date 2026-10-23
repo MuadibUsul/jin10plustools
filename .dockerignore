@@ -1,0 +1,11 @@
+.git
+**/.venv
+**/node_modules
+**/__pycache__
+**/.pytest_cache
+**/.env
+.env
+**/out
+**/data
+jin10-extension
+docs

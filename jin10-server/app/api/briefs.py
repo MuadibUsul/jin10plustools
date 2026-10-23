@@ -25,6 +25,22 @@ class JobRequest(BaseModel):
     action: Literal['produce','refresh','render','ai']='produce'
 
 
+class ManualComputeRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    category: Literal['token_cost', 'gpu_rental']
+    issue_date: date
+    data_date: date
+    token_price: str | None = None
+    a100: str | None = None
+    h100: str | None = None
+    b200: str | None = None
+    token_change_pct: str | None = None
+    a100_change_pct: str | None = None
+    h100_change_pct: str | None = None
+    b200_change_pct: str | None = None
+    source_note: str = Field(default='', max_length=200)
+
+
 class EditRequest(BaseModel):
     base_version: int=Field(ge=1)
     title: str=Field(min_length=1,max_length=300)
@@ -68,7 +84,10 @@ def config(body:ConfigRequest,db:DbSession,user:Editor):
     if user.role!=Role.ADMIN:raise HTTPException(403,'仅管理员可修改排期')
     item=db.get(BriefConfig,user.team_id)
     if not item:item=BriefConfig(team_id=user.team_id);db.add(item)
-    item.enabled=body.enabled;item.updated_at=utcnow();db.commit()
+    item.enabled=body.enabled;item.updated_at=utcnow()
+    from app.services.business_history import record
+    record(db,db.get(Team,user.team_id),user.id)
+    db.commit()
     return {'enabled':item.enabled}
 
 
@@ -99,6 +118,33 @@ def jobs(body:JobRequest,db:DbSession,user:Editor):
     db.commit();return job_out(job)
 
 
+@router.post('/manual-compute',status_code=202)
+def manual_compute(body:ManualComputeRequest,db:DbSession,user:Editor):
+    from app.briefs.manual_compute import normalize
+
+    today=datetime.now(CHINA).date()
+    if body.issue_date>today:raise HTTPException(422,'不能处理未来生产日期')
+    active=db.scalar(select(BriefJob).where(
+        BriefJob.team_id==user.team_id, BriefJob.issue_date==body.issue_date,
+        BriefJob.category==body.category,
+        BriefJob.status.in_(['queued','running','waiting'])))
+    if active:raise HTTPException(409,'该栏目正在生成，请等待当前任务结束后再录入')
+    try:
+        capture=normalize(body.category,body.data_date,body.issue_date,today,
+            {'token':body.token_price,'a100':body.a100,'h100':body.h100,'b200':body.b200},
+            {'token':body.token_change_pct,'a100':body.a100_change_pct,
+             'h100':body.h100_change_pct,'b200':body.b200_change_pct},
+            body.source_note,user.id)
+    except ValueError as exc:
+        raise HTTPException(422,str(exc)) from exc
+    job=enqueue(db,user.team_id,body.issue_date,body.category,action='produce',
+                user_id=user.id,unique=True,manual_capture=capture)
+    if job.manual_capture != capture:
+        raise HTTPException(409,'该栏目刚开始执行其他任务，请稍后重新提交人工数据')
+    db.commit()
+    return job_out(job)
+
+
 @router.get('/jobs/{id}')
 def job(id:uuid.UUID,db:DbSession,user:CurrentUser):
     row=db.scalars(select(BriefJob).where(BriefJob.id==id,BriefJob.team_id==user.team_id)).first()
@@ -113,12 +159,21 @@ def job_process(id:uuid.UUID,db:DbSession,user:CurrentUser):
     if not row:raise HTTPException(404,'任务不存在')
     from app.briefs.process_details import for_job
     from app.briefs.service import root_for
-    return {'job':job_out(row),'details':for_job(row,root_for(row.team_id))}
+    saved=db.scalars(select(BriefVersion).join(BriefIssue).where(BriefIssue.team_id==user.team_id,
+        BriefIssue.issue_date==row.issue_date,BriefIssue.category==row.category).order_by(BriefVersion.number.desc())).all()
+    payload=next((v.payload for v in saved if (v.payload.get('source_archive') or {}).get('job_id')==str(row.id)),None)
+    return {'job':job_out(row),'details':for_job(row,root_for(row.team_id),payload)}
 
 
 @router.get('/issues/{id}/versions')
 def versions(id:uuid.UUID,db:DbSession,user:CurrentUser):
     return visible(db,user,get_issue(db,user,id))['versions']
+
+
+@router.get('/issues/{id}/skill-preview')
+def skill_preview(id:uuid.UUID,db:DbSession,user:CurrentUser,version:int=Query(ge=1)):
+    get_issue(db,user,id)
+    raise HTTPException(410,'独立AI预览已停用，文案由生成稿件流程统一处理')
 
 
 @router.post('/issues/{id}/revisions',status_code=201)

@@ -1,6 +1,7 @@
 // PLUS 日报选稿页：待选素材按栏目分组、按综合分排序；勾选后生成 PDF。
 // 同源调用 /api，登录令牌只保存在本浏览器。
 import { account, copyDate, displayTime } from '/workspace.js';
+import { createDailyEditor } from '/daily-editor.js';
 import '/pull-cord.js';
 
 const SECTIONS = [
@@ -45,8 +46,8 @@ function el(tag, attrs = {}, ...children) {
   return node;
 }
 
-async function api(path, { method = 'GET', json, raw = false } = {}) {
-  const headers = { Authorization: `Bearer ${state.token}` };
+async function api(path, { method = 'GET', json, raw = false, headers: extraHeaders = {} } = {}) {
+  const headers = { ...extraHeaders, Authorization: `Bearer ${state.token}` };
   if (json !== undefined) headers['Content-Type'] = 'application/json';
   const res = await fetch(path, { method, headers, body: json === undefined ? undefined : JSON.stringify(json) });
   if (res.status === 401) {
@@ -386,14 +387,14 @@ const eff = {
 };
 
 async function saveEdits(m, changes) {
-  const updated = await api(`/api/materials/${m.id}/edits`, { method: 'PUT', json: { ...(m.edits ?? {}), ...changes } });
+  const updated = await api(`/api/materials/${m.id}/edits`, { method: 'PUT', headers: {'If-Match':m.updated_at}, json: { ...(m.edits ?? {}), ...changes } });
   Object.assign(m, updated);
   render();
 }
 
 async function clearEdits(m) {
   if (!confirm('恢复采集原文？当前的文字与配图修改会被清除。')) return;
-  Object.assign(m, await api(`/api/materials/${m.id}/edits`, { method: 'DELETE' }));
+  Object.assign(m, await api(`/api/materials/${m.id}/edits`, { method: 'DELETE', headers: {'If-Match':m.updated_at} }));
   render();
 }
 
@@ -650,7 +651,7 @@ function render() {
     el('li', {}, el('label', { class: 'cover-choice' },
       el('input', { type: 'checkbox', checked: cover.has(m.id), disabled: !canEdit() || state.coverSaving,
         'aria-label': `首页精选：${eff.title(m)}`, onchange: () => toggleCover(m.id) }), eff.title(m))))]));
-  $('#generate').disabled = total === 0;
+  $('#generate').disabled = total === 0 || !canEdit();
   $('#preview').disabled = total === 0;
 }
 
@@ -664,21 +665,10 @@ function issueRequest() {
   };
 }
 
-// ---------- 预览（与生成同一流程：服务端生成 PDF 后逐页转图） ----------
+// ---------- 从选稿进入排版编辑 ----------
 
-async function openPreview() {
-  const view = $('#preview-view');
-  view.hidden = false;
-  $('#preview-info').textContent = '正在渲染…';
-  $('#preview-pages').replaceChildren();
-  try {
-    const res = await api('/api/issues/preview', { method: 'POST', json: issueRequest() });
-    $('#preview-info').textContent = `共 ${res.page_count} 页${res.warnings.length ? ' · ' + res.warnings.join('；') : ''}　所见即所得：点「生成 PDF」得到的文件与此完全一致`;
-    $('#preview-pages').replaceChildren(...res.pages.map((src, i) => el('img', { src, alt: `第 ${i + 1} 页` })));
-  } catch (err) {
-    $('#preview-info').textContent = `预览失败：${err.message}`;
-  }
-}
+let dailyEditor;
+function openPreview() { return dailyEditor.open(issueRequest()); }
 
 // ---------- 垃圾桶 / 恢复 AI 排版 ----------
 
@@ -769,8 +759,7 @@ async function resetAiLayout() {
   render();
 }
 
-async function generate() {
-  const request = issueRequest();
+async function generate(request = issueRequest()) {
   const status = $('#gen-status');
   const button = $('#generate');
   button.disabled = true;
@@ -829,11 +818,9 @@ function wire() {
   $('#auto-pick').addEventListener('click', autoPick);
   $('#clear-pick').addEventListener('click', () => { state.picked.clear(); boardOps({ pick_set: [] }); render(); });
   $('#cover-reset').addEventListener('click', resetCover);
-  $('#generate').addEventListener('click', generate);
+  dailyEditor = createDailyEditor({ api, onGenerate: generate, canGenerate: canEdit });
+  $('#generate').addEventListener('click', openPreview);
   $('#preview').addEventListener('click', openPreview);
-  $('#preview-refresh').addEventListener('click', openPreview);
-  $('#preview-close').addEventListener('click', () => { $('#preview-view').hidden = true; });
-  $('#preview-generate').addEventListener('click', () => { $('#preview-view').hidden = true; generate(); });
   $('#reset-ai').addEventListener('click', () => resetAiLayout().catch(alert));
   $('#clear-pool').addEventListener('click', () => clearPool().catch(alert));
   $('#bulk-delete').addEventListener('click', () => setBulk(!state.bulk));

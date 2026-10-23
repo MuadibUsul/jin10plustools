@@ -1,0 +1,247 @@
+{
+  "api_version": "news.skill/v1",
+  "id": "news.fixed-volume",
+  "version": "0.1.0",
+  "owner": "plus-editorial",
+  "description": "Evidence-bound volume fixed brief text; no image or publication.",
+  "entrypoint": "app.news_skill_os.skills.fixed_volume:run",
+  "input_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "data_date",
+      "facts",
+      "fixed_note"
+    ],
+    "properties": {
+      "data_date": {
+        "type": "string",
+        "format": "date"
+      },
+      "facts": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "amount"
+        ],
+        "properties": {
+          "previous_amount": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "value",
+              "unit",
+              "evidence_id",
+              "as_of",
+              "verified"
+            ],
+            "properties": {
+              "value": {
+                "oneOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "number"
+                  }
+                ]
+              },
+              "unit": {
+                "enum": [
+                  "yi_cny",
+                  "percent",
+                  "wan_barrels"
+                ]
+              },
+              "evidence_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "as_of": {
+                "type": "string",
+                "format": "date"
+              },
+              "verified": {
+                "const": true
+              },
+              "basis": {
+                "type": "string"
+              }
+            }
+          },
+          "mean20": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "value",
+              "unit",
+              "evidence_id",
+              "as_of",
+              "verified"
+            ],
+            "properties": {
+              "value": {
+                "oneOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "number"
+                  }
+                ]
+              },
+              "unit": {
+                "enum": [
+                  "yi_cny",
+                  "percent",
+                  "wan_barrels"
+                ]
+              },
+              "evidence_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "as_of": {
+                "type": "string",
+                "format": "date"
+              },
+              "verified": {
+                "const": true
+              },
+              "basis": {
+                "type": "string"
+              }
+            }
+          },
+          "amount": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "value",
+              "unit",
+              "evidence_id",
+              "as_of",
+              "verified"
+            ],
+            "properties": {
+              "value": {
+                "oneOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "number"
+                  }
+                ]
+              },
+              "unit": {
+                "enum": [
+                  "yi_cny",
+                  "percent",
+                  "wan_barrels"
+                ]
+              },
+              "evidence_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "as_of": {
+                "type": "string",
+                "format": "date"
+              },
+              "verified": {
+                "const": true
+              },
+              "basis": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
+      "fixed_note": {
+        "type": "string",
+        "maxLength": 2000
+      }
+    }
+  },
+  "output_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "title",
+      "dynamic_body",
+      "fixed_note",
+      "body",
+      "notes_placement",
+      "evidence_ids",
+      "publication_allowed"
+    ],
+    "properties": {
+      "title": {
+        "type": "string",
+        "minLength": 1
+      },
+      "dynamic_body": {
+        "type": "string",
+        "minLength": 1
+      },
+      "fixed_note": {
+        "type": "string"
+      },
+      "body": {
+        "type": "string",
+        "minLength": 1
+      },
+      "notes_placement": {
+        "enum": [
+          "body",
+          "image",
+          "inline"
+        ]
+      },
+      "evidence_ids": {
+        "type": "array",
+        "uniqueItems": true,
+        "items": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "publication_allowed": {
+        "const": false
+      }
+    }
+  },
+  "model_profile": "deterministic-editorial",
+  "timeouts": {
+    "seconds": 10
+  },
+  "retry_policy": {
+    "max_attempts": 1
+  },
+  "idempotency": "deterministic",
+  "allowed_tools": [],
+  "permissions": {
+    "network": false,
+    "database_read": false,
+    "database_write": false,
+    "publish": false
+  },
+  "quality_gates": [
+    "verified-current-facts",
+    "fixed-note-separated",
+    "human-review"
+  ],
+  "evaluation_suite": "tests/test_news_skill_os_fixed_briefs.py",
+  "editorial_assets": [
+    {
+      "path": "skills/jin10-plus-volume-text/SKILL.md",
+      "sha256": "b7f4b59e38c88743461128445971fa51020c6a5b25b00c3301241484d6ece058"
+    },
+    {
+      "path": "skills/jin10-plus-volume-text/references/history.md",
+      "sha256": "91cbc112162452434eb354027085957dd33a8d0aae92d014a015b2d117be50a4"
+    }
+  ]
+}

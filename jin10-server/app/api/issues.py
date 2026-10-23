@@ -6,7 +6,7 @@ import uuid
 from typing import Annotated, Literal
 from urllib.parse import quote
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, Header, HTTPException, Query, Response, status
 from fastapi.responses import FileResponse
 from sqlalchemy import select
 
@@ -14,7 +14,7 @@ from app.config import get_settings
 from app.db.models import Asset, Issue, Material, utcnow
 from app.deps import CurrentUser, DbSession, Editor
 from app.schemas import GenerateRequest, IssueOut, MaterialEdits, MaterialOut, MaterialPatch, PreviewOut
-from app.services.issue_builder import IssueBuildError, build_issue, preview_issue
+from app.services.issue_builder import IssueBuildError, build_issue, preview_image_zip, preview_issue
 
 router = APIRouter(prefix="/api", tags=["issues"])
 
@@ -69,10 +69,23 @@ def _team_material(db: DbSession, user: CurrentUser, material_id: uuid.UUID) -> 
     return material
 
 
+def _editable_material(db, user, material_id, match):
+    material=db.scalar(select(Material).where(Material.id==material_id,
+        Material.team_id==user.team_id,Material.deleted_at.is_(None)).with_for_update())
+    if material is None:raise HTTPException(404,'素材不存在')
+    if not match:raise HTTPException(428,'请刷新素材后再保存修改')
+    try:stamp=dt.datetime.fromisoformat(match.strip('"').replace('Z','+00:00'))
+    except ValueError:raise HTTPException(422,'素材版本格式不正确') from None
+    def utc(value):return (value.replace(tzinfo=dt.UTC) if value.tzinfo is None else value.astimezone(dt.UTC))
+    if utc(stamp)!=utc(material.updated_at):raise HTTPException(409,'素材已由其他成员更新，请刷新核对后再保存')
+    return material
+
+
 @router.put("/materials/{material_id}/edits", response_model=MaterialOut)
-def save_edits(material_id: uuid.UUID, body: MaterialEdits, db: DbSession, user: Editor) -> MaterialOut:
+def save_edits(material_id: uuid.UUID, body: MaterialEdits, db: DbSession, user: Editor,
+               if_match: Annotated[str | None, Header()] = None) -> MaterialOut:
     """保存编辑版本（标题 / 新闻 / 解读 / 配图）；不改动采集原文"""
-    material = _team_material(db, user, material_id)
+    material = _editable_material(db, user, material_id, if_match)
     if body.images:
         have = set(db.scalars(select(Asset.id).where(Asset.team_id == user.team_id, Asset.id.in_(body.images))))
         missing = [i for i in body.images if i not in have]
@@ -86,9 +99,10 @@ def save_edits(material_id: uuid.UUID, body: MaterialEdits, db: DbSession, user:
 
 
 @router.delete("/materials/{material_id}/edits", response_model=MaterialOut)
-def clear_edits(material_id: uuid.UUID, db: DbSession, user: Editor) -> MaterialOut:
+def clear_edits(material_id: uuid.UUID, db: DbSession, user: Editor,
+                if_match: Annotated[str | None, Header()] = None) -> MaterialOut:
     """恢复采集原文"""
-    material = _team_material(db, user, material_id)
+    material = _editable_material(db, user, material_id, if_match)
     material.edits = None
     material.updated_at = utcnow()
     db.commit()
@@ -121,14 +135,29 @@ def reset_ai_layout(
 def preview(body: GenerateRequest, db: DbSession, user: CurrentUser) -> PreviewOut:
     """实时预览：与正式生成同一流程生成 PDF，逐页转为图片"""
     try:
-        images, pages, warnings = preview_issue(db, user, body)
+        images, pages, warnings, elements = preview_issue(db, user, body)
     except IssueBuildError as err:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(err)) from None
     return PreviewOut(
         page_count=pages,
         warnings=warnings,
         pages=["data:image/png;base64," + base64.b64encode(png).decode() for png in images],
+        elements=elements,
     )
+
+
+@router.post('/issues/preview/images')
+def preview_images(body: GenerateRequest, db: DbSession, user: CurrentUser) -> Response:
+    """Download full-resolution preview pages as one ZIP, without creating an issue."""
+    try:
+        content = preview_image_zip(db, user, body)
+    except IssueBuildError as err:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(err)) from None
+    filename = f'PLUS日报-{body.issue_date:%Y-%m-%d}-图片.zip'
+    return Response(content, media_type='application/zip', headers={
+        'Content-Disposition': f'attachment; filename="plus-daily-images.zip"; filename*=UTF-8\'\'{quote(filename)}',
+        'Cache-Control': 'no-store',
+    })
 
 
 @router.post("/issues", response_model=IssueOut, status_code=status.HTTP_201_CREATED)

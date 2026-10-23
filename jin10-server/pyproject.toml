@@ -29,6 +29,8 @@ dependencies = [
   "numpy>=2,<2.4",
   "playwright==1.58.0",
   "tzdata>=2025.1",
+  "PyYAML>=6,<7",
+  "jsonschema>=4.23,<5",
 ]
 
 [project.optional-dependencies]
@@ -39,6 +41,7 @@ include = ["app*"]
 
 [tool.setuptools.package-data]
 "app.briefs" = ["seed/*.json", "assets/*", "engines/*/assets/*", "samples/*/*"]
+"app.news_skill_os" = ["*.json", "manifests/*.yaml", "fixtures/*.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

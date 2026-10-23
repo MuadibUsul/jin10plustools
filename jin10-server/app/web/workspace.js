@@ -18,14 +18,14 @@ export function toast(text, type = 'success') {
   requestAnimationFrame(() => item.classList.add('show'));
   setTimeout(() => { item.classList.remove('show'); setTimeout(() => item.remove(), 220); }, 2800);
 }
-export async function api(path, { method = 'GET', json, raw = false } = {}) {
+export async function api(path, { method = 'GET', json, raw = false, headers: extraHeaders = {} } = {}) {
   if (method === 'POST' && path === '/api/briefs/jobs') {
     // Notify every local tab before generation is submitted, including a tab still loading a player.
     localStorage.setItem('plus.live.stop', crypto.randomUUID());
     window.dispatchEvent(new Event('plus-brief-generation'));
   }
   const token = localStorage.getItem('plus.token');
-  const headers = token ? { Authorization: `Bearer ${token}` } : {};
+  const headers = { ...extraHeaders, ...(token ? { Authorization: `Bearer ${token}` } : {}) };
   if (json !== undefined) headers['Content-Type'] = 'application/json';
   const res = await fetch(path, { method, headers, body: json === undefined ? undefined : JSON.stringify(json) });
   if (!res.ok) { let detail = `请求失败 (${res.status})`; try { const data = await res.json(); if (typeof data.detail === 'string') detail = data.detail; } catch { /* not json */ } if (res.status === 401) localStorage.removeItem('plus.token'); throw new Error(detail); }
@@ -47,8 +47,10 @@ export function account(me) {
   const target = $('#account'); if (!target) return;
   const settings = node('a', '⚙ 设置', 'settings-link'); settings.href = '/settings/';
   if (location.pathname === '/settings/') settings.setAttribute('aria-current', 'page');
+  const skills = node('a', '◇ Skill 库', 'settings-link'); skills.href = '/skills/';
+  if (location.pathname === '/skills/' || location.pathname.startsWith('/skills/')) skills.setAttribute('aria-current', 'page');
   const out = node('button', '退出'); out.onclick = () => { localStorage.removeItem('plus.token'); location.reload(); };
-  target.replaceChildren(settings, node('span', me.user.name), out);
+  target.replaceChildren(settings, skills, node('span', me.user.name), out);
 }
 export async function download(path, filename) { const res = await api(path, { raw: true }); const disposition = res.headers.get('Content-Disposition') || ''; const encoded = disposition.match(/filename\*=UTF-8''([^;]+)/i); const plain = disposition.match(/filename=["]([^"]+)["]/i); const url = URL.createObjectURL(await res.blob()); const a = node('a'); a.href = url; a.download = encoded ? decodeURIComponent(encoded[1]) : plain?.[1] || filename || 'image'; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); }
 export async function copy(text) { try { await navigator.clipboard.writeText(text); } catch { throw new Error('浏览器未允许复制，请选中文字手动复制'); } }

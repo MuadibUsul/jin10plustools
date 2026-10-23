@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>News Skill OS · PLUS 工作台</title><link rel="stylesheet" href="/workspace.css"><link rel="stylesheet" href="/news.css"><link rel="icon" type="image/svg+xml" href="/favicon.svg"><link rel="icon" href="/favicon.ico" sizes="any"><link rel="apple-touch-icon" href="/apple-touch-icon.png"></head><body>
+<header><a class="brand" href="/"><span>PLUS</span>工作台</a><nav><a href="/daily/">日报选稿</a><a href="/briefs/">固定快讯</a><a href="/fresh/">Plus新鲜事</a><a href="/annotations/">Plus注解辅助</a></nav><div id="account"></div></header>
+<main class="news-page"><div class="page-heading"><div><p class="eyebrow">NEWS SKILL OS</p><h1 id="news-title">Plus新鲜事</h1><p id="news-subtitle" class="muted">从新闻稿提取事实、核查来源，进入人工审核。</p></div></div>
+<p id="news-status" class="muted" role="status" aria-live="polite"></p>
+<section id="news-create" class="settings-section" hidden>
+<h2>粘贴新闻链接，先看分析</h2>
+<p class="muted">只需要一个公开新闻链接。系统抓取原文、提取可核验事实并给出时间线、关键数字、来源原话和编辑判断；你确认后再生成不超过400字的 Plus新鲜事快讯。不会自动发布。</p>
+<form id="news-form">
+<label class="field">新闻链接<input id="news-link" type="url" maxlength="2048" required placeholder="https://…"></label>
+<label class="field">关注焦点（可选）<input id="news-focus" maxlength="1000" placeholder="例如：代码量和 AI 能力的关系"></label>
+<div class="toolbar"><button id="news-submit" class="primary" type="submit">分析链接</button><span class="muted">目标：<b id="news-target-label">Plus新鲜事</b>；只读账号不能分析。</span></div>
+</form>
+</section>
+<section id="annotation-create" class="settings-section" hidden>
+<h2>粘贴一条财经快讯，生成三段注解</h2>
+<p class="muted">只分析这一条快讯，输出前因 / 后果 / 补充说明三段普通文本；AI 会做公开检索作为参考，但最终仍需人工核对来源后保存和审核。不会自动发布。</p>
+<form id="annotation-form">
+<label class="field">快讯原文<textarea id="annotation-text" rows="10" maxlength="5000" required placeholder="粘贴一条财经快讯原文"></textarea></label>
+<label class="field">原文链接（可选）<input id="annotation-source" type="url" maxlength="2048" placeholder="https://…"></label>
+<div class="toolbar"><button id="annotation-submit" class="primary" type="submit">生成三段注解</button><span class="muted">目标：<b>Plus注解辅助</b>；只读账号不能生成。</span></div>
+</form>
+</section>
+<div class="news-grid">
+<section class="settings-section"><h2>事件与事实链</h2><div id="news-events" class="news-list"></div></section>
+<section class="settings-section"><h2>草稿与人工审核</h2><div id="news-drafts" class="news-list"></div></section>
+</div>
+</main>
+<dialog id="news-dialog" class="detail-dialog" aria-labelledby="news-dialog-title"><section class="detail"><div class="detail-head"><div><h2 id="news-dialog-title"></h2><p id="news-dialog-status" class="muted"></p></div><button id="news-dialog-close">关闭</button></div><div id="news-dialog-content"></div></section></dialog>
+<script type="module" src="/news.js"></script></body></html>

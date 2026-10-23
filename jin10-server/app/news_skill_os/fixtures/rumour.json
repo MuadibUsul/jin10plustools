@@ -1,0 +1,14 @@
+{
+  "article": {
+    "title": "匿名信源称某公司筹资",
+    "event_time": "2026-10-20T08:00:00+08:00",
+    "sources": [{"id": "s1", "name": "匿名信源", "kind": "anonymous", "original_id": "rumour-001"}],
+    "assertions": [{
+      "id": "c1", "text": "据匿名信源称公司拟筹资1亿美元", "subject": "公司", "predicate": "融资金额",
+      "numeric": {"value": 100, "kind": "money", "unit": "million", "currency": "USD"},
+      "source_id": "s1", "evidence_id": "e1", "excerpt": "据称拟融资1亿美元",
+      "evidence_numeric": {"value": 100, "kind": "money", "unit": "million", "currency": "USD"}
+    }]
+  },
+  "background_fixture": {"items": []}
+}

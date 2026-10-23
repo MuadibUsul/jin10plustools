@@ -3,8 +3,12 @@ from typing import Literal
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator
 
+from app.briefs.body_templates import all_config as body_templates, validate as validate_body_template
 from app.briefs.delivery import default_notes
 from app.briefs.policy import CATEGORIES
+from app.briefs.skill_library import (
+    MAX_INSTRUCTIONS, SkillConflict, SkillNotFound, get_skill, list_skills, update_skill,
+)
 from app.db.models import BriefConfig, Role, Team, utcnow
 from app.deps import CurrentUser, DbSession, Editor
 from app.services.team_settings import cipher, provider, update_notes, chat2api_supported
@@ -21,6 +25,12 @@ class AIConfig(BaseModel):
     use_server_key: bool = False
 
 
+class TemplateConfig(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    use_builtin: bool = True
+    template: str = Field(default='', max_length=4000)
+
+
 class Update(BaseModel):
     model_config = ConfigDict(extra='forbid')
     revision: int = Field(ge=0)
@@ -28,6 +38,7 @@ class Update(BaseModel):
     schedule_enabled: bool | None = None
     ai: dict[Literal['jev', 'deepseek', 'chat2api', 'openai'], AIConfig] | None = None
     ai_provider: Literal['deepseek', 'chat2api', 'openai'] | None = None
+    brief_templates: dict[Literal[*CATEGORIES], TemplateConfig] | None = None
     live_url: str | None = Field(default=None, max_length=2048)
     live_urls: dict[str,str] | None = None
 
@@ -63,6 +74,7 @@ def output(db, team, user):
                            for key, label in CATEGORIES.items()],
             'note_revisions': saved.get('brief_note_revisions', []), 'ai': ai,
             'ai_provider': saved.get('ai_provider', 'deepseek'),
+            'brief_templates': body_templates(team),
             'live_url': saved.get('live_url', ''), 'live_catalog': catalog(team),
             'live_urls':saved.get('live_urls',{})}
 
@@ -95,6 +107,19 @@ def update(body: Update, db: DbSession, user: Editor):
         config.enabled = body.schedule_enabled
         config.updated_at = utcnow()
     saved = dict(team.settings or {})
+    if body.brief_templates is not None:
+        templates = dict(saved.get('brief_templates') or {})
+        for category, config in body.brief_templates.items():
+            text = config.template.strip()
+            if not config.use_builtin and not text:
+                raise HTTPException(422, f'{CATEGORIES[category]}已关闭内置文案，必须填写团队正文模板')
+            if text:
+                try:
+                    validate_body_template(category, text)
+                except ValueError as exc:
+                    raise HTTPException(422, f'{CATEGORIES[category]}正文模板无效：{exc}') from exc
+            templates[category] = {'use_builtin': config.use_builtin, 'template': text}
+        saved['brief_templates'] = templates
     if body.live_urls is not None:
         known={item['id'] for item in catalog(team)['channels'] if item['id']!='custom'}
         if not set(body.live_urls)<=known:raise HTTPException(422,'直播条目不正确')
@@ -126,5 +151,45 @@ def update(body: Update, db: DbSession, user: Editor):
             current['enabled'] = change.enabled
         ai[name] = current
     team.settings = {**saved, 'ai': ai, 'settings_revision': body.revision + 1}
+    from app.services.business_history import record
+    record(db,team,user.id)
     db.commit()
     return output(db, team, user)
+
+
+class SkillUpdate(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    revision: int = Field(ge=0)
+    enabled: bool
+    instructions: str = Field(default='', max_length=MAX_INSTRUCTIONS)
+
+
+@router.get('/skills')
+def skills(db: DbSession, user: CurrentUser):
+    return {'skills': list_skills(db.get(Team, user.team_id))}
+
+
+@router.get('/skills/{category}')
+def skill_detail(category: str, db: DbSession, user: CurrentUser):
+    try:
+        return {'skill': get_skill(db.get(Team, user.team_id), category, include_history=True)}
+    except SkillNotFound as exc:
+        raise HTTPException(404, str(exc)) from exc
+
+
+@router.put('/skills/{category}')
+def skill_update(category: str, body: SkillUpdate, db: DbSession, user: Editor):
+    if user.role != Role.ADMIN:
+        raise HTTPException(403, '仅管理员可修改 Skill 规范')
+    team = db.get(Team, user.team_id, with_for_update=True)
+    try:
+        skill = update_skill(db, team, user, category, revision=body.revision,
+                             enabled=body.enabled, instructions=body.instructions)
+    except SkillNotFound as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except SkillConflict as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    db.commit()
+    return {'skill': skill}

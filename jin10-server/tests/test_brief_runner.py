@@ -36,6 +36,25 @@ def test_cached_rules_reuse_sources_and_render_repairs_without_fetch(tmp_path):
             assert ai.call_count==1
 
 
+def test_manual_produce_refreshes_and_accepts_the_newest_available_data_date(tmp_path, monkeypatch):
+    calls=[]
+    def source(day,out,state,refresh=False):
+        calls.append(day)
+        (out/'image.png').write_bytes(b'valid-chart')
+        return {'title':'最新数据','dynamic_body':'截至最新数据日。','data_date':'2026-10-14','images':['image.png'],'warnings':[],'facts':{}}
+    monkeypatch.setenv('MANUAL_GENERATION','1')
+    monkeypatch.setenv('SKILL_PRODUCTION','1')
+    with patch.dict('app.briefs.runner.ADAPTERS',{'token_cost':source}):
+        first=generate('token_cost','2026-10-20',tmp_path,'manual-first')
+        second=generate('token_cost','2026-10-20',tmp_path,'manual-second')
+    assert first['data_date']==second['data_date']=='2026-10-14'
+    assert len(calls)==2
+    monkeypatch.setenv('MANUAL_GENERATION','0')
+    with patch.dict('app.briefs.runner.ADAPTERS',{'token_cost':source}):
+        with pytest.raises(ValueError,match='缓存日期不符'):
+            generate('token_cost','2026-10-20',tmp_path,'automatic')
+
+
 def test_fixed_explanations_are_identical_and_not_duplicated():
     for category,note in FIXED_NOTES.items():
         body=complete_body(category,'当日事实。')

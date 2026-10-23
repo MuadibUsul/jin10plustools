@@ -35,6 +35,11 @@
 
 .detail-dialog{width:min(1180px,calc(100vw - 32px));max-height:92dvh;padding:0;border:1px solid #e2e9f3;border-radius:18px;background:#fff;color:#173153;box-shadow:0 24px 90px #18395633;overflow:auto}
 .detail-dialog::backdrop{background:#132a454d}
+.manual-dialog{width:min(720px,calc(100vw - 24px));max-height:92dvh;padding:0;border:1px solid #e2e9f3;border-radius:18px;background:#fff;color:#173153;box-shadow:0 24px 90px #18395633;overflow:auto}
+.manual-dialog::backdrop{background:#132a454d}
+.manual-dialog .detail-head{position:sticky;top:0;z-index:2;background:#fff;padding:20px 28px;border-bottom:1px solid #e8eef6}
+.manual-fields{padding:0 28px 24px}.manual-gpu{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0 14px}.manual-gpu .field{min-width:0}.manual-dialog .field input{width:100%}
+@media(max-width:650px){.manual-dialog .detail-head{padding:16px}.manual-fields{padding:0 16px 16px}.manual-gpu{grid-template-columns:1fr 1fr}}
 .detail-dialog .detail{margin:0;padding:0;border:0;border-radius:0}
 .detail-dialog .detail-head{position:sticky;top:0;z-index:2;background:#fff;padding:20px 28px;border-bottom:1px solid #e8eef6}
 .detail-dialog .editor-grid{padding:0 28px 24px}

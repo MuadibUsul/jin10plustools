@@ -2,15 +2,15 @@ import { $, node, api, login, download, copy, copyDate, displayTime, toast } fro
 import '/pull-cord.js';
 import { computerShell } from '/retro-computer.js';
 const labels = { queued: '等待执行', running: '生成中', waiting: '等待数据更新', succeeded: '已生成', failed: '生成失败', skipped: '已跳过' };
-const aiLabels = { not_configured: '未配置', disabled: '已关闭', pending: '待处理', ok: '已生成', failed: '生成失败', invalid_response: '结果未通过校验', timeout: '请求超时' };
-const aiName = (info) => info?.provider === 'chat2api' ? 'chat2api' : 'DeepSeek';
 let me, config, items = [], selected = null, current = null, dirty = false;
 const blobs = new Set();
 let imageKey = null, pendingImageKey = null, imageRequest = 0;
 const pendingCategories = new Set();
+const computeCategories = new Set(['token_cost', 'gpu_rental']);
+let manualCategory = null;
 const active = (job) => ['queued', 'running', 'waiting'].includes(job?.status);
 const processSteps = ['准备任务', '正在取数', '正在制图', '整理文案', '保存稿件', '生成完成'];
-const channelNames = { volume: '成交额', turnover: '换手率', valuation: '估值', liquidity: '流动性', oil_etf: '原油ETF', us_barometer: '美股晴雨表', us_structure: '美股结构' };
+const channelNames = { volume: '成交额', turnover: '换手率', valuation: '估值', liquidity: '流动性', oil_etf: '原油ETF', us_barometer: '美股晴雨表', us_structure: '美股结构', token_cost: 'AI算力CPI', gpu_rental: 'AI景气度指标' };
 const terminalSeen = new Map(), terminalPending = new Set();
 let terminalDay = null, polling = false;
 const today = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai' }).format(new Date());
@@ -87,10 +87,10 @@ function renderCards() {
     body.append(node('p', version ? `数据日 ${copyDate(version.data_date)}` : '尚无有效数据', 'muted'));
     if (job) body.append(node('p', `${job.status === 'failed' && version ? '最近一次任务失败；已有预览图可查看' : labels[job.status] || job.status}${job.error ? '：' + job.error : ''}`, job.status === 'failed' ? 'error' : 'muted'));
     if (version?.warnings.length) body.append(node('p', '有来源或口径说明，请核对', 'warning'));
-    if (version?.deepseek && !['not_configured','disabled'].includes(version.deepseek.status)) body.append(node('p', version.deepseek.status === 'ok' ? `${aiName(version.deepseek)}已完成，可在编辑区采用` : `规则稿已保存 · ${aiName(version.deepseek)}未完成，可补跑`, version.deepseek.status === 'ok' ? 'success' : 'warning'));
     const controls = node('div', undefined, 'toolbar');
     if (item?.versions.length) { const view = node('button', '查看与取稿'); view.onclick = () => safe(() => open(item)); controls.append(view); }
-    if (canEdit()) { const run = node('button', busy ? '任务执行中' : '生成稿件'); run.disabled = busy; run.onclick = () => safe(() => runJob(category.id, 'produce')); controls.append(run); }
+    if (canEdit()) { const run = node('button', busy ? '任务执行中' : '生成稿件'); run.disabled = busy; run.title = computeCategories.has(category.id) ? '读取公开网页展示值并生成稿件' : '自动刷新来源，并处理最接近当前的可用数据'; run.onclick = () => safe(() => runJob(category.id, 'produce')); controls.append(run); }
+    if (canEdit() && computeCategories.has(category.id)) { const manual = node('button', '人工填数并生成'); manual.disabled = busy; manual.onclick = () => openManual(category.id); controls.append(manual); }
     body.append(controls);
   }
   renderProcess();
@@ -129,13 +129,11 @@ function renderProcess() {
       terminalPending.add(category.id); updates.push({ category: category.id, text: '正在提交任务', at: new Date().toISOString(), kind: 'running' });
     } else if (!pendingCategories.has(category.id)) terminalPending.delete(category.id);
     if (!job) continue;
-    const ai = item?.versions[0]?.deepseek?.status;
-    const aiFailed = ai && !['ok','not_configured','disabled'].includes(ai);
-    const step = Math.max(1, Math.min(6, Number(job.progress?.step) || 1)), signature = `${job.status}:${step}:${ai || ''}`;
+    const step = Math.max(1, Math.min(6, Number(job.progress?.step) || 1)), signature = `${job.status}:${step}`;
     if (terminalSeen.get(job.id) === signature) continue;
     terminalSeen.set(job.id, signature);
     const phase = category.id === 'oil_etf' && step === 3 ? '核对持仓' : processSteps[step - 1];
-    const text = job.status === 'running' ? phase : { queued: '任务已排队', waiting: '等待数据更新', succeeded: aiFailed ? '规则稿已保存，AI未完成' : ai === 'ok' ? '稿件与AI文案已完成' : '稿件已保存', failed: '生成未完成', skipped: '任务已停止' }[job.status] || '等待任务状态';
+    const text = job.status === 'running' ? phase : { queued: '任务已排队', waiting: '等待数据更新', succeeded: '稿件已保存', failed: '生成未完成', skipped: '任务已停止' }[job.status] || '等待任务状态';
     const at = job.status === 'running' ? job.progress?.events?.at(-1)?.at || job.updated_at || job.created_at : job.updated_at || job.created_at;
     updates.push({ category: category.id, text, at, kind: job.status, step });
   }
@@ -185,6 +183,39 @@ async function runJob(category, action) {
   message(`任务已加入队列：${labels[result.status] || result.status}。不必重复点击。`); toast('任务已加入队列。'); await refresh();
   } finally { pendingCategories.delete(category); renderCards(); }
 }
+function openManual(category) {
+  manualCategory = category;
+  const form = $('#manual-form'); form.reset();
+  $('#manual-title').textContent = `${channelNames[category]} · 人工填数`;
+  form.elements.data_date.max = $('#day').value;
+  $('#manual-token').hidden = category !== 'token_cost';
+  $('#manual-gpu').hidden = category !== 'gpu_rental';
+  for (const name of ['token_price', 'a100', 'h100', 'b200']) form.elements[name].required =
+    category === 'token_cost' ? name === 'token_price' : name !== 'token_price';
+  $('#manual-dialog').showModal();
+}
+function closeManual() { $('#manual-dialog').close(); manualCategory = null; }
+$('#manual-close').onclick = $('#manual-cancel').onclick = closeManual;
+$('#manual-form').onsubmit = (event) => {
+  event.preventDefault();
+  if (!manualCategory || pendingCategories.has(manualCategory)) return;
+  const category = manualCategory, form = $('#manual-form');
+  const fields = category === 'token_cost'
+    ? ['token_price', 'token_change_pct']
+    : ['a100', 'h100', 'b200', 'a100_change_pct', 'h100_change_pct', 'b200_change_pct'];
+  const payload = {category, issue_date: $('#day').value,
+    data_date: form.elements.data_date.value, source_note: form.elements.source_note.value};
+  for (const name of fields) payload[name] = form.elements[name].value.trim();
+  const submit = $('#manual-submit'); submit.disabled = true;
+  safe(async () => {
+    pendingCategories.add(category); renderCards();
+    try {
+      const job = await api('/api/briefs/manual-compute', {method:'POST', json:payload});
+      closeManual(); message(`人工数据已加入生成队列：${labels[job.status] || job.status}。`);
+      toast('人工数据已提交，正在生成稿件。'); await refresh();
+    } finally { pendingCategories.delete(category); renderCards(); }
+  }).finally(() => { submit.disabled = false; });
+};
 function clearImages() {
   imageRequest++; imageKey = pendingImageKey = null; current = null;
   for (const url of blobs) URL.revokeObjectURL(url);
@@ -205,16 +236,13 @@ async function showVersion() {
   $('#fixed').value = v.fixed_notes || '';
   $('#fixed').readOnly = !canEdit();
   $('#notes-label').textContent = v.notes_placement === 'image' ? '注释（保存后显示在图片底部）' : '注释（自动加入完整正文）';
-  $('#detail-status').textContent = `数据日 ${copyDate(v.data_date)}${v.deepseek.status === 'not_configured' || v.deepseek.status === 'disabled' ? '' : ` · ${aiName(v.deepseek)}：${aiLabels[v.deepseek.status] || '未完成'}`}`;
+  $('#detail-status').textContent = `数据日 ${copyDate(v.data_date)}`;
   const warnings = [...(v.warnings || [])];
-  if (v.deepseek.stale) warnings.push('AI候选基于生成时的正文，当前正文已修改；请先补跑AI再采用。');
-  if (v.deepseek.untracked) warnings.push('AI候选来源未记录，请补跑AI后再采用。');
   $('#warnings').replaceChildren(...warnings.map((s) => node('p', s)));
   $('#facts').textContent = JSON.stringify(v.facts, null, 2);
-  for (const id of ['save', 'confirm', 'unconfirm', 'rerender', 'retry-ai', 'refetch']) $(`#${id}`).hidden = !canEdit();
+  for (const id of ['save', 'confirm', 'unconfirm', 'rerender', 'refetch']) $(`#${id}`).hidden = !canEdit();
   $('#save').disabled = v.number !== selected.version;
   $('#confirm').disabled = v.number !== selected.version || !v.valid;
-  $('#use-ai').hidden = !canEdit() || v.deepseek.status !== 'ok' || v.deepseek.stale === true || v.deepseek.untracked === true || v.number !== selected.version;
   $('#unconfirm').disabled = !selected.confirmed_version;
   dirty = false;
   const key = JSON.stringify([selected.id, v.number, v.images]);
@@ -259,8 +287,7 @@ $('#confirm').onclick = () => safe(async () => { if (dirty) throw new Error('请
 $('#unconfirm').onclick = () => safe(async () => { await act('unconfirm'); toast('已撤回确认。'); });
 $('#copy-title').onclick = () => safe(async () => { if (dirty) throw new Error('请先保存修改后取稿'); await copy(current.title); message('标题已复制。'); toast('标题已复制。'); });
 $('#copy-body').onclick = () => safe(async () => { if (dirty) throw new Error('请先保存修改后取稿'); await copy(current.body); message('完整正文已复制。'); toast('完整正文已复制。'); });
-$('#use-ai').onclick = () => { $('#title').value = current.deepseek.title; $('#body').value = current.deepseek.body; dirty = true; message(`已采用${aiName(current.deepseek)}表达，请保存并核对。`); toast('已采用AI表达，请保存。'); };
-for (const [id, action] of [['rerender', 'render'], ['retry-ai', 'ai'], ['refetch', 'refresh']]) $(`#${id}`).onclick = () => safe(async () => { if (!confirm(action === 'refresh' ? '重新请求数据源并生成新版本？现有稿件会保留。' : '创建新版本？现有人工修改和确认版本会保留。')) return; await runJob(selected.category, action); });
+for (const [id, action] of [['rerender', 'render'], ['refetch', 'refresh']]) $(`#${id}`).onclick = () => safe(async () => { if (!confirm(action === 'refresh' ? '重新请求数据源并生成新版本？现有稿件会保留。' : '创建新版本？现有人工修改和确认版本会保留。')) return; await runJob(selected.category, action); });
 window.addEventListener('beforeunload', (e) => { if (dirty) { e.preventDefault(); e.returnValue = ''; } });
 await safe(async () => { me = await login(); config = await api('/api/briefs/categories'); await refresh(); });
 setInterval(() => { if (me && !document.hidden && !dirty) safe(refresh); }, 30000);

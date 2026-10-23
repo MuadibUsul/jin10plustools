@@ -33,6 +33,8 @@ from app.schemas import GenerateRequest
 
 from .storage import asset_path
 from .cover_selection import recommend_cover_ids
+from .issue_images import ImageSizeError, image_zip
+from .issue_layout import apply_layout, editable_elements
 
 
 class IssueBuildError(ValueError):
@@ -119,6 +121,10 @@ def render_issue(
         report = generate(_daily_issue(db, user, req), out_dir / f"PLUS日报-{req.issue_date:%Y-%m-%d}.pptx")
     except CoverLayoutError as err:
         raise IssueBuildError(str(err)) from None
+    try:
+        apply_layout(report.output, req.layout_overrides)
+    except ValueError as err:
+        raise IssueBuildError(str(err)) from None
     warnings = list(report.warnings)
     try:
         pdf: Path | None = pptx_to_pdf(report.output, out_dir)
@@ -152,8 +158,9 @@ def default_issue_date() -> dt.date:
     return (dt.datetime.now(dt.UTC) + dt.timedelta(hours=8)).date()
 
 
-_PREVIEW_CACHE: OrderedDict[str, tuple[list[bytes], int, list[str]]] = OrderedDict()
-_PREVIEW_CACHE_SIZE = 16
+_PREVIEW_CACHE: OrderedDict[str, tuple[list[bytes], int, list[str], list[list[dict]]]] = OrderedDict()
+_PREVIEW_CACHE_SIZE = 4
+PREVIEW_DPI = 96
 
 
 def _preview_key(db: Session, user: User, req: GenerateRequest, dpi: int) -> str:
@@ -167,7 +174,7 @@ def _preview_key(db: Session, user: User, req: GenerateRequest, dpi: int) -> str
     return hashlib.sha256(raw.encode()).hexdigest()
 
 
-def preview_issue(db: Session, user: User, req: GenerateRequest, dpi: int = 40) -> tuple[list[bytes], int, list[str]]:
+def preview_issue(db: Session, user: User, req: GenerateRequest, dpi: int = PREVIEW_DPI) -> tuple[list[bytes], int, list[str], list[list[dict]]]:
     """生成一份临时 PDF 并逐页渲染为 PNG（与正式生成同一流程，所见即所得）；内容未变时直接返回缓存"""
     key = _preview_key(db, user, req, dpi)
     if key in _PREVIEW_CACHE:
@@ -180,11 +187,24 @@ def preview_issue(db: Session, user: User, req: GenerateRequest, dpi: int = 40) 
     return result
 
 
-def _render_preview(db: Session, user: User, req: GenerateRequest, dpi: int) -> tuple[list[bytes], int, list[str]]:
+def _render_preview(db: Session, user: User, req: GenerateRequest, dpi: int) -> tuple[list[bytes], int, list[str], list[list[dict]]]:
     with tempfile.TemporaryDirectory(prefix="plus-preview-") as tmp:
-        _pptx, pdf, pages, warnings = render_issue(db, user, req, Path(tmp))
+        pptx, pdf, pages, warnings = render_issue(db, user, req, Path(tmp))
         if pdf is None:
             raise IssueBuildError("预览生成失败：" + "；".join(warnings))
+        elements = editable_elements(pptx)
         with pymupdf.open(pdf) as doc:
             images = [page.get_pixmap(dpi=dpi).tobytes("png") for page in doc]
-    return images, pages, warnings
+    return images, pages, warnings, elements
+
+
+def preview_image_zip(db: Session, user: User, req: GenerateRequest) -> bytes:
+    """Render the same PDF as preview and package its pages at delivery resolution."""
+    with tempfile.TemporaryDirectory(prefix='plus-page-images-') as tmp:
+        _pptx, pdf, _pages, warnings = render_issue(db, user, req, Path(tmp))
+        if pdf is None:
+            raise IssueBuildError('图片生成失败：' + '；'.join(warnings))
+        try:
+            return image_zip(pdf)
+        except ImageSizeError as err:
+            raise IssueBuildError(str(err)) from err

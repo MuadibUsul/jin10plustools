@@ -29,6 +29,7 @@ services:
       PLUS_DATABASE_URL: postgresql+psycopg://plus_next:${POSTGRES_PASSWORD}@db:5432/plus_next
       PLUS_JWT_SECRET: ${PLUS_JWT_SECRET:?Set a separate test JWT secret}
       PLUS_AI_WORKER_ENABLED: "false"
+      NEWS_SKILL_OS_ENABLED: ${NEWS_SKILL_OS_ENABLED:-false}
     volumes:
       - storage:/data
     networks:

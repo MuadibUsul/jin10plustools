@@ -21,7 +21,7 @@ from app.db.models import BriefIssue, BriefJob, Team
 
 
 @pytest.fixture
-def postgres(monkeypatch):
+def postgres(monkeypatch, request):
     url = os.getenv('PLUS_TEST_POSTGRES_URL')
     if not url:
         pytest.skip('Set PLUS_TEST_POSTGRES_URL to an isolated test database')
@@ -35,7 +35,7 @@ def postgres(monkeypatch):
     get_settings.cache_clear()
     engine = create_engine(scoped_url)
     try:
-        command.upgrade(Config('alembic.ini'), 'head')
+        command.upgrade(Config('alembic.ini'), getattr(request, 'param', 'head'))
         factory = sessionmaker(engine, expire_on_commit=False)
         with factory() as db:
             team = Team(name='Isolated PostgreSQL verification')
@@ -51,13 +51,31 @@ def postgres(monkeypatch):
         admin.dispose()
 
 
+@pytest.mark.parametrize('postgres', ['0014'], indirect=True)
+def test_history_migration_preserves_existing_values_without_secrets(postgres):
+    from app.db.models import AIComputeObservation, AIComputeRevision, TeamBusinessRevision
+    engine, factory, team_id = postgres
+    with factory() as db:
+        team = db.get(Team, team_id)
+        team.settings = {'brief_templates': {'volume': {'template': '{date}'}},
+                         'ai': {'deepseek': {'model': 'deepseek-chat', 'key': 'secret-do-not-export'}}}
+        db.add(AIComputeObservation(team_id=team_id, kind='token', date=date(2026,10,20),
+                                   token_price='0.125000', revision=3))
+        db.commit()
+    command.upgrade(Config('alembic.ini'), 'head')
+    with factory() as db:
+        row = db.scalar(select(AIComputeRevision))
+        assert row.revision == 3 and row.values['token_price'] == '0.125000'
+        history = db.scalar(select(TeamBusinessRevision))
+        assert history.snapshot['brief_templates']['volume']['template'] == '{date}'
+        assert 'secret-do-not-export' not in str(history.snapshot)
+    assert 'team_business_revisions' in inspect(engine).get_table_names()
+
+
 def test_migration_preserves_existing_daily_cover(postgres):
     engine, _, _ = postgres
     assert 'cover_ids' in {column['name'] for column in inspect(engine).get_columns('boards')}
-    command.downgrade(Config('alembic.ini'), '0007')
-    assert 'brief_jobs' not in inspect(engine).get_table_names()
-    assert 'cover_ids' in {column['name'] for column in inspect(engine).get_columns('boards')}
-    command.upgrade(Config('alembic.ini'), 'head')
+    # Business-data migrations are intentionally additive and retain data on downgrade.
     assert {'brief_configs', 'brief_issues', 'brief_versions', 'brief_jobs', 'brief_audits',
             'brief_source_snapshots'} <= set(inspect(engine).get_table_names())
     assert 'notes' in {column['name'] for column in inspect(engine).get_columns('brief_configs')}

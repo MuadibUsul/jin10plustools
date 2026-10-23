@@ -41,7 +41,7 @@ def ensure_issue(db,team_id,day,category):
     return find_issue(db,team_id,day,category)
 
 
-def enqueue(db,team_id,day,category,*,action='produce',preview=False,user_id=None,unique=False):
+def enqueue(db,team_id,day,category,*,action='produce',preview=False,user_id=None,unique=False,manual_capture=None):
     key=f'{team_id}:{day}:{category}:{action}:{"preview" if preview else "production"}'
     active_key=f'{team_id}:{day}:{category}'
     # A failed explicit retry is a new attempt; active duplicate clicks reuse a job.
@@ -61,7 +61,8 @@ def enqueue(db,team_id,day,category,*,action='produce',preview=False,user_id=Non
     try:
         with db.begin_nested():
             item=BriefJob(team_id=team_id,issue_date=day,category=category,action=action,
-                          preview=preview,dedupe_key=key,active_key=active_key,created_by=user_id)
+                          preview=preview,dedupe_key=key,active_key=active_key,created_by=user_id,
+                          manual_capture=manual_capture)
             db.add(item);db.flush()
         ensure_issue(db,team_id,day,category)
         return item
@@ -96,6 +97,8 @@ def prune_versions(db,issue):
         notes=list(saved.get('retired_issue_notes',[]))
         notes.append({'issue_id':str(issue.id),'version':old.number,'notes':(old.payload or {}).get('fixed_notes',''),'created_at':old.created_at.isoformat()})
         team.settings={**saved,'retired_issue_notes':notes}
+        from app.services.business_history import record
+        record(db,team)
         db.add(BriefAudit(issue_id=issue.id,action='retired_notes',version=old.number,user_id=old.created_by))
         db.execute(update(BriefSourceSnapshot).where(BriefSourceSnapshot.version_id==old.id).values(version_id=None))
         if issue.confirmed_version==old.number:

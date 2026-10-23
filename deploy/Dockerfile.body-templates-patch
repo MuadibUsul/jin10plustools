@@ -1,0 +1,13 @@
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
+USER root
+COPY jin10-server/app/briefs/body_templates.py /srv/app/briefs/body_templates.py
+COPY jin10-server/app/briefs/sources.py /srv/app/briefs/sources.py
+COPY jin10-server/app/briefs/worker.py /srv/app/briefs/worker.py
+COPY jin10-server/app/api/settings.py /srv/app/api/settings.py
+COPY jin10-server/app/web/settings.html /srv/app/web/settings.html
+COPY jin10-server/app/web/settings.js /srv/app/web/settings.js
+RUN chmod a+rX /srv/app/briefs/body_templates.py /srv/app/briefs/sources.py \
+    /srv/app/briefs/worker.py /srv/app/api/settings.py \
+    /srv/app/web/settings.html /srv/app/web/settings.js
+USER plus

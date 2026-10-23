@@ -93,7 +93,11 @@ def generate(category,day,root,run_id,action='produce'):
         previous['dynamic_body']=previous['dynamic_body'].replace('全A总市值/上年度全年GDP','A股总市值/上年度全年GDP')
         if previous.get('deepseek',{}).get('body'):
             previous['deepseek']['body']=previous['deepseek']['body'].replace('全A总市值/上年度全年GDP','A股总市值/上年度全年GDP')
-    if previous and previous['data_date']!=day:raise ValueError('缓存日期不符')
+    # An editor asking for a fresh production run wants the newest source state,
+    # not an earlier same-day snapshot that may predate a source update.
+    if previous and os.getenv('MANUAL_GENERATION')=='1' and action=='produce':previous=None
+    latest_manual = os.getenv('MANUAL_GENERATION')=='1' and category in ('token_cost','gpu_rental')
+    if previous and previous['data_date']!=day and not latest_manual:raise ValueError('缓存日期不符')
     if action in ('render','ai') and not previous:raise ValueError('尚无已校验快照，请先生成稿件')
     if previous and action!='refresh':
         source=(root/previous['artifact_dir']).resolve()
@@ -143,7 +147,7 @@ def generate(category,day,root,run_id,action='produce'):
         payload['pipeline']=pipeline_signature()
     record(out,4,'来源日期、标题、正文及图片已完成基础校验')
     explain_result(out,category,payload)
-    if payload['data_date']!=day:raise ValueError('来源数据日与目标日期不符')
+    if payload['data_date']!=day and not latest_manual:raise ValueError('来源数据日与目标日期不符')
     if not payload['title'].strip() or not payload['dynamic_body'].strip():raise ValueError('标题或正文缺失')
     if category!='oil_etf' and not payload['images']:raise ValueError('栏目缺少配图')
     payload['artifact_dir']=out.relative_to(root).as_posix()
@@ -151,6 +155,11 @@ def generate(category,day,root,run_id,action='produce'):
     payload['valid']=True
     if action=='render':
         payload['deepseek']=previous.get('deepseek',{'status':'not_configured'})
+        save(out/'result.json',payload);save(cache,payload)
+        return payload
+    if os.getenv('SKILL_PRODUCTION')=='1':
+        # The worker applies the Skill copy stage after this process exits.
+        payload['deepseek']={'status':'disabled','reason':'skill_production'}
         save(out/'result.json',payload);save(cache,payload)
         return payload
     payload['deepseek']={'status':'pending'}

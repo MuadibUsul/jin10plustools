@@ -1,5 +1,6 @@
 """Free-source adapters. Known method differences are explicit review warnings."""
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -73,7 +74,7 @@ def render_volume(rows,out):
           f"成交活跃度较前日{'回升' if change>0 else '回落' if change<0 else '持平'}。")
     image=volume_chart([r for r in rows if r['ma20'] is not None],out)
     return {'title':title,'dynamic_body':body,'images':[image.name],'data_date':current['date'],
-            'facts':{'amount_yi':str(current['turn']),'ma20_yi':str(current['ma20']),'previous_date':prior['date'],'source':url_source()},'warnings':[]}
+            'facts':{'amount_yi':str(current['turn']),'amount_wan_yi':f"{current['turn']/10000:.2f}",'change_yi':f'{change:.2f}','change_pct':f'{percent:+.2f}','streak':streak,'side':side,'activity':'回升' if change>0 else '回落' if change<0 else '持平','ma20_yi':str(current['ma20']),'ma20_wan_yi':f"{current['ma20']/10000:.2f}",'previous_date':prior['date'],'source':url_source()},'warnings':[]}
 
 
 def url_source():return 'https://www.jin10.com/minipro/index.html#/pages_sub/huShenVolume/huShenVolume?category=hu_shen_volume&id=550059&type=4'
@@ -193,15 +194,20 @@ def valuation(day,out,state,refresh=False):
     erp_history=state/'erp-history.json';bond_history=state/'bond-history.json'
     if not erp_history.exists():shutil.copy2(HERE/'seed/erp-history.json',erp_history)
     if not bond_history.exists():shutil.copy2(HERE/'seed/bond-history.json',bond_history)
-    erp_out=out/'erp';result=run_erp(erp_history,erp_out,mode='free-official',expected_date=day,bond_history=bond_history,force_refresh=refresh,
-                                  progress=lambda message:record(out,2,message))
+    erp_out=out/'erp';updated_bond=erp_out/'raw/bond/official-rolling-normalized.json'
+    try:
+        result=run_erp(erp_history,erp_out,mode='free-official',expected_date=day,bond_history=bond_history,
+                       force_refresh=refresh or os.getenv('MANUAL_GENERATION')=='1',
+                       progress=lambda message:record(out,2,message))
+    finally:
+        # Keep the bond correction even if a later PE/close step fails; the next
+        # successful valuation build must start from the corrected treasury series.
+        if updated_bond.exists():shutil.copy2(updated_bond,bond_history)
     if not result.get('release_ready'):raise ValueError('ERP当前数据不足或制图失败')
     rows=read(erp_out/'数据快照.json');current,prior=rows[-1],rows[-2]
     # Preserve the full growing history; never restart daily updates from a fixed seed.
     for row in rows:row.pop('erp_cached',None)
     save(erp_history,rows)
-    updated_bond=erp_out/'raw/bond/official-rolling-normalized.json'
-    if updated_bond.exists():shutil.copy2(updated_bond,bond_history)
     prior_day=previous_weekday(date.fromisoformat(day)).isoformat()
     record(out,2,'ERP数据已核验，正在读取A股总市值及GDP分母')
     cap=fetch_all_a(day,prior_day,out/'all-a')
@@ -230,11 +236,18 @@ def valuation(day,out,state,refresh=False):
     body=(f"{day}，巴菲特指数（A股总市值/上年度全年GDP）为{ratio:.2f}%；"
           f"沪深300指数股权风险溢价（ERP）为{erp:.2f}%，较{prior['date']}变动{change:+.2f}个百分点，"
           f"{'高于' if erp>6 else '等于' if erp==6 else '低于'}6%参考线。权益资产相对国债的估值优势较前日{'增强' if change>0 else '减弱' if change<0 else '变化不大'}。")
+    warnings=['巴菲特指数最新值采用东方财富全A上市公司总市值，历史保留原站序列，来源过渡待核对；未宣称与乐咕数值一致',
+              'ERP采用免费市值加权PE候选源和中债国债收益率曲线，已记录与原模板的来源差异']
+    revision=result.get('bond_revision_check') or {}
+    corrections=revision.get('corrections') or []
+    if corrections:
+        detail='、'.join(f"{item['date']} {item['old_yield']}→{item['new_yield']}" for item in corrections)
+        warnings.append(f'中债十年期国债收益率历史数据已按官方来源修正：{detail}。')
     return {'title':title,'dynamic_body':body,'images':['股债性价比.png'],'data_date':day,
         'unified_valuation':True,
-        'facts':{'buffett_percent':str(ratio),'gdp':gdp,'market_cap':cap,'erp_latest':current,'erp_previous':prior},
-        'warnings':['巴菲特指数最新值采用东方财富全A上市公司总市值，历史保留原站序列，来源过渡待核对；未宣称与乐咕数值一致',
-                    'ERP采用免费市值加权PE候选源和中债国债收益率曲线，已记录与原模板的来源差异']}
+        'facts':{'buffett_percent':str(ratio),'gdp':gdp,'market_cap':cap,'erp_latest':current,'erp_previous':prior,
+                 'bond_revision_check':revision},
+        'warnings':warnings}
 
 
 def us_barometer(day,out,state,refresh=False):
@@ -259,5 +272,7 @@ def us_structure(day,out,state,refresh=False):
     return payload
 
 
+from .ai_compute import token_cost,gpu_rental
 ADAPTERS={'volume':volume,'turnover':turnover,'valuation':valuation,'liquidity':liquidity,'oil_etf':oil_etf,
-          'us_barometer':us_barometer,'us_structure':us_structure}
+          'us_barometer':us_barometer,'us_structure':us_structure,
+          'token_cost':token_cost,'gpu_rental':gpu_rental}

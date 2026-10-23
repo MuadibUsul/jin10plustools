@@ -1,23 +1,45 @@
-# PLUS工具工作台
+# 金十 PLUS 工作台
 
-现有日报选稿与新增固定快讯共用服务器、账号和团队，功能分别放在独立模块。
+统一工作台部署于 https://plus.tlines.tech/ 。日报选稿位于 `/daily/`，固定快讯位于 `/briefs/`，另有 Plus新鲜事、Plus注解辅助、Skill 库和设置。`/test/` 已退役，不要用测试快照替换生产数据库或存储。
 
-- 日报选稿：`/daily/`，保留素材采集、协作和PPT/PDF导出。
-- 固定快讯：`/briefs/`，五类免费源数据、代码制图、标题/完整正文、编辑确认与图文下载。
-- 首页：四入口工作台；Plus新鲜事、Plus注解辅助目前是占位页。
+## 本地开发与验证
 
-## 本分支接手
+服务端位于 `jin10-server/`，浏览器扩展位于 `jin10-extension/`。Python 依赖见服务端 `pyproject.toml`，配置项见 `app/config.py`，不要提交真实密钥。
 
-本次只推送`feature/fixed-briefs`，没有合并main或部署服务器。
+```powershell
+cd jin10-server
+.venv/Scripts/python.exe -m pytest -q
+```
 
-1. [另一台电脑拉取、审阅、合并与部署](docs/分支接手与部署.md)
-2. [详细工程方案与边界](docs/固定快讯工程方案.md)
-3. [免费数据源、真实取数结果与口径说明](docs/免费数据源与核验.md)
-4. [本次验证记录](docs/验证记录.md)
-5. [供另一台电脑Codex接手使用的完整提示词](docs/Codex跨电脑交接提示词.md)
+真实 PostgreSQL 检查需要将 `PLUS_TEST_POSTGRES_URL` 指向独立测试数据库。测试会创建并删除随机 schema，不应连接生产数据库。
 
-现有服务说明见[jin10-server/README.md](jin10-server/README.md)。完整工作台的根入口已从原日报页改为门户，日报现在通过`/daily/`访问；采集插件API不变。
+```powershell
+cd jin10-extension
+npm ci
+npm test
+npm run build
+npm run lint
+```
 
-默认自动排期关闭。最新规则是北京时间工作日08:00—10:00，完成即停；周一取周五，其他取前一工作日，流动性取当天，不维护假期日历。来源日期不符不出新稿。
+## 构建和部署
 
-测试部署允许先核对来源差异。缺失值不补造；正式取稿需编辑确认。原油ETF首次采集没有前日快照时不会显示单日增减。DeepSeek为可选文字线，纯规则流程不依赖模型、Codex或GPU。
+Docker 构建上下文必须是仓库根目录，确保根目录的 `skills/` 同时进入镜像：
+
+```sh
+docker build -f jin10-server/Dockerfile -t plus-api .
+```
+
+根目录及 `deploy/` 中的 Compose 配置都使用这一构建方式。部署脚本为 `deploy/deploy.sh`；现有运行时的增量发布可使用 `deploy/Dockerfile.release`。API 与 brief-worker 必须使用同一发布镜像。升级使用 Alembic 增量迁移，保留生产数据库、存储卷和环境设置。
+
+## 生产约束
+
+- 固定快讯由规则取数、计算、制图，再经 Skill 文案阶段。AI 只选择允许的表达，失败自动回退完整规则稿；稿件仍需人工确认。团队正文模板只支持命名占位值，不接受硬编码行情数值或执行代码。
+- AI算力CPI、AI景气度指标仅手动生成，从授权归档数据取数，保留缺失日期、精度和修订。其他栏目的排期以服务端 policy 和团队设置为准。
+- Plus新鲜事和 Plus注解辅助由 `NEWS_SKILL_OS_ENABLED` 控制；生产已启用，本地默认关闭。产物仅保存为待审核稿件，不自动发布。
+- 所有最终图片经过 `app/services/image_delivery.py`，使用原始 PLUS 水印，最多 266,000 字节；下载名称使用生产日期和标题 MD5。估值图的既定布局保持不变。
+- 稿件最多保留最新两版及已确认版；查看者只能看到已确认版。缓存必须匹配 pipeline/delivery 签名。
+- 设置中的数据导出严格按团队隔离，所有登录成员均可使用。导出不包含密码、密钥、原始网页或来源二进制。算力修订及业务配置历史也在导出注册表中。
+- 日报编辑和清空需携带 `If-Match` 版本；过期编辑返回 409，客户端应刷新后重新确认。
+- 扩展离线队列按服务器和团队隔离，切换团队不会把旧团队未同步内容上传到新团队。
+
+本次审查逐项记录见 [项目审查修复记录](docs/项目审查修复-20261023.md)。

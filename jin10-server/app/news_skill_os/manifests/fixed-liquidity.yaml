@@ -1,0 +1,335 @@
+{
+  "api_version": "news.skill/v1",
+  "id": "news.fixed-liquidity",
+  "version": "0.1.0",
+  "owner": "plus-editorial",
+  "description": "Evidence-bound liquidity fixed brief text; no image or publication.",
+  "entrypoint": "app.news_skill_os.skills.fixed_liquidity:run",
+  "input_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "data_date",
+      "facts",
+      "fixed_note"
+    ],
+    "properties": {
+      "data_date": {
+        "type": "string",
+        "format": "date"
+      },
+      "facts": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "dr007_weighted"
+        ],
+        "properties": {
+          "dr007_open": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "value",
+              "unit",
+              "evidence_id",
+              "as_of",
+              "verified"
+            ],
+            "properties": {
+              "value": {
+                "oneOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "number"
+                  }
+                ]
+              },
+              "unit": {
+                "enum": [
+                  "yi_cny",
+                  "percent",
+                  "wan_barrels"
+                ]
+              },
+              "evidence_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "as_of": {
+                "type": "string",
+                "format": "date"
+              },
+              "verified": {
+                "const": true
+              },
+              "basis": {
+                "type": "string"
+              }
+            }
+          },
+          "previous_dr007_weighted": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "value",
+              "unit",
+              "evidence_id",
+              "as_of",
+              "verified"
+            ],
+            "properties": {
+              "value": {
+                "oneOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "number"
+                  }
+                ]
+              },
+              "unit": {
+                "enum": [
+                  "yi_cny",
+                  "percent",
+                  "wan_barrels"
+                ]
+              },
+              "evidence_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "as_of": {
+                "type": "string",
+                "format": "date"
+              },
+              "verified": {
+                "const": true
+              },
+              "basis": {
+                "type": "string"
+              }
+            }
+          },
+          "dr001_weighted": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "value",
+              "unit",
+              "evidence_id",
+              "as_of",
+              "verified"
+            ],
+            "properties": {
+              "value": {
+                "oneOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "number"
+                  }
+                ]
+              },
+              "unit": {
+                "enum": [
+                  "yi_cny",
+                  "percent",
+                  "wan_barrels"
+                ]
+              },
+              "evidence_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "as_of": {
+                "type": "string",
+                "format": "date"
+              },
+              "verified": {
+                "const": true
+              },
+              "basis": {
+                "type": "string"
+              }
+            }
+          },
+          "policy_7d": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "value",
+              "unit",
+              "evidence_id",
+              "as_of",
+              "verified"
+            ],
+            "properties": {
+              "value": {
+                "oneOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "number"
+                  }
+                ]
+              },
+              "unit": {
+                "enum": [
+                  "yi_cny",
+                  "percent",
+                  "wan_barrels"
+                ]
+              },
+              "evidence_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "as_of": {
+                "type": "string",
+                "format": "date"
+              },
+              "verified": {
+                "const": true
+              },
+              "basis": {
+                "type": "string"
+              }
+            }
+          },
+          "dr007_weighted": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "value",
+              "unit",
+              "evidence_id",
+              "as_of",
+              "verified"
+            ],
+            "properties": {
+              "value": {
+                "oneOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "number"
+                  }
+                ]
+              },
+              "unit": {
+                "enum": [
+                  "yi_cny",
+                  "percent",
+                  "wan_barrels"
+                ]
+              },
+              "evidence_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "as_of": {
+                "type": "string",
+                "format": "date"
+              },
+              "verified": {
+                "const": true
+              },
+              "basis": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
+      "fixed_note": {
+        "type": "string",
+        "maxLength": 2000
+      }
+    }
+  },
+  "output_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "title",
+      "dynamic_body",
+      "fixed_note",
+      "body",
+      "notes_placement",
+      "evidence_ids",
+      "publication_allowed"
+    ],
+    "properties": {
+      "title": {
+        "type": "string",
+        "minLength": 1
+      },
+      "dynamic_body": {
+        "type": "string",
+        "minLength": 1
+      },
+      "fixed_note": {
+        "type": "string"
+      },
+      "body": {
+        "type": "string",
+        "minLength": 1
+      },
+      "notes_placement": {
+        "enum": [
+          "body",
+          "image",
+          "inline"
+        ]
+      },
+      "evidence_ids": {
+        "type": "array",
+        "uniqueItems": true,
+        "items": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "publication_allowed": {
+        "const": false
+      }
+    }
+  },
+  "model_profile": "deterministic-editorial",
+  "timeouts": {
+    "seconds": 10
+  },
+  "retry_policy": {
+    "max_attempts": 1
+  },
+  "idempotency": "deterministic",
+  "allowed_tools": [],
+  "permissions": {
+    "network": false,
+    "database_read": false,
+    "database_write": false,
+    "publish": false
+  },
+  "quality_gates": [
+    "verified-current-facts",
+    "fixed-note-separated",
+    "human-review"
+  ],
+  "evaluation_suite": "tests/test_news_skill_os_fixed_briefs.py",
+  "editorial_assets": [
+    {
+      "path": "skills/jin10-plus-liquidity-text/SKILL.md",
+      "sha256": "58b8eb7a9a3ebdb17523753af02badbdbf564af3ee6e79d70eb8daa0aabc8e35"
+    },
+    {
+      "path": "skills/jin10-plus-liquidity-text/references/history.md",
+      "sha256": "7b6593d4ea5c9ffd08fe359321595123e72e434989a258137b55b0ae75584d23"
+    }
+  ]
+}

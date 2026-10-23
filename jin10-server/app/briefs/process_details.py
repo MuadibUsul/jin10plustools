@@ -108,6 +108,12 @@ def describe(category, payload):
                 '本期ERP减去前一交易日ERP得到百分点变动；与6%参考线比较。缺少任一必要交易日时停止生成，不用旧值冒充当天。']
             if latest.get('pe_ttm_mcw') and latest.get('bond_yield_number') is not None:
                 calculations.append(f"本期代入：100 ÷ {latest['pe_ttm_mcw']} − {latest['bond_yield_number']} = {number(latest['erp_percent'])}%。")
+            revision = facts.get('bond_revision_check') or {}
+            if revision.get('corrections'):
+                corrected = '、'.join(f"{item['date']}（{item['old_yield']}→{item['new_yield']}）" for item in revision['corrections'])
+                calculations.append(f"中债十年期国债收益率每日复核最近两个交易日，已修正：{corrected}；修正后历史ERP已重算并回写。")
+            elif revision.get('checked_dates'):
+                calculations.append(f"中债十年期国债收益率每日复核最近两个交易日：{'、'.join(revision['checked_dates'])}，未发现修正。")
         elif category == 'liquidity':
             source('中国货币网 · 质押式回购行情', 'https://www.chinamoney.com.cn/chinese/mkdatapm/')
             quotes, bank = facts.get('quotes', {}), facts.get('central_bank')
@@ -148,6 +154,28 @@ def describe(category, payload):
                 '分级：巴菲特指数 70%以下低估、70-100%合理、100-150%偏高、150-200%高估、200%以上严重高估；ERP 7%以上很高、6-7%偏高、5.5-6%中性、4.5-5.5%偏低、4.5%以下很低。',
                 '综合结论 = 两项分级得分之和：≥4 高、2-3 较高、-1 到 1 中性、-3 到 -2 较低、≤-4 低。',
                 f"本期：巴菲特指数 {facts.get('buffett_pct')}%（{facts.get('buffett_grade')}），ERP {facts.get('erp_pct')}%（{facts.get('erp_grade')}），结论{facts.get('verdict')}。"]
+        elif category == 'token_cost':
+            source('Silicon Data · LLM Token Expenditure Index', facts.get('source'))
+            value('Token支出价格', facts.get('token_price'), '美元/百万Token')
+            value('七个自然日前价格', facts.get('previous_price'), '美元/百万Token')
+            value('周变化', facts.get('weekly_change_pct'), '%')
+            calculations = (['价格及可选七日变化由编辑人工录入。'] if facts.get('source') == '编辑人工录入' else
+                            ['价格和七日变化取官网公开卡片的显示值，保留页面精度。']
+                            if facts.get('weekly_source') == 'public_visible_summary' else
+                            ['Token支出价格按当日和七个自然日前同口径比较；基准缺失时不替代。',
+                             '最近7日区间只使用已导入的非空价格；历史峰值保留日期。'])
+        elif category == 'gpu_rental':
+            source('Silicon Data · GPU Index', facts.get('source'))
+            value('A100租赁价格', facts.get('a100'), '美元/GPU/小时')
+            value('H100租赁价格', facts.get('h100'), '美元/GPU/小时')
+            value('B200租赁价格', facts.get('b200'), '美元/GPU/小时')
+            calculations = (['本期三卡价格由编辑人工录入，七日变化按录入值或历史基准核对。']
+                            if facts.get('source') == '编辑人工录入' else
+                            ['三卡价格及七日变化取官网公开卡片的显示值，保留页面精度。',
+                             '历史峰值只比较已收录数据。']
+                            if facts.get('weekly_source') == 'public_visible_summary' else
+                            ['周变化按七个自然日对齐，基准缺失时不补值。',
+                             '只使用同日三卡完整行；历史峰值按各卡已导入的非空序列计算。'])
         elif category == 'us_structure':
             source('标普500等权指数（^SPXEW）', 'https://query1.finance.yahoo.com/v8/finance/chart/%5ESPXEW')
             source('标普500 / 纳指 / 道指 / 罗素2000（Yahoo Finance）', 'https://query1.finance.yahoo.com/v8/finance/chart/%5EGSPC')
@@ -178,10 +206,10 @@ def describe(category, payload):
             'facts': safe_value(facts)}
 
 
-def for_job(job, root):
+def for_job(job, root, payload=None):
     root = Path(root).resolve()
     folder = root/'runs'/str(job.id)
-    payload = read_json(folder/'result.json') or {}
+    payload = payload if payload is not None else read_json(folder/'result.json') or {}
     artifact = (root/str(payload.get('artifact_dir', ''))).resolve()
     if not artifact.is_relative_to(root):
         artifact = folder
@@ -189,7 +217,8 @@ def for_job(job, root):
     evidence = []
     # Fixed, registered snapshot names only; no user-provided paths or directory walk.
     for name in ('volume-raw.json', 'plot-data.json', 'source.json', 'liquidity-snapshot.json',
-                 'oil-source.json', 'oil-previous-source.json', 'buffett-plot-data.json', 'erp-plot-data.json'):
+                 'oil-source.json', 'oil-previous-source.json', 'buffett-plot-data.json', 'erp-plot-data.json',
+                 'ai-compute-source.json', 'public-compute-read.json', 'manual-compute-read.json'):
         path = folder/name
         if not path.is_file():
             path = artifact/name
@@ -220,14 +249,15 @@ def for_job(job, root):
             data['fetched_at'] = parsed.get('fetched_at')
     actions = {'produce': '生成稿件', 'refresh': '重新取数', 'render': '从快照重新制图', 'ai': '补跑AI文案'}
     reused = bool(payload and artifact != folder.resolve())
-    ai = payload.get('deepseek') or {}
+    ai = payload.get('skill') or payload.get('deepseek') or {}
     return {**data, 'evidence': evidence, 'action': actions.get(job.action, job.action),
             'reused': reused, 'available': bool(payload),
             'result': {'title': copy_dates(payload.get('title', '')), 'body': copy_dates(payload.get('dynamic_body', '')),
                        'images': payload.get('images', []), 'warnings': safe_value(payload.get('warnings', [])),
                        'ai_status': ai.get('status', 'not_configured'), 'ai_model': ai.get('model', ''),
                        'ai_provider': ai.get('provider', 'deepseek')},
+            'rule_copy': safe_value(payload.get('rule_copy') or {}),
             'assembly': ['先以已校验指标生成规则标题与事实正文。',
-                         '图表读取同一批已校验数据；本期固定注释按栏目规则放入正文或估值图片。',
-                         '启用AI时，把规则事实交给所选引擎生成候选表达并校验；规则稿保留，AI候选由编辑决定是否采用。',
+                         '图表读取同一批已校验数据；本期固定注释按栏目规则放入正文或图片。',
+                         'Skill 从已验证表达中选择文案；通过校验后进入本期稿件，失败自动使用完整规则稿，始终等待人工审核，不自动发布。',
                          '保存本期版本和来源快照；下载图片时统一加原始水印并检查266000字节上限。']}

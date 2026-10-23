@@ -31,12 +31,14 @@ tar -czf /tmp/plus-deploy.tgz \
   --exclude='jin10-server/.venv' --exclude='jin10-server/out' --exclude='jin10-server/data' \
   --exclude='jin10-server/.env' --exclude='__pycache__' --exclude='.pytest_cache' \
   --exclude='jin10-server/tests' --exclude='jin10-server/samples' \
-  jin10-server deploy/docker-compose.yml
+  jin10-server skills .dockerignore deploy/docker-compose.yml
 
 echo "==> 上传"
 "${SSH[@]}" "mkdir -p '$REMOTE_DIR' && chmod 700 '$REMOTE_DIR'"
 scp -i "$KEY" -o IdentitiesOnly=yes -o BatchMode=yes -q /tmp/plus-deploy.tgz "$HOST:$REMOTE_DIR/release.tgz"
-scp -i "$KEY" -o IdentitiesOnly=yes -o BatchMode=yes -q .env "$HOST:$REMOTE_DIR/.env"
+if ! "${SSH[@]}" "test -f '$REMOTE_DIR/.env'"; then
+  scp -i "$KEY" -o IdentitiesOnly=yes -o BatchMode=yes -q .env "$HOST:$REMOTE_DIR/.env"
+fi
 rm -f /tmp/plus-deploy.tgz
 
 echo "==> 构建并启动"
@@ -45,7 +47,7 @@ set -euo pipefail
 cd "$1"
 chmod 600 .env
 rm -rf jin10-server && tar -xzf release.tgz && rm release.tgz
-mv deploy/docker-compose.yml docker-compose.yml && rmdir deploy
+install -m 644 deploy/docker-compose.yml docker-compose.yml
 docker network inspect web >/dev/null 2>&1 || docker network create web
 docker compose up -d --build
 docker image prune -f --filter "label=com.docker.compose.project=plus" >/dev/null || true

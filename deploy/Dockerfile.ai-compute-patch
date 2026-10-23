@@ -1,0 +1,22 @@
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
+USER root
+COPY jin10-server/app/db/models.py /srv/app/db/models.py
+COPY jin10-server/app/services/data_export.py /srv/app/services/data_export.py
+COPY jin10-server/app/briefs/policy.py /srv/app/briefs/policy.py
+COPY jin10-server/app/briefs/delivery.py /srv/app/briefs/delivery.py
+COPY jin10-server/app/briefs/worker.py /srv/app/briefs/worker.py
+COPY jin10-server/app/briefs/sources.py /srv/app/briefs/sources.py
+COPY jin10-server/app/briefs/ai_compute.py /srv/app/briefs/ai_compute.py
+COPY jin10-server/app/briefs/ai_compute_charts.py /srv/app/briefs/ai_compute_charts.py
+COPY jin10-server/app/briefs/ai_compute_import.py /srv/app/briefs/ai_compute_import.py
+COPY jin10-server/app/briefs/body_templates.py /srv/app/briefs/body_templates.py
+COPY jin10-server/app/briefs/process_details.py /srv/app/briefs/process_details.py
+COPY jin10-server/app/briefs/skill_ai.py /srv/app/briefs/skill_ai.py
+COPY jin10-server/app/briefs/skill_library.py /srv/app/briefs/skill_library.py
+COPY jin10-server/app/web/briefs.js /srv/app/web/briefs.js
+COPY jin10-server/app/web/settings.js /srv/app/web/settings.js
+COPY jin10-server/alembic/versions/0014_ai_compute_observations.py /srv/alembic/versions/0014_ai_compute_observations.py
+COPY skills /srv/skills
+RUN chmod -R a+rX /srv/app /srv/alembic /srv/skills
+USER plus

@@ -2,11 +2,14 @@ import io
 import json
 import uuid
 from datetime import date, datetime, timezone
+from decimal import Decimal
 
 import pytest
 from openpyxl import load_workbook
 
-from app.db.models import BriefIssue, BriefVersion, Material
+from app.briefs.manual_compute import normalize, store_manual
+from app.briefs.public_compute_store import store_visible
+from app.db.models import AIComputeObservation, BriefIssue, BriefVersion, Material
 from app.services import data_export
 from tests.conftest import login
 
@@ -50,8 +53,10 @@ def test_export_is_open_to_every_signed_in_member(client, rows):
     data = client.get('/api/export/datasets', headers=login(client, 'viewer@plus.test')).json()
     assert data['max_rows'] == data_export.MAX_ROWS
     keys = [item['key'] for item in data['datasets']]
-    assert keys[:2] == ['materials', 'assets'] and 'brief_versions' in keys and len(keys) == 11
-    assert keys[-1] == 'feedback'
+    assert keys[:2] == ['materials', 'assets'] and 'brief_versions' in keys and len(keys) == 29
+    assert 'feedback' in keys and 'news_events' in keys
+    assert keys[-3:] == ['ai_compute_observations', 'token_cost_observations',
+                         'gpu_rental_observations']
     labels = {item['key']: item for item in data['datasets']}
     assert labels['materials']['date_label'] == '采集时间'
     assert '标题' in labels['materials']['columns']
@@ -125,3 +130,139 @@ def test_count_range_and_errors(client, rows, monkeypatch):
     assert client.get('/api/export/materials', headers=headers, params={'format': 'xml'}).status_code == 422
     monkeypatch.setattr(data_export, 'MAX_ROWS', 1)
     assert client.get('/api/export/materials', headers=headers).status_code == 413
+
+
+def test_valuation_series_exports_five_numeric_columns_and_team_dates(client, db_factory, seed, tmp_path):
+    from app.briefs.valuation_observations import save_history
+
+    source = tmp_path / 'erp-plot-data.json'
+    source.write_text(json.dumps([
+        {'date': '2026-10-19', 'close': '4500.25', 'pe_ttm_mcw': '12.5',
+         'bond_yield_number': '2.0', 'source_status': 'verified'},
+        {'date': '2026-10-20', 'close': '4510.5', 'pe_ttm_mcw': '10',
+         'bond_yield_number': '2.0', 'source_status': 'verified'},
+    ]), encoding='utf-8')
+    with db_factory() as db:
+        assert save_history(db, seed['admin'].team_id, None, source) == 2
+        db.commit()
+
+    headers = login(client, 'viewer@plus.test')
+    key = 'valuation_observations'
+    dataset = {item['key']: item for item in client.get('/api/export/datasets', headers=headers).json()['datasets']}[key]
+    assert dataset['columns'] == ['日期', '沪深300收盘价', 'PE-TTM市值加权',
+                                  '中国十年期国债收益率（不需加百分号）', '沪深300风险溢价指数']
+    params = {'start': '2026-10-20', 'end': '2026-10-20'}
+    assert client.get(f'/api/export/{key}/count', headers=headers, params=params).json()['count'] == 1
+    payload = client.get(f'/api/export/{key}', headers=headers,
+                         params={**params, 'format': 'json'}).json()
+    assert payload == [{'date': '2026-10-20', 'close': 4510.5, 'pe_ttm_mcw': 10.0,
+                        'bond_yield_number': 2.0, 'erp': 0.08}]
+    csv_text = client.get(f'/api/export/{key}', headers=headers, params=params).content.decode('utf-8-sig')
+    assert csv_text.splitlines()[0] == ','.join(dataset['columns'])
+    assert csv_text.splitlines()[1].startswith('2026-10-20,4510.500000,10.000000,2.000000,0.080000000000')
+    book = load_workbook(io.BytesIO(client.get(f'/api/export/{key}', headers=headers,
+                                                 params={**params, 'format': 'xlsx'}).content), read_only=True)
+    lines = list(book['数据'].iter_rows(values_only=True))
+    assert lines[0] == tuple(dataset['columns'])
+    assert lines[1] == ('2026-10-20', 4510.5, 10, 2, 0.08)
+    assert client.get(f'/api/export/{key}', headers=login(client, 'out@plus.test'),
+                      params={**params, 'format': 'json'}).json() == []
+
+
+def test_ai_compute_export_separates_briefs_and_uses_current_single_day_values(client, db_factory, seed):
+    team_id = seed['admin'].team_id
+    token_day = date(2026, 10, 20)
+    gpu_day = date(2026, 10, 21)
+    with db_factory() as db:
+        store_visible(db, team_id, {
+            'category': 'token_cost', 'data_date': token_day.isoformat(),
+            'captured_at': '2026-10-20T12:00:00Z',
+            'readings': [{'metric': 'token', 'date': token_day.isoformat(),
+                          'price': '0.97', 'week_change_pct': '-2.1'}],
+        })
+        store_manual(db, team_id, normalize(
+            'token_cost', token_day, token_day, token_day,
+            {'token': '0.973456'}, {'token': '-1.82'}, '编辑核对', seed['editor'].id))
+        store_visible(db, team_id, {
+            'category': 'gpu_rental', 'data_date': gpu_day.isoformat(),
+            'captured_at': '2026-10-21T12:00:00Z',
+            'readings': [
+                {'metric': 'a100', 'date': gpu_day.isoformat(), 'price': '1.52',
+                 'week_change_pct': '-0.65'},
+                {'metric': 'h100', 'date': gpu_day.isoformat(), 'price': '2.811',
+                 'week_change_pct': '0.36'},
+                {'metric': 'b200', 'date': gpu_day.isoformat(), 'price': '6.01',
+                 'week_change_pct': '2.21'},
+            ],
+        })
+        db.add(AIComputeObservation(
+            team_id=seed['outsider'].team_id, kind='token', date=token_day,
+            token_price=Decimal('9.99'), source='other team',
+            source_status='imported_workbook', revision=1))
+        db.commit()
+
+    headers = login(client, 'viewer@plus.test')
+    catalog = {item['key']: item for item in client.get('/api/export/datasets', headers=headers).json()['datasets']}
+    assert catalog['token_cost_observations']['label'] == 'AI算力CPI·Token价格'
+    assert catalog['gpu_rental_observations']['label'] == 'AI景气度指标·GPU租赁价格'
+
+    token_key = 'token_cost_observations'
+    params = {'start': token_day.isoformat(), 'end': token_day.isoformat()}
+    assert client.get(f'/api/export/{token_key}/count', headers=headers, params=params).json()['count'] == 1
+    token = client.get(f'/api/export/{token_key}', headers=headers,
+                       params={**params, 'format': 'json'}).json()
+    assert len(token) == 1
+    assert token[0]['date'] == '2026-10-20'
+    assert token[0]['token_price'] == '0.973456'
+    assert token[0]['week_change_pct'] == '-1.82'
+    assert token[0]['source_status'] == 'manual_entry' and token[0]['revision'] == 2
+    assert client.get(f'/api/export/{token_key}', headers=login(client, 'out@plus.test'),
+                      params={**params, 'format': 'json'}).json()[0]['token_price'] == '9.99'
+    assert client.get(f'/api/export/{token_key}', headers=headers,
+                      params={'start': gpu_day.isoformat(), 'end': gpu_day.isoformat(),
+                              'format': 'json'}).json() == []
+
+    gpu_key = 'gpu_rental_observations'
+    gpu_params = {'start': gpu_day.isoformat(), 'end': gpu_day.isoformat()}
+    gpu = client.get(f'/api/export/{gpu_key}', headers=headers,
+                     params={**gpu_params, 'format': 'json'}).json()
+    assert len(gpu) == 1
+    assert {key: gpu[0][key] for key in ('a100', 'h100', 'b200')} == {
+        'a100': '1.52', 'h100': '2.811', 'b200': '6.01'}
+    assert {key: gpu[0][key] for key in ('a100_week_change_pct', 'h100_week_change_pct',
+                                        'b200_week_change_pct')} == {
+        'a100_week_change_pct': '-0.65', 'h100_week_change_pct': '0.36',
+        'b200_week_change_pct': '2.21'}
+    assert client.get(f'/api/export/{gpu_key}', headers=login(client, 'out@plus.test'),
+                      params={**gpu_params, 'format': 'json'}).json() == []
+
+    csv_lines = client.get(f'/api/export/{token_key}', headers=headers,
+                           params=params).content.decode('utf-8-sig').splitlines()
+    assert len(csv_lines) == 2 and '0.973456,-1.82' in csv_lines[1]
+    workbook = load_workbook(io.BytesIO(client.get(f'/api/export/{gpu_key}', headers=headers,
+                                                 params={**gpu_params, 'format': 'xlsx'}).content),
+                             read_only=True)
+    sheet_rows = list(workbook['数据'].iter_rows(values_only=True))
+    assert len(sheet_rows) == 2
+    assert sheet_rows[0][:4] == ('数据日期', 'A100价格', 'H100价格', 'B200价格')
+    assert sheet_rows[1][:7] == ('2026-10-21', '1.52', '2.811', '6.01', '-0.65', '0.36', '2.21')
+    assert len(client.get('/api/export/ai_compute_observations', headers=headers,
+                          params={'format': 'json'}).json()) == 2
+
+
+def test_ai_compute_export_keeps_workbook_gaps_and_missing_week_change(client, db_factory, seed):
+    with db_factory() as db:
+        db.add(AIComputeObservation(
+            team_id=seed['admin'].team_id, kind='gpu', date=date(2026, 10, 14),
+            a100=Decimal('1.520000'), h100=None, b200=Decimal('6.010000'),
+            source='Silicon Data workbook', source_status='imported_workbook', revision=1))
+        db.commit()
+    headers = login(client, 'viewer@plus.test')
+    result = client.get('/api/export/gpu_rental_observations', headers=headers,
+                        params={'start': '2026-10-14', 'end': '2026-10-14',
+                                'format': 'json'}).json()
+    assert len(result) == 1
+    assert result[0]['a100'] == '1.52' and result[0]['h100'] is None
+    assert result[0]['b200'] == '6.01'
+    assert all(result[0][f'{metric}_week_change_pct'] is None
+               for metric in ('a100', 'h100', 'b200'))

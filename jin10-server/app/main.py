@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from fastapi.responses import JSONResponse
@@ -19,6 +19,14 @@ from app.ai.jev_client import JevClient
 from app.ai.worker import AnalysisWorker
 from app.api import assets, auth, board, collab, issues, materials
 from app.api import briefs, chat2api, export, feedback, live, settings as team_settings
+try:
+    from app.api import news_skill_os
+except ImportError as exc:
+    # Release patch images built on the legacy runtime may not carry the
+    # optional News Skill OS router; its flag is off in that deployment.
+    if 'news_skill_os' not in str(exc):
+        raise
+    news_skill_os = None
 from app.config import get_settings
 from app.db.session import get_session_factory
 from app.services.maintenance import MaintenanceWorker
@@ -65,6 +73,8 @@ app.include_router(team_settings.router)
 app.include_router(live.router)
 app.include_router(export.router)
 app.include_router(feedback.router)
+if news_skill_os is not None:
+    app.include_router(news_skill_os.router)
 @app.middleware('http')
 async def api_no_store(request, call_next):
     response = await call_next(request)
@@ -94,14 +104,19 @@ class _WebFiles(StaticFiles):
 
 # Explicit workspace routes precede the legacy static-file mount.
 _WEB=Path(__file__).parent/'web'
+_SKILL_CATEGORIES=frozenset({'volume','turnover','valuation','liquidity','oil_etf','news.event-extraction','news.fact-verification','news.background-research','finance.causal-analysis','news.quality-review'})
 
 
 @app.get('/',include_in_schema=False)
-@app.get('/fresh/',include_in_schema=False)
-@app.get('/annotations/',include_in_schema=False)
 @app.get('/login/',include_in_schema=False)
 def workspace_page():
     return FileResponse(_WEB/'portal.html',headers={'Cache-Control':'no-cache'})
+
+
+@app.get('/fresh/',include_in_schema=False)
+@app.get('/annotations/',include_in_schema=False)
+def news_page():
+    return FileResponse(_WEB/'news.html',headers={'Cache-Control':'no-cache'})
 
 
 @app.get('/daily/',include_in_schema=False)
@@ -128,6 +143,23 @@ def settings_page():
 @app.head('/settings/',include_in_schema=False)
 def settings_head():
     return FileResponse(_WEB/'settings.html',headers={'Cache-Control':'no-cache'})
+
+
+@app.get('/skills/',include_in_schema=False)
+def skills_page():
+    return FileResponse(_WEB/'skills.html',headers={'Cache-Control':'no-cache'})
+
+
+@app.head('/skills/',include_in_schema=False)
+def skills_head():
+    return FileResponse(_WEB/'skills.html',headers={'Cache-Control':'no-cache'})
+
+
+@app.get('/skills/{category}/',include_in_schema=False)
+def skill_detail_page(category:str):
+    if category not in _SKILL_CATEGORIES:
+        raise HTTPException(404,'Skill 不存在')
+    return FileResponse(_WEB/'skill-detail.html',headers={'Cache-Control':'no-cache'})
 
 
 app.mount("/", _WebFiles(directory=Path(__file__).parent / "web", html=True), name="web")

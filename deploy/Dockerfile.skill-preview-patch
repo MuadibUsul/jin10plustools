@@ -1,0 +1,20 @@
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
+USER root
+# The five text skills use the same locked manifests as the offline News Skill OS.
+RUN pip install --no-cache-dir "PyYAML>=6,<7" "jsonschema>=4.23,<5"
+COPY jin10-server/app/api/briefs.py /srv/app/api/briefs.py
+COPY jin10-server/app/briefs/skill_preview.py /srv/app/briefs/skill_preview.py
+COPY jin10-server/app/news_skill_os/__init__.py /srv/app/news_skill_os/__init__.py
+COPY jin10-server/app/news_skill_os/manifest.py /srv/app/news_skill_os/manifest.py
+COPY jin10-server/app/news_skill_os/models.py /srv/app/news_skill_os/models.py
+COPY jin10-server/app/news_skill_os/workflow.py /srv/app/news_skill_os/workflow.py
+COPY jin10-server/app/news_skill_os/manifest.lock.json /srv/app/news_skill_os/manifest.lock.json
+COPY jin10-server/app/news_skill_os/skill-manifest.schema.json /srv/app/news_skill_os/skill-manifest.schema.json
+COPY jin10-server/app/news_skill_os/skills /srv/app/news_skill_os/skills
+COPY jin10-server/app/news_skill_os/manifests /srv/app/news_skill_os/manifests
+COPY jin10-server/app/web/briefs.html /srv/app/web/briefs.html
+COPY jin10-server/app/web/briefs.js /srv/app/web/briefs.js
+RUN chmod -R a+rX /srv/app/news_skill_os /srv/app/briefs/skill_preview.py \
+    /srv/app/api/briefs.py /srv/app/web/briefs.html /srv/app/web/briefs.js
+USER plus

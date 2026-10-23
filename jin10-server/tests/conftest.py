@@ -6,12 +6,13 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 os.environ.setdefault("PLUS_JWT_SECRET", "test-secret-please-ignore-0123456789")
 os.environ["PLUS_AI_WORKER_ENABLED"] = "false"  # 测试中绝不调用真实 JEV
+os.environ["PLUS_BRIEFS_SKILL_AI_ENABLED"] = "false"  # 测试中绝不调用真实文案模型
 
 from app.config import get_settings  # noqa: E402
 from app.db.models import Base, Role, Team, User  # noqa: E402
@@ -27,6 +28,14 @@ def db_factory(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[sess
     monkeypatch.setenv("PLUS_STORAGE_DIR", str(tmp_path / "storage"))
     get_settings.cache_clear()
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+
+    @event.listens_for(engine, "connect")
+    def _foreign_keys_on(dbapi_connection, _record):
+        # PostgreSQL enforces FKs; keep the SQLite test double honest as well.
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+
     Base.metadata.create_all(engine)
     factory = sessionmaker(bind=engine, expire_on_commit=False)
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import math
 import uuid
 from typing import Any, Literal
 
@@ -193,6 +194,8 @@ class LayoutOverride(BaseModel):
 
     @model_validator(mode='after')
     def inside_page(self):
+        if not all(math.isfinite(value) for value in (self.x, self.y, self.width, self.height)):
+            raise ValueError('排版坐标必须为有限数字')
         if self.x + self.width > 1.000001 or self.y + self.height > 1.000001:
             raise ValueError('排版元素必须留在页面内')
         if self.paragraphs is not None and (sum(map(len, self.paragraphs)) > 20_000 or

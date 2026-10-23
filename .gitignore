@@ -7,4 +7,5 @@ node_modules/
 dist/
 jin10-server/out/
 jin10-server/data/
+jin10-server/uv.lock
 jin10-server/app/web/extension-version.json

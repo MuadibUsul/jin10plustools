@@ -1,0 +1,31 @@
+name: LibreOffice render
+
+on:
+  push:
+    paths:
+      - '.github/workflows/libreoffice-render.yml'
+      - 'jin10-server/app/ppt/**'
+      - 'jin10-server/docker/fonts.conf'
+      - 'jin10-server/templates/**'
+      - 'jin10-server/tests/test_libreoffice_render.py'
+  workflow_dispatch:
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install production renderer and fonts
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libreoffice-impress python3-uno fonts-noto-cjk fonts-noto-cjk-extra fontconfig
+          sudo cp jin10-server/docker/fonts.conf /etc/fonts/conf.d/60-plus-template-fonts.conf
+          sudo fc-cache -f
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install application dependencies
+        run: pip install -e './jin10-server[dev]'
+      - name: Verify LibreOffice PDF title weight
+        working-directory: jin10-server
+        run: pytest -q tests/test_libreoffice_render.py

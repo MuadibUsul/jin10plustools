@@ -319,6 +319,12 @@ export function createDailyEditor({ api, onGenerate, canGenerate }) {
   }
 
   q('preview-refresh').addEventListener('click', renderPreview);
+  q('editor-zoom').addEventListener('input', (event) => {
+    const size = `${720 * Number(event.target.value) / 100}px`;
+    canvas.style.width = size;
+    canvas.style.flexBasis = size;
+    q('editor-zoom-value').textContent = `${event.target.value}%`;
+  });
   q('preview-save-images').addEventListener('click', saveImages);
   q('preview-close').addEventListener('click', close);
   q('preview-generate').addEventListener('click', () => {

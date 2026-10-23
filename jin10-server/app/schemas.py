@@ -6,7 +6,7 @@ import datetime as dt
 import uuid
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 ItemKind = Literal["flash", "vip", "article"]
 CollectMethod = Literal["context_menu", "page_scan"]
@@ -178,11 +178,35 @@ class IssueSection(BaseModel):
     material_ids: list[uuid.UUID] = Field(min_length=1, max_length=30)
 
 
+class LayoutOverride(BaseModel):
+    """One editable PPT element, positioned as a fraction of its slide."""
+
+    page: int = Field(ge=1, le=100)
+    shape_id: int = Field(ge=1)
+    fingerprint: str = Field(min_length=64, max_length=64, pattern=r'^[0-9a-f]{64}$')
+    x: float = Field(ge=0, le=1)
+    y: float = Field(ge=0, le=1)
+    width: float = Field(gt=0, le=1)
+    height: float = Field(gt=0, le=1)
+    font_size_pt: float | None = Field(default=None, ge=8, le=72)
+    paragraphs: list[str] | None = Field(default=None, max_length=30)
+
+    @model_validator(mode='after')
+    def inside_page(self):
+        if self.x + self.width > 1.000001 or self.y + self.height > 1.000001:
+            raise ValueError('排版元素必须留在页面内')
+        if self.paragraphs is not None and (sum(map(len, self.paragraphs)) > 20_000 or
+                                            any('\r' in text for text in self.paragraphs)):
+            raise ValueError('编辑文字超出限制')
+        return self
+
+
 class GenerateRequest(BaseModel):
     issue_date: dt.date
     sections: list[IssueSection] = Field(min_length=1)
     #: 不传则系统推荐；显式列表（含空列表）为人工首页精选
     cover_material_ids: list[uuid.UUID] | None = Field(default=None, max_length=12)
+    layout_overrides: list[LayoutOverride] = Field(default_factory=list, max_length=300)
 
 
 class IssueOut(BaseModel):
@@ -213,3 +237,4 @@ class PreviewOut(BaseModel):
     warnings: list[str]
     #: 每页 PNG（data URL），由最终 PDF 渲染得到，与生成结果一致
     pages: list[str]
+    elements: list[list[dict[str, Any]]] = Field(default_factory=list)

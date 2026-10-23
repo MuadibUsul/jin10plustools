@@ -1,6 +1,7 @@
 // PLUS 日报选稿页：待选素材按栏目分组、按综合分排序；勾选后生成 PDF。
 // 同源调用 /api，登录令牌只保存在本浏览器。
 import { account, copyDate, displayTime } from '/workspace.js';
+import { createDailyEditor } from '/daily-editor.js';
 import '/pull-cord.js';
 
 const SECTIONS = [
@@ -650,7 +651,7 @@ function render() {
     el('li', {}, el('label', { class: 'cover-choice' },
       el('input', { type: 'checkbox', checked: cover.has(m.id), disabled: !canEdit() || state.coverSaving,
         'aria-label': `首页精选：${eff.title(m)}`, onchange: () => toggleCover(m.id) }), eff.title(m))))]));
-  $('#generate').disabled = total === 0;
+  $('#generate').disabled = total === 0 || !canEdit();
   $('#preview').disabled = total === 0;
 }
 
@@ -664,66 +665,10 @@ function issueRequest() {
   };
 }
 
-// ---------- 预览（与生成同一流程：服务端生成 PDF 后逐页转图） ----------
+// ---------- 从选稿进入排版编辑 ----------
 
-async function openPreview() {
-  const view = $('#preview-view');
-  view.hidden = false;
-  $('#preview-info').textContent = '正在渲染…';
-  $('#preview-pages').replaceChildren();
-  try {
-    const res = await api('/api/issues/preview', { method: 'POST', json: issueRequest() });
-    $('#preview-info').textContent = `共 ${res.page_count} 页${res.warnings.length ? ' · ' + res.warnings.join('；') : ''}　点击页面可放大查看；PDF 与预览内容一致`;
-    $('#preview-pages').replaceChildren(...res.pages.map((src, i) => {
-      const image = el('img', { src, alt: `第 ${i + 1} 页`, title: '点击放大或缩小', tabindex: 0, role: 'button', 'aria-label': `放大第 ${i + 1} 页` });
-      const toggle = () => {
-        image.classList.toggle('zoomed');
-        image.setAttribute('aria-label', `${image.classList.contains('zoomed') ? '缩小' : '放大'}第 ${i + 1} 页`);
-      };
-      image.addEventListener('click', toggle);
-      image.addEventListener('keydown', (event) => {
-        if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); toggle(); }
-      });
-      return image;
-    }));
-  } catch (err) {
-    $('#preview-info').textContent = `预览失败：${err.message}`;
-  }
-}
-
-async function savePreviewImages() {
-  const button = $('#preview-save-images');
-  const filename = `PLUS日报-${$('#day').value}-图片.zip`;
-  let fileHandle;
-  try {
-    // The picker must open directly from the click before any network await.
-    if (window.showSaveFilePicker) fileHandle = await window.showSaveFilePicker({
-      suggestedName: filename,
-      types: [{ description: 'ZIP 压缩包', accept: { 'application/zip': ['.zip'] } }],
-    });
-    button.disabled = true;
-    $('#preview-info').textContent = '正在生成清晰图片并打包…';
-    const response = await api('/api/issues/preview/images', { method: 'POST', json: issueRequest(), raw: true });
-    const blob = await response.blob();
-    if (fileHandle) {
-      const writer = await fileHandle.createWritable();
-      await writer.write(blob);
-      await writer.close();
-    } else {
-      const url = URL.createObjectURL(blob);
-      const link = el('a', { href: url, download: filename });
-      document.body.append(link);
-      link.click();
-      link.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 60_000);
-    }
-    $('#preview-info').textContent = `已保存 ${filename}（每页图片不超过 1 MB）`;
-  } catch (err) {
-    if (err.name !== 'AbortError') $('#preview-info').textContent = `保存图片失败：${err.message}`;
-  } finally {
-    button.disabled = false;
-  }
-}
+let dailyEditor;
+function openPreview() { return dailyEditor.open(issueRequest()); }
 
 // ---------- 垃圾桶 / 恢复 AI 排版 ----------
 
@@ -814,8 +759,7 @@ async function resetAiLayout() {
   render();
 }
 
-async function generate() {
-  const request = issueRequest();
+async function generate(request = issueRequest()) {
   const status = $('#gen-status');
   const button = $('#generate');
   button.disabled = true;
@@ -874,12 +818,9 @@ function wire() {
   $('#auto-pick').addEventListener('click', autoPick);
   $('#clear-pick').addEventListener('click', () => { state.picked.clear(); boardOps({ pick_set: [] }); render(); });
   $('#cover-reset').addEventListener('click', resetCover);
-  $('#generate').addEventListener('click', generate);
+  dailyEditor = createDailyEditor({ api, onGenerate: generate, canGenerate: canEdit });
+  $('#generate').addEventListener('click', openPreview);
   $('#preview').addEventListener('click', openPreview);
-  $('#preview-refresh').addEventListener('click', openPreview);
-  $('#preview-save-images').addEventListener('click', savePreviewImages);
-  $('#preview-close').addEventListener('click', () => { $('#preview-view').hidden = true; });
-  $('#preview-generate').addEventListener('click', () => { $('#preview-view').hidden = true; generate(); });
   $('#reset-ai').addEventListener('click', () => resetAiLayout().catch(alert));
   $('#clear-pool').addEventListener('click', () => clearPool().catch(alert));
   $('#bulk-delete').addEventListener('click', () => setBulk(!state.bulk));

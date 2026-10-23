@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import io
-from datetime import date
 from pathlib import Path
 from zipfile import ZIP_STORED, ZipFile
 
@@ -37,10 +36,10 @@ def _page_image(page: pymupdf.Page, number: int) -> bytes:
     raise ImageSizeError(f'第 {number} 页无法在保持清晰度的前提下压到 1 MB，请更换该页的高复杂度配图')
 
 
-def image_zip(pdf: Path, issue_date: date) -> bytes:
+def image_zip(pdf: Path) -> bytes:
     output = io.BytesIO()
     with pymupdf.open(pdf) as document, ZipFile(output, 'w', compression=ZIP_STORED) as archive:
         for index, page in enumerate(document, start=1):
-            name = f'PLUS日报-{issue_date:%Y-%m-%d}/第{index:02d}页.webp'
+            name = f'{index}.webp'
             archive.writestr(name, _page_image(page, index))
     return output.getvalue()

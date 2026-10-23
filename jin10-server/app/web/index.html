@@ -66,8 +66,8 @@
             <p class="muted" id="cover-mode">系统推荐。勾选下方标题可改为人工精选。</p>
             <ol id="pick-list" class="pick-list"></ol>
             <div class="gen-buttons">
-              <button id="preview" class="wide" disabled>预览</button>
-              <button id="generate" class="primary wide" disabled>生成 PDF</button>
+              <button id="preview" class="wide" disabled>预览并排版</button>
+              <button id="generate" class="primary wide" disabled>进入排版后生成</button>
             </div>
             <div id="gen-status" class="gen-status" hidden></div>
           </div>
@@ -109,17 +109,43 @@
       <span>拖到这里删除</span>
     </div>
 
-    <div id="preview-view" class="preview" hidden>
-      <div class="preview-bar">
-        <strong>日报预览</strong>
-        <span id="preview-info" class="muted"></span>
+    <div id="preview-view" class="layout-editor" hidden>
+      <div class="layout-editor-bar">
+        <strong>日报排版编辑</strong>
+        <span id="preview-info" class="muted" role="status"></span>
         <span class="spacer"></span>
+        <button id="editor-undo" title="撤销上一步" disabled>撤销</button>
+        <button id="editor-redo" title="重做" disabled>重做</button>
+        <button id="editor-reset-page" title="还原当前页的排版" disabled>还原本页</button>
         <button id="preview-refresh">重新渲染</button>
-        <button id="preview-save-images">保存清晰图片 ZIP</button>
-        <button id="preview-generate" class="primary">生成 PDF</button>
-        <button id="preview-close">关闭</button>
+        <button id="preview-save-images" class="primary">保存逐页图片 ZIP</button>
+        <button id="preview-generate">生成 PDF</button>
+        <button id="preview-close">返回选稿</button>
       </div>
-      <div id="preview-pages" class="preview-pages"></div>
+      <div class="layout-editor-workspace">
+        <aside class="layout-editor-pages"><h2>页面</h2><div id="editor-thumbs"></div></aside>
+        <div class="layout-editor-scroll">
+          <div id="editor-canvas" class="layout-editor-canvas">
+            <img id="editor-image" alt="当前日报页面" draggable="false" />
+            <div id="editor-shapes" class="layout-editor-shapes"></div>
+          </div>
+        </div>
+        <aside class="layout-editor-inspector">
+          <h2>元素调整</h2>
+          <p class="muted">点击页面中的文字框或配图，拖动蓝框移动；拖动右下角调整大小。松开后会重新渲染成品。</p>
+          <strong id="editor-element-label">未选择元素</strong>
+          <div class="layout-editor-fields">
+            <label>左侧位置 %<input id="editor-x" type="number" min="0" max="100" step="0.1" disabled /></label>
+            <label>顶部位置 %<input id="editor-y" type="number" min="0" max="100" step="0.1" disabled /></label>
+            <label>宽度 %<input id="editor-width" type="number" min="0.1" max="100" step="0.1" disabled /></label>
+            <label>高度 %<input id="editor-height" type="number" min="0.1" max="100" step="0.1" disabled /></label>
+            <label id="editor-font-row">字号 pt<input id="editor-font" type="number" min="8" max="72" step="0.5" disabled /></label>
+          </div>
+          <div id="editor-text-fields" class="layout-editor-text-fields"></div>
+          <button id="editor-reset-element" disabled>还原该元素</button>
+          <p class="muted">图片以页面上的最终效果导出，文件名为 1.webp、2.webp……，每页不超过 1 MB。</p>
+        </aside>
+      </div>
     </div>
 
     <script type="module" src="/app.js"></script>

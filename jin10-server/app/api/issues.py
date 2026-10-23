@@ -135,13 +135,14 @@ def reset_ai_layout(
 def preview(body: GenerateRequest, db: DbSession, user: CurrentUser) -> PreviewOut:
     """实时预览：与正式生成同一流程生成 PDF，逐页转为图片"""
     try:
-        images, pages, warnings = preview_issue(db, user, body)
+        images, pages, warnings, elements = preview_issue(db, user, body)
     except IssueBuildError as err:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(err)) from None
     return PreviewOut(
         page_count=pages,
         warnings=warnings,
         pages=["data:image/png;base64," + base64.b64encode(png).decode() for png in images],
+        elements=elements,
     )
 
 

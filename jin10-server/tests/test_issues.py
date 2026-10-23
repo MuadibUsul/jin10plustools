@@ -200,6 +200,8 @@ def test_preview_matches_generated_pages(client: TestClient) -> None:
     preview = client.post("/api/issues/preview", json=body, headers=h).json()
     issue = client.post("/api/issues", json=body, headers=h).json()
     assert preview["page_count"] == issue["page_count"] == len(preview["pages"])
+    assert len(preview['elements']) == preview['page_count']
+    assert any(item['kind'] == 'text' for page in preview['elements'] for item in page)
     assert all(p.startswith("data:image/png;base64,") for p in preview["pages"])
     first_page = base64.b64decode(preview["pages"][0].split(",", 1)[1])
     with Image.open(io.BytesIO(first_page)) as image:
@@ -216,10 +218,44 @@ def test_preview_images_zip_is_clear_and_under_one_mb_per_page(client: TestClien
     with ZipFile(io.BytesIO(response.content)) as archive:
         names = archive.namelist()
         assert len(names) == 7
-        assert names[0].endswith('/第01页.webp')
+        assert names == [f'{number}.webp' for number in range(1, 8)]
         for name in names:
             data = archive.read(name)
             assert len(data) <= 1_000_000
             with Image.open(io.BytesIO(data)) as image:
                 assert image.size == (1800, 3200)
     assert client.get('/api/issues', headers=h).json() == []
+
+
+def test_layout_editor_updates_preview_and_final_pptx(client: TestClient, tmp_path: Path) -> None:
+    h, ids = seed(client)
+    body = {'issue_date': '2026-09-21', 'sections': [{'id': 'macro', 'material_ids': [ids[0]]}]}
+    first = client.post('/api/issues/preview', json=body, headers=h).json()
+    item = next(element for page in first['elements'] for element in page if element['kind'] == 'text')
+    patch = {key: item[key] for key in ('page', 'shape_id', 'fingerprint', 'x', 'y', 'width', 'height')}
+    patch['x'] = round(item['x'] + 0.01, 5)
+    patch['font_size_pt'] = 24
+    patch['paragraphs'] = [item['paragraphs'][0] + '（校订）', *item['paragraphs'][1:]]
+    edited = {**body, 'layout_overrides': [patch]}
+    second = client.post('/api/issues/preview', json=edited, headers=h)
+    assert second.status_code == 200, second.text
+    moved = next(element for element in second.json()['elements'][item['page'] - 1]
+                 if element['shape_id'] == item['shape_id'])
+    assert moved['x'] == pytest.approx(patch['x'], abs=1e-6)
+    assert moved['font_size_pt'] == 24
+    assert moved['paragraphs'] == patch['paragraphs']
+    assert client.post('/api/issues/preview', json={**body, 'layout_overrides': [
+        {**patch, 'fingerprint': '0' * 64}]}, headers=h).status_code == 400
+    assert client.post('/api/issues/preview', json={**body, 'layout_overrides': [
+        {**patch, 'x': 0.99}]}, headers=h).status_code == 422
+
+    issue = client.post('/api/issues', json=edited, headers=h)
+    assert issue.status_code == 201, issue.text
+    pptx = client.get(f"/api/issues/{issue.json()['id']}/file", params={'format': 'pptx'}, headers=h)
+    path = tmp_path / 'edited.pptx'
+    path.write_bytes(pptx.content)
+    presentation = Presentation(str(path))
+    shape = next(shape for shape in presentation.slides[item['page'] - 1].shapes
+                 if shape.shape_id == item['shape_id'])
+    assert shape.left / presentation.slide_width == pytest.approx(patch['x'], abs=1e-6)
+    assert shape.text_frame.paragraphs[0].text == patch['paragraphs'][0]

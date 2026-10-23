@@ -176,6 +176,20 @@ class TestGenerator:
         assert report.page_count == 7  # 封面 + 6 个栏目页（其余 5 个为空白页）
         assert report.sections == ["宏观消息", "国内股市动向", "海外股市动向", "AI热点", "精选观点", "精选图表"]
 
+    def test_article_title_has_explicit_bold_without_bolding_body(self, tmp_path: Path) -> None:
+        issue = DailyIssue(date=dt.date(2026, 9, 21), sections=[DailySection(
+            id=SectionId.MACRO, items=[DailyItem(title="企业涨价推动通胀回升", news="正文保持原样")],
+        )])
+        out = tmp_path / "bold-title.pptx"
+        generate(issue, out)
+        slide = Presentation(str(out)).slides[1]
+        paragraphs = [p for shape in slide.shapes if shape.name.startswith("body-")
+                      for p in shape.text_frame.paragraphs]
+        title = next(p for p in paragraphs if p.text == "企业涨价推动通胀回升")
+        body = next(p for p in paragraphs if p.text == "【新闻】正文保持原样")
+        assert title.runs[0].font.bold is True
+        assert body.runs[0].font.bold is not True
+
     def test_empty_issue_rejected(self, tmp_path: Path) -> None:
         with pytest.raises(ValueError):
             generate(DailyIssue(date=dt.date(2026, 9, 21), sections=[]), tmp_path / "x.pptx")

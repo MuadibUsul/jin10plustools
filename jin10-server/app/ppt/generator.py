@@ -30,6 +30,7 @@ from .pptx_xml import (
     set_align,
     set_anchor,
     set_font_size,
+    set_font_bold,
     set_geometry,
     set_insets,
     set_line_spacing_pts,
@@ -200,6 +201,8 @@ def _render_text_frame(
         p = copy.deepcopy(title_p if para.style == "title" else body_p)
         set_paragraph_text(p, para.text)
         set_font_size(p, font)
+        if para.style == "title":
+            set_font_bold(p)
         set_line_spacing_pts(p, frame.metrics.line_height * 72)
         p.find(qn("a:pPr")).set("hangingPunct", "0")  # 与 LibreOffice 换行一致
         set_space_after(p, 12 * frame.metrics.scale)

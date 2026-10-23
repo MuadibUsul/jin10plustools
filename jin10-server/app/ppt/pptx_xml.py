@@ -207,6 +207,13 @@ def set_font_size(p: etree._Element, pt: float) -> None:
             r_pr.set("sz", str(round(pt * 100)))
 
 
+def set_font_bold(p: etree._Element) -> None:
+    """Record title weight explicitly so PPT and PDF converters select the same face."""
+    for tag in ("a:rPr", "a:endParaRPr"):
+        for r_pr in p.iter(qn(tag)):
+            r_pr.set("b", "1")
+
+
 def set_space_after(p: etree._Element, pt: float) -> None:
     p_pr = p.find(qn("a:pPr"))
     if p_pr is None:

@@ -133,9 +133,26 @@ body.is-dragging .trash { opacity: 1; transform: none; pointer-events: auto; }
 .layout-page-thumb.active { border-color: var(--brand-dark); background: #e9f0ff; }
 .layout-page-thumb img { width: 100%; display: block; background: #fff; }
 .layout-page-thumb span { display: block; margin-top: 4px; font-size: 12px; }
-.layout-editor-scroll { min-width: 0; overflow: auto; padding: 22px; display: flex; justify-content: center; align-items: flex-start; }
-.layout-editor-canvas { position: relative; flex: 0 0 720px; width: 720px; max-width: none; box-shadow: 0 10px 35px #15243b38; background: #fff; }
-.layout-editor-canvas > img { display: block; width: 100%; height: auto; user-select: none; }
+.layout-editor-stage { position: relative; min-width: 0; min-height: 0; }
+.layout-editor-scroll { box-sizing: border-box; width: 100%; height: 100%; overflow: auto; padding: 22px; }
+.layout-editor-stack { display: flex; flex-direction: column; align-items: center; gap: 22px; min-width: max-content; }
+.layout-editor-page { position: relative; width: var(--editor-page-width, 720px); box-shadow: 0 10px 35px #15243b38; background: #fff; }
+.layout-editor-page > img { display: block; width: 100%; height: auto; user-select: none; }
+.layout-editor-loading { position: absolute; inset: 0; z-index: 2; display: grid; place-items: center; padding: 20px; background: #edf1f7e8; }
+.layout-editor-loading-card { box-sizing: border-box; width: min(380px, 100%); padding: 30px 32px; border: 1px solid #dce5f2; border-radius: 18px; background: #fff; box-shadow: 0 18px 48px #172f5426; text-align: center; }
+.layout-editor-loading-icon { width: 34px; height: 34px; margin: 0 auto 18px; border: 3px solid #d9e7ff; border-top-color: #1765d4; border-radius: 50%; animation: layout-editor-spin .9s linear infinite; }
+.layout-editor-loading-card strong { display: block; font-size: 18px; }
+.layout-editor-loading-card p { margin: 10px 0 20px; color: #64748b; font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
+.layout-editor-progress { height: 8px; overflow: hidden; border-radius: 999px; background: #e5edfa; }
+.layout-editor-progress > span { display: block; width: 35%; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #5a9bfa, #1765d4); animation: layout-editor-progress 1.5s ease-in-out infinite; }
+.layout-editor-loading.determinate .layout-editor-progress > span { width: 0; animation: none; transform: none; transition: width .25s ease; }
+.layout-editor-loading-card small { display: block; margin-top: 14px; color: #64748b; }
+.layout-editor-loading.error .layout-editor-loading-icon { border-color: #ffe0dc; border-top-color: #d43f35; animation: none; }
+.layout-editor-loading.error .layout-editor-progress { display: none; }
+.layout-editor-loading.error .layout-editor-loading-card button { margin-top: 20px; }
+@keyframes layout-editor-spin { to { transform: rotate(360deg); } }
+@keyframes layout-editor-progress { from { transform: translateX(-110%); } to { transform: translateX(290%); } }
+@media (prefers-reduced-motion: reduce) { .layout-editor-loading-icon, .layout-editor-progress > span { animation-duration: 4s; } }
 .layout-editor-shapes { position: absolute; inset: 0; pointer-events: none; }
 .layout-shape { position: absolute; box-sizing: border-box; border: 2px solid transparent; pointer-events: auto; cursor: move; touch-action: none; }
 .layout-shape-mask, .layout-shape-ghost { position: absolute; pointer-events: none; }

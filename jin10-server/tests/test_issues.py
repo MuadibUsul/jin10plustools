@@ -218,11 +218,12 @@ def test_preview_images_zip_is_clear_and_under_one_mb_per_page(client: TestClien
     with ZipFile(io.BytesIO(response.content)) as archive:
         names = archive.namelist()
         assert len(names) == 7
-        assert names == [f'{number}.webp' for number in range(1, 8)]
+        assert names == [f'{number}.jpg' for number in range(1, 8)]
         for name in names:
             data = archive.read(name)
             assert len(data) <= 1_000_000
             with Image.open(io.BytesIO(data)) as image:
+                assert image.format == 'JPEG'
                 assert image.size == (1800, 3200)
     assert client.get('/api/issues', headers=h).json() == []
 

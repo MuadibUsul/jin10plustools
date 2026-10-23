@@ -119,16 +119,25 @@
         <button id="editor-reset-page" title="还原当前页的排版" disabled>还原本页</button>
         <label class="layout-editor-zoom">缩放 <input id="editor-zoom" type="range" min="50" max="150" value="100" step="10" /><span id="editor-zoom-value">100%</span></label>
         <button id="preview-refresh">重新渲染</button>
-        <button id="preview-save-images" class="primary">保存逐页图片 ZIP</button>
+        <button id="preview-save-images" class="primary">保存所有 JPG 图片</button>
         <button id="preview-generate">生成 PDF</button>
         <button id="preview-close">返回选稿</button>
       </div>
       <div class="layout-editor-workspace">
         <aside class="layout-editor-pages"><h2>页面</h2><div id="editor-thumbs"></div></aside>
-        <div class="layout-editor-scroll">
-          <div id="editor-canvas" class="layout-editor-canvas">
-            <img id="editor-image" alt="当前日报页面" draggable="false" />
-            <div id="editor-shapes" class="layout-editor-shapes"></div>
+        <div class="layout-editor-stage">
+          <div class="layout-editor-scroll">
+            <div id="editor-canvas" class="layout-editor-stack" hidden></div>
+          </div>
+          <div id="editor-loading" class="layout-editor-loading" hidden>
+            <div class="layout-editor-loading-card" role="status" aria-live="polite">
+              <div class="layout-editor-loading-icon" aria-hidden="true"></div>
+              <strong id="editor-loading-title">正在生成日报预览</strong>
+              <p id="editor-loading-detail">正在渲染页面，请稍候…</p>
+              <div class="layout-editor-progress" role="progressbar" aria-label="排版加载进度"><span></span></div>
+              <small id="editor-loading-elapsed" aria-hidden="true">已等待 0 秒</small>
+              <button id="editor-loading-retry" type="button" hidden>重新渲染</button>
+            </div>
           </div>
         </div>
         <aside class="layout-editor-inspector">
@@ -144,7 +153,7 @@
           </div>
           <div id="editor-text-fields" class="layout-editor-text-fields"></div>
           <button id="editor-reset-element" disabled>还原该元素</button>
-          <p class="muted">图片以页面上的最终效果导出，文件名为 1.webp、2.webp……，每页不超过 1 MB。</p>
+          <p class="muted">选择文件夹后，系统会自动创建日报子文件夹并保存 1.jpg、2.jpg……，每页不超过 1 MB。</p>
         </aside>
       </div>
     </div>

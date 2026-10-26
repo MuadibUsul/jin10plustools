@@ -99,6 +99,24 @@ def token_cost(day, out, state, refresh=False):
     high = max((row['token_price'] for row in recent), default=latest['token_price'])
     peak = max(valid, key=lambda row: (row['token_price'], row['date']))
     price = _decimal(latest['token_price'])
+    earlier = [row for row in valid if row['date'] < actual_day]
+    if earlier:
+        prior_peak = max(earlier, key=lambda row: (row['token_price'], row['date']))
+        prior_peak_price = _decimal(prior_peak['token_price'])
+        if price > prior_peak_price:
+            peak_relation, drawdown_pct = 'above', ''
+        elif price == prior_peak_price:
+            peak_relation, drawdown_pct = 'tie', ''
+        else:
+            peak_relation = 'below'
+            drawdown_pct = f'{(prior_peak_price - price) / prior_peak_price * 100:.2f}'
+        exponent = prior_peak_price.as_tuple().exponent
+        places = max(4, -exponent) if isinstance(exponent, int) else 4
+        prior_peak_text = f'{prior_peak_price:.{places}f}'
+        prior_peak_date = prior_peak['date']
+    else:
+        peak_relation, drawdown_pct = 'unavailable', ''
+        prior_peak_text, prior_peak_date = '', ''
     title_dir = _direction(weekly) if weekly is not None else '持平'
     title = f"【AI算力CPI】Token支出价格指数{title_dir}" if weekly else "【AI算力CPI】Token支出价格指数更新"
     price_text = public['price'] if public else entered['price'] if entered else f'{price:.4f}'
@@ -134,9 +152,15 @@ def token_cost(day, out, state, refresh=False):
         'facts': {
             'token_price': price_text, 'previous_date': '' if public or entered_week is not None else previous['date'] if previous else '',
             'previous_price': '' if public or entered_week is not None else f"{_decimal(previous['token_price']):.4f}" if previous else '',
-            'weekly_change_pct': weekly or '', 'range_low': '' if public or entered else f'{_decimal(low):.4f}',
-            'range_high': '' if public or entered else f'{_decimal(high):.4f}', 'peak_price': f"{_decimal(peak['token_price']):.4f}",
-            'peak_date': peak['date'], 'source': '编辑人工录入' if entered else 'Silicon Data LLM Token Expenditure Index',
+            'weekly_change_pct': weekly or '',
+            'range_low': '' if public or entered else f'{_decimal(low):.4f}',
+            'range_high': '' if public or entered else f'{_decimal(high):.4f}',
+            'range_count': 0 if public or entered else len(recent),
+            'peak_price': f"{_decimal(peak['token_price']):.4f}",
+            'peak_date': peak['date'], 'prior_peak_price': prior_peak_text,
+            'prior_peak_date': prior_peak_date, 'peak_relation': peak_relation,
+            'drawdown_pct': drawdown_pct,
+            'source': '编辑人工录入' if entered else 'Silicon Data LLM Token Expenditure Index',
             'source_precision': public['precision'] if public else entered['precision'] if entered else 4,
             'weekly_source': 'manual_entry' if entered_week is not None else 'public_visible_summary' if public else 'calculated',
             'source_note': (latest.get('manual_display') or {}).get('source_note', '') if entered else '',
@@ -216,12 +240,18 @@ def gpu_rental(day, out, state, refresh=False):
     else:
         body += "；周变化基准缺失。"
     peak = peaks['b200']
-    if _decimal(latest['b200']) > _decimal(peak['b200']):
-        body += f"B200处于已收录数据新高（此前高点{_decimal(peak['b200']):.2f}美元，{peak['date']}）。"
-    elif _decimal(latest['b200']) == _decimal(peak['b200']):
-        body += f"B200与已收录数据高点{_decimal(peak['b200']):.2f}美元持平（{peak['date']}）。"
+    peak_price = _decimal(peak['b200'])
+    latest_b200 = _decimal(latest['b200'])
+    if latest_b200 > peak_price:
+        b200_peak_relation, b200_gap_pct = 'above', ''
+        body += f"B200处于已收录数据新高（此前高点{peak_price:.2f}美元，{peak['date']}）。"
+    elif latest_b200 == peak_price:
+        b200_peak_relation, b200_gap_pct = 'tie', ''
+        body += f"B200与已收录数据高点{peak_price:.2f}美元持平（{peak['date']}）。"
     else:
-        body += f"B200较已收录数据高点{_decimal(peak['b200']):.2f}美元低{(_decimal(peak['b200'])-_decimal(latest['b200'])) / _decimal(peak['b200']) * 100:.2f}%。"
+        b200_gap_pct = f'{(peak_price - latest_b200) / peak_price * 100:.2f}'
+        b200_peak_relation = 'below'
+        body += f"B200较已收录数据高点{peak_price:.2f}美元低{b200_gap_pct}%。"
     (out/'ai-compute-source.json').write_text(json.dumps(rows,ensure_ascii=False,default=str),encoding='utf-8')
     chart = gpu_chart([row for row in rows if row['date']<=actual_day], out)
     return {
@@ -232,7 +262,8 @@ def gpu_rental(day, out, state, refresh=False):
             'b200': prices['b200'], 'previous_date': '' if public_mode or manual_week else previous['date'] if previous else '',
             'a100_change_pct': changes['a100'] or '', 'h100_change_pct': changes['h100'] or '',
             'b200_change_pct': changes['b200'] or '', 'b200_peak': f"{_decimal(peaks['b200']['b200']):.2f}",
-            'b200_peak_date': peaks['b200']['date'],
+            'b200_peak_date': peaks['b200']['date'], 'b200_peak_relation': b200_peak_relation,
+            'b200_gap_pct': b200_gap_pct,
             'source': '编辑人工录入' if manual_mode else 'Silicon Data A100/H100/B200 NeoCloud',
             'weekly_source': 'public_visible_summary' if public_mode else 'manual_entry' if manual_week else 'calculated_from_seven_day_baseline',
             'source_note': (latest.get('manual_display') or {}).get('source_note', '') if manual_mode else '',

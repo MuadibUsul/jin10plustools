@@ -14,7 +14,7 @@ from typing import Any
 from app.db.models import utcnow
 
 from .policy import CATEGORIES
-from .skill_ai import SKILL_NAMES, asset_dir
+from .skill_ai import SKILL_NAMES, asset_dir, sample_label
 
 MAX_INSTRUCTIONS = 8000
 MAX_HISTORY = 20
@@ -71,7 +71,7 @@ def _description(text: str) -> str:
 
 
 def _count_samples(text: str) -> int:
-    return len(re.findall(r"(?m)^### \d{4}-\d{2}-\d{2}\s*$", text))
+    return sum(1 for line in text.splitlines() if sample_label(line))
 
 
 def _hash(text: str) -> str:
@@ -97,10 +97,10 @@ def history_samples(category: str) -> list[dict[str, str]]:
                             "body": re.sub(r"\s+", " ", " ".join(body)).strip()})
 
     for line in text.splitlines():
+        label = sample_label(line)
         if line.startswith("### "):
             flush()
-            value = line[4:].strip()
-            current_date = value if re.fullmatch(r"\d{4}-\d{2}-\d{2}", value) else None
+            current_date = label
             current_title = ""
             body = []
             started = False
@@ -112,6 +112,9 @@ def history_samples(category: str) -> list[dict[str, str]]:
             continue
         if line.strip() == "**动态正文**":
             started = True
+            continue
+        if started and (line.startswith("**固定说明") or line.strip() == "--------"):
+            started = False
             continue
         if started and line.strip():
             body.append(line.strip())

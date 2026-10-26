@@ -48,11 +48,16 @@ def test_token_and_gpu_adapters(monkeypatch, tmp_path):
     token = ai_compute.token_cost('2026-10-14', tmp_path, None)
     assert token['data_date'] == '2026-10-14'
     assert '0.9750' in token['dynamic_body'] and '1.82' in token['dynamic_body']
+    assert token['facts']['peak_relation'] == 'below'
+    assert token['facts']['drawdown_pct'] == '1.82'
+    assert token['facts']['prior_peak_price'] == '0.9931'
     assert (tmp_path / token['images'][0]).is_file()
     gpu = ai_compute.gpu_rental('2026-10-15', tmp_path, None)
     assert gpu['data_date'] == '2026-10-15'
     assert '6.01' in gpu['dynamic_body'] and '2.81' in gpu['dynamic_body'] and '1.52' in gpu['dynamic_body']
     assert '低1.64%' in gpu['dynamic_body']
+    assert gpu['facts']['b200_peak_relation'] == 'below'
+    assert gpu['facts']['b200_gap_pct'] == '1.64'
     assert (tmp_path / gpu['images'][0]).is_file()
 
 

@@ -1,9 +1,9 @@
-"""Mandatory Skill copy stage for the five fixed briefs.
+"""Mandatory Skill copy stage for the fixed briefs.
 
-The rule adapter remains the only source of numbers, charts and snapshots.  This
-stage asks the team-selected AI to polish the rule title/body with the team's
-Skill instructions; any failure (including exhausted AI quota) leaves the
-complete fixed-combination rule copy in place and never fails the brief job.
+The rule adapter remains the only source of numbers, charts and snapshots.  The
+two AI-compute categories first apply the corpus style templates; the optional
+model may then polish only inside the number guard.  Any AI failure leaves that
+styled rule copy in place and never fails the brief job.
 """
 from __future__ import annotations
 
@@ -15,6 +15,9 @@ from .skill_ai import SKILL_NAMES, polish
 def apply_skill_copy(payload: dict, category: str, team_settings: dict | None) -> dict:
     if category not in SKILL_NAMES:
         return payload
+    if category in ('token_cost', 'gpu_rental') and not payload.get('body_template_custom'):
+        from .ai_compute_style import apply_compute_style
+        apply_compute_style(payload, category)
     payload['rule_copy']={'title':payload['title'],'body':payload['dynamic_body']}
     try:
         result = polish(SimpleNamespace(settings=dict(team_settings or {})), category,

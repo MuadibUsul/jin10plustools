@@ -29,6 +29,16 @@ SKILL_NAMES = {
 }
 _NUMBER = re.compile(r"\d[\d,]*(?:\.\d+)?")
 _DAILY = re.compile(r"(?m)^### (\d{4}-\d{2}-\d{2})\s*$")
+_SAMPLE_LABEL = re.compile(r"\d{4}-\d{2}-\d{2}|风格样本 \d{2}")
+STYLE_CORPUS = frozenset({"token_cost", "gpu_rental"})
+
+
+def sample_label(line: str) -> str | None:
+    """Dated archive rows and AI-compute style rows the production stage can load."""
+    if not line.startswith("### "):
+        return None
+    value = line[4:].strip()
+    return value if _SAMPLE_LABEL.fullmatch(value) else None
 _BANNED = ("点击", "查看完整", "扫码", "扫描", "关注我们", "投资建议", "仅供参考", "布局机会", "下载APP", "http://", "https://")
 
 
@@ -72,6 +82,11 @@ def asset_dir(category: str) -> Path:
 
 def _history(category: str, limit: int = 20) -> str:
     text = (asset_dir(category) / "references" / "history.md").read_text(encoding="utf-8")
+    if category in STYLE_CORPUS:
+        # The whole corpus is mandatory style context, including the not-live-facts header.
+        if "不作为当期事实" not in text or "### 风格样本 " not in text:
+            raise ValueError("AI算力风格语料未被生产阶段识别")
+        return text
     starts = [match.start() for match in _DAILY.finditer(text)]
     if not starts:
         return ""

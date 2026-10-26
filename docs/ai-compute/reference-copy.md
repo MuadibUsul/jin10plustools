@@ -1,5 +1,12 @@
 # 用户提供的两类固定快讯参考文案
 
+2026-10-26 起，生产 Skill 使用的风格语料是 ethan 提供的多篇样本，登记在：
+
+- `skills/jin10-plus-token-cost-text/references/history.md`（18 则）
+- `skills/jin10-plus-gpu-rental-text/references/history.md`（11 则）
+
+这两份文件由自动文案阶段整份载入，只约束标题、正文节奏和固定说明写法。样本里的数字、日期和判断都不是当期事实。当期标题和正文按 `jin10-server/app/briefs/ai_compute_style.py` 的阈值从事实包生成；适配器不写样例句子。
+
 以下为2026-10-21会话中用户提供的写法参考，不是当日行情，也不是可直接使用的已审核规则。历史日期、数值和结论不得作为新稿事实；开发时须按[处理方案](../AI算力固定快讯处理方案-20261021.md)及[原始数据边界](sources/README.md)重新计算。
 
 ## AI算力CPI原始参考

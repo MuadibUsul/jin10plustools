@@ -14,7 +14,11 @@ import matplotlib.pyplot as plt
 import pytest
 from PIL import Image
 
-from app.briefs.ai_compute_charts import gpu_chart, token_chart
+from matplotlib.patheffects import SimpleLineShadow
+
+from app.briefs.ai_compute_charts import (
+    A100_COLOR, B200_COLOR, H100_COLOR, TOKEN_COLOR, gpu_chart, token_chart,
+)
 from app.services.image_delivery import MAX_BYTES, compose_image, encode_image
 
 
@@ -147,6 +151,35 @@ def test_missing_week_baseline_is_omitted():
     plt.close('all')
     assert '七日' not in joined
     assert 'A100 1.50' in joined and 'B200 6.00' in joined
+
+
+def _rgb(value):
+    text = value.lstrip('#')
+    return tuple(int(text[index:index + 2], 16) for index in (0, 2, 4))
+
+
+def test_series_colors_follow_the_reference_not_the_old_palette(tmp_path):
+    old = {'#5476DC', '#27A86C', '#E3A13D'}
+    assert {H100_COLOR, B200_COLOR, A100_COLOR, TOKEN_COLOR}.isdisjoint(old)
+    teal, purple, gold = _rgb(B200_COLOR), _rgb(H100_COLOR), _rgb(A100_COLOR)
+    assert teal[1] > 170 and teal[2] > 170 and teal[0] < 90
+    assert purple[2] > purple[0] > purple[1] and purple[2] > 160
+    assert gold[0] > 220 and gold[1] > 180 and gold[2] < 110 and gold[1] > gold[0] * 0.78
+    assert TOKEN_COLOR == B200_COLOR
+    rows = _series(12, a100=1.4, h100=2.4, b200=5.2, token_price=1.2)
+    folder = tmp_path / 'colors'
+    folder.mkdir()
+    with _drawn(gpu_chart, rows, folder) as (figure, _path, _caught):
+        colors = {line.get_label(): line.get_color() for line in figure.axes[0].lines}
+        assert colors == {'A100价格': A100_COLOR, 'H100价格': H100_COLOR, 'B200价格': B200_COLOR}
+        assert any(isinstance(effect, SimpleLineShadow) for effect in figure.axes[0].lines[0].get_path_effects())
+        swatches = {text.get_text(): handle.get_color()
+                    for text, handle in zip(figure.legends[0].get_texts(), figure.legends[0].get_lines())}
+        assert swatches == {'H100价格': H100_COLOR, 'B200价格': B200_COLOR, 'A100价格': A100_COLOR}
+        assert all(not handle.get_path_effects() for handle in figure.legends[0].get_lines())
+    with _drawn(token_chart, rows, folder) as (figure, _path, _caught):
+        assert figure.axes[0].lines[0].get_color() == TOKEN_COLOR
+        assert figure.legends[0].get_lines()[0].get_color() == TOKEN_COLOR
 
 
 def test_token_history_cannot_be_empty(tmp_path):

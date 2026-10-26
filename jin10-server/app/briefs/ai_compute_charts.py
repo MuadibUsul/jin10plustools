@@ -17,7 +17,8 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from matplotlib.font_manager import FontProperties, findfont, fontManager
-from matplotlib.patheffects import Normal, Stroke
+from matplotlib.lines import Line2D
+from matplotlib.patheffects import Normal, SimpleLineShadow, Stroke
 from matplotlib.ticker import FuncFormatter
 
 from .charts import FONT
@@ -31,12 +32,27 @@ _CJK_CANDIDATES = (
 )
 INK = '#17233B'
 MUTED = '#7D8798'
-# Series colors follow the reference product charts; text stays on the PLUS ink.
-TOKEN_COLOR = '#1FB6C8'
-H100_COLOR = '#8B7CC8'
-B200_COLOR = '#2EC4D4'
-A100_COLOR = '#E3B341'
-HALO = [Stroke(linewidth=5.2, foreground='white', joinstyle='round', capstyle='round'), Normal()]
+# Reference product chart: teal B200, lavender H100, yellow-gold A100.
+# These are not the older blue / green / orange brief palette.
+B200_COLOR = '#2EC8D4'
+H100_COLOR = '#9B8CC9'
+A100_COLOR = '#F0C446'
+TOKEN_COLOR = B200_COLOR
+SERIES_COLORS = {'A100': A100_COLOR, 'H100': H100_COLOR, 'B200': B200_COLOR}
+
+
+def _line_shadow(offset, width, alpha):
+    return SimpleLineShadow(offset=offset, shadow_color='#A9B4BF', alpha=alpha, linewidth=width)
+
+
+# A soft gray drop shadow plus a light rim, then the solid series color.
+# A white stroke alone disappears on the white page and leaves the line flat.
+LINE_EFFECTS = [
+    _line_shadow((0.8, -2.4), 7.2, 0.22),
+    _line_shadow((0.3, -1.2), 5.2, 0.32),
+    Stroke(linewidth=4.4, foreground='#F5F7F9'),
+    Normal(),
+]
 # Plot rectangle: left, bottom, width, height. The legend centers on this panel.
 AXES = (0.078, 0.205, 0.89, 0.675)
 _FAMILY = None
@@ -200,9 +216,14 @@ def _frame(ax):
 
 
 def _plot(ax, days, values, color, label):
-    line, = ax.plot(days, values, color=color, lw=2.25, solid_capstyle='round',
-                     solid_joinstyle='round', label=label, zorder=3, path_effects=HALO)
+    line, = ax.plot(days, values, color=color, lw=2.35, solid_capstyle='round',
+                     solid_joinstyle='round', label=label, zorder=3, path_effects=LINE_EFFECTS)
     return line
+
+
+def _swatch(color):
+    """Legend sample in the series color only, without the plot shadow."""
+    return Line2D([0], [0], color=color, lw=2.6, solid_capstyle='round')
 
 
 def _legend(fig, handles, labels):
@@ -329,12 +350,12 @@ def token_chart(rows, out, *, notes=None):
         fig, ax = _figure()
         days = [day for day, _ in values]
         prices = [price for _, price in values]
-        line = _plot(ax, days, prices, TOKEN_COLOR, '价格（美元/百万Token）')
+        _plot(ax, days, prices, TOKEN_COLOR, '价格（美元/百万Token）')
         _apply_time_axis(ax, days)
         _apply_price_axis(ax, prices, 0.5 if max(prices) > 1.2 else 0.2,
                           lambda value, _pos: f'${value:.2f}')
         _frame(ax)
-        _legend(fig, [line], ['价格（美元/百万Token）'])
+        _legend(fig, [_swatch(TOKEN_COLOR)], ['价格（美元/百万Token）'])
         _header(fig, 'PLUS 快讯 / AI算力CPI', 'Token支出价格指数')
         latest = rows[-1]
         shown = _price_text(latest, 'token', prices[-1], 4)
@@ -371,7 +392,7 @@ def gpu_chart(rows, out, *, notes=None):
         _apply_price_axis(ax, finite or [1], step, _gpu_tick)
         _frame(ax)
         order = [name for name in ('H100', 'B200', 'A100') if name in handles]
-        _legend(fig, [handles[name] for name in order], [f'{name}价格' for name in order])
+        _legend(fig, [_swatch(SERIES_COLORS[name]) for name in order], [f'{name}价格' for name in order])
         _header(fig, 'PLUS 快讯 / AI景气度指标', 'AI芯片租赁价格走势（美元/每块GPU每小时）')
         _footer(fig, _gpu_footer(rows, notes))
         return _save(fig, out, 'AI景气度指标.png')

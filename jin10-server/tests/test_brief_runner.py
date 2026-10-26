@@ -58,8 +58,8 @@ def test_manual_produce_refreshes_and_accepts_the_newest_available_data_date(tmp
 def test_fixed_explanations_are_identical_and_not_duplicated():
     for category,note in FIXED_NOTES.items():
         body=complete_body(category,'当日事实。')
-        # Valuation, turnover and the US barometer keep notes on the delivered image only.
-        assert body=='当日事实。' if category in ('valuation','turnover','us_barometer') else body.endswith(note)
+        # Notes for these categories stay on the chart. The draft body does not repeat them.
+        assert body=='当日事实。' if category in ('valuation','turnover','us_barometer','token_cost','gpu_rental') else body.endswith(note)
         assert complete_body(category,body)==body
     assert complete_body('oil_etf',complete_body('oil_etf','期货事实。')).count(OIL_CLOSING)==1
     # The oil closing note continues the last sentence and never starts its own line.

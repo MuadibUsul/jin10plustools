@@ -69,12 +69,11 @@ def test_token_style_uses_corpus_rhythm_without_copying_sample_numbers():
         payload('token_cost', token_facts(), '2026-10-14'), 'token_cost')
     assert result['title'] == '【AI算力CPI】Token价格最近一周小幅下跌'
     body = result['dynamic_body']
-    assert body.startswith('截至10月14日，Token支出价格报0.9750美元/百万Token。')
-    assert '较10月7日的0.9931美元/百万Token下跌1.82%' in body
-    assert '累计跌幅为1.82%' in body
+    assert body.startswith('截至10月14日，Token支出价格报0.9750美元，较一周前下跌1.82%。')
+    assert '目前较10月7日高点0.9931下跌1.82%' in body
     assert '0.9750—0.9931' in body
-    assert '波动收窄' not in result['title']
-    assert '0.95' not in body and '腰斩' not in result['title']
+    assert '低位' not in result['title'] and '腰斩' not in result['title']
+    assert '0.95' not in body
     assert result['facts_copy']['title'] == '事实标题'
     assert result['style_contract'] == ai_compute_style.STYLE_CONTRACT
 
@@ -85,51 +84,91 @@ def test_token_rebound_question_and_halving_need_the_fact_pack():
         previous_date='2026-10-07', prior_peak_price='2.0651', prior_peak_date='2026-05-28',
         peak_relation='below', drawdown_pct='52.54', range_low='', range_high='', range_count=0,
     ), '2026-10-14'), 'token_cost')
-    assert halved['title'] == '【AI算力CPI】Token价格腰斩后一周回升，趋势是否扭转？'
-    assert '累计跌幅为52.54%' in halved['dynamic_body']
-    assert '止跌' not in halved['title'] + halved['dynamic_body']
+    assert halved['title'] == '【AI算力CPI】Token价格腰斩后暂时止跌反弹'
+    body = halved['dynamic_body']
+    assert '目前较5月28日高点2.0651下跌52.54%' in body
+    assert '5月末以来' in body and '低于1美元' in body
+    assert '烧钱' not in halved['title'] + body
 
     tied = ai_compute_style.apply_compute_style(payload('token_cost', token_facts(
         peak_relation='tie', drawdown_pct='', token_price='2.0651', prior_peak_price='2.0651',
         weekly_change_pct='+0.40',
     ), '2026-10-14'), 'token_cost')
     assert tied['title'] == '【AI算力CPI】Token价格与已收录高点并列'
-    assert '并列高位' in tied['dynamic_body']
+    assert '持平' in tied['dynamic_body']
     assert '新高' not in tied['title'] + tied['dynamic_body']
+
+
+def test_low_price_titles_follow_the_newest_token_samples():
+    gold = ai_compute_style.apply_compute_style(payload('token_cost', token_facts(
+        token_price='0.97', weekly_change_pct='-1.20', previous_price='0.9818',
+        previous_date='2026-10-07', range_low='0.97', range_high='0.98', range_count=5,
+        range_start_date='2026-10-10', range_end_date='2026-10-14', week_path='down_then_flat',
+        prior_peak_price='2.0651', prior_peak_date='2026-05-28', peak_relation='below',
+        drawdown_pct='53.03', up_streak='0', at_low='',
+    ), '2026-10-14'), 'token_cost')
+    assert gold['title'] == '【AI算力CPI】Token价格最近一周小幅下跌，低位横盘格局延续'
+    assert gold['dynamic_body'] == (
+        '最近一周，Token支出价格指数保持在0.97美元上方。'
+        '指数先跌后稳，10月10日至14日基本维持在0.97—0.98美元区间，短期价格波动明显收窄。'
+        '不过尽管价格下行速度有所放缓，但尚未出现持续反弹迹象。'
+    )
+    for line in FIXED_NOTES['token_cost'].splitlines():
+        assert line not in gold['dynamic_body']
+
+    latest = ai_compute_style.apply_compute_style(payload('token_cost', token_facts(
+        token_price='0.94', weekly_change_pct='-1.20', previous_price='0.9514',
+        previous_date='2026-10-12', range_low='0.935', range_high='0.950', range_count=6,
+        range_start_date='2026-10-13', range_end_date='2026-10-19', week_path='down_then_up',
+        prior_peak_price='2.0651', prior_peak_date='2026-05-28', peak_relation='below',
+        drawdown_pct='54.48', up_streak='1', at_low='',
+    ), '2026-10-19'), 'token_cost')
+    assert latest['title'] == '【AI算力CPI】Token价格波幅收窄，趋势是否扭转？'
+    body = latest['dynamic_body']
+    assert body.startswith('截至10月19日，Token支出价格维持在0.94美元左右。')
+    assert '先跌后升，较一周前下跌1.20%' in body
+    assert '目前仍低于1美元' in body and '5月末以来的下行趋势' in body
+    assert '目前较5月28日高点2.0651下跌54.48%' in body
+    assert '价格波幅有所收窄' in body
+    assert '反映AI模型单位Token支出成本持续下降' in body
+    assert 'Silicon Data' not in body and '可能来自头部模型降价' not in body
+    for line in FIXED_NOTES['token_cost'].splitlines():
+        assert line not in body
 
 
 def test_gpu_style_matches_three_card_rhythm_and_refuses_half_year_high():
     result = ai_compute_style.apply_compute_style(
         payload('gpu_rental', gpu_facts(), '2026-10-15'), 'gpu_rental')
-    assert result['title'] == '【AI景气度指标】高端GPU租赁价分化，B200走强、A100走弱'
+    assert result['title'] == '【AI景气度指标】高端GPU租赁价走强，市场呈现代际分化'
     body = result['dynamic_body']
-    assert body.startswith('截至10月15日，英伟达B200租赁价格报6.01美元/GPU每小时，较七个自然日前（10月8日）上涨2.21%。')
-    assert 'H100租赁价格报2.81美元，上涨0.36%' in body
+    assert body.startswith('截至10月15日，英伟达B200租赁价格升至6.01美元/GPU每小时，较一周前上涨2.21%，仍接近此前高点6.11美元。')
+    assert 'H100租赁价格报2.81美元，微涨0.36%' in body
     assert 'A100报1.52美元，下跌0.65%' in body
-    assert '三卡价格呈现代际分化' in body
-    assert '低1.64%' in body
+    assert '反映AI算力租赁市场出现代际价格分化' in body
     assert '创半年新高' not in result['title'] + body
     assert '结构性紧缺' not in body
+    for line in FIXED_NOTES['gpu_rental'].splitlines():
+        assert line not in body
 
-    ktype = ai_compute_style.apply_compute_style(payload('gpu_rental', gpu_facts(
+    older = ai_compute_style.apply_compute_style(payload('gpu_rental', gpu_facts(
         b200_change_pct='+1.20', h100_change_pct='0.00', a100_change_pct='-0.80',
         b200_gap_pct='8.00',
     ), '2026-10-15'), 'gpu_rental')
-    assert ktype['title'] == '【AI景气度指标】高端GPU租赁价呈K型分化，B200强于前两代'
-    assert 'K型分化' in ktype['dynamic_body']
-    assert '紧缺' not in ktype['dynamic_body']
+    assert older['title'] == '【AI景气度指标】B200小幅回升，H100/A100低位震荡'
+    assert '代际价格分化' in older['dynamic_body']
+    assert '全面紧缺' not in older['dynamic_body'] and '结构性紧缺' not in older['dynamic_body']
 
     tied = ai_compute_style.apply_compute_style(payload('gpu_rental', gpu_facts(
         b200='6.11', b200_peak_relation='tie', b200_gap_pct='',
     ), '2026-10-15'), 'gpu_rental')
-    assert '并列' in tied['title'] and '并列高位' in tied['dynamic_body']
+    assert '并列' in tied['title'] and '并列' in tied['dynamic_body']
     assert '新高' not in tied['title'] + tied['dynamic_body']
 
     fresh = ai_compute_style.apply_compute_style(payload('gpu_rental', gpu_facts(
         b200='6.20', b200_peak_relation='above', b200_gap_pct='',
         b200_change_pct='+1.00', h100_change_pct='+0.20', a100_change_pct='+0.10',
     ), '2026-10-15'), 'gpu_rental')
-    assert fresh['title'] == '【AI景气度指标】B200租赁价高于此前已收录高点'
+    assert fresh['title'] == '【AI景气度指标】高端GPU租赁价高于此前高点'
     assert '半年新高' not in fresh['title'] + fresh['dynamic_body']
 
 
@@ -147,7 +186,7 @@ def test_skill_stage_keeps_styled_copy_when_ai_fails_and_respects_a_team_templat
     styled = skill_production.apply_skill_copy(
         payload('token_cost', token_facts(), '2026-10-14'), 'token_cost', {})
     assert styled['title'].startswith('【AI算力CPI】')
-    assert '美元/百万Token' in styled['dynamic_body']
+    assert '0.9750' in styled['dynamic_body'] and '1.82' in styled['dynamic_body']
     assert styled['rule_copy']['body'] == styled['dynamic_body']
     assert any('未完成' in warning for warning in styled['warnings'])
 
@@ -177,7 +216,7 @@ def test_adapter_output_is_restyled_without_losing_its_numbers(monkeypatch, tmp_
     styled_token = ai_compute_style.apply_compute_style(token, 'token_cost')
     styled_gpu = ai_compute_style.apply_compute_style(gpu, 'gpu_rental')
     assert '0.9750' in styled_token['dynamic_body'] and '1.82' in styled_token['dynamic_body']
-    assert '6.01' in styled_gpu['dynamic_body'] and '1.64' in styled_gpu['dynamic_body']
+    assert '6.01' in styled_gpu['dynamic_body'] and '6.11' in styled_gpu['dynamic_body']
     assert styled_gpu['facts_copy']['body'] != styled_gpu['dynamic_body']
 
 
@@ -217,10 +256,30 @@ def test_polish_prompt_contains_the_style_corpus(monkeypatch):
     assert 'Token价格波幅收窄' in user
 
 
-def test_fixed_notes_keep_three_bullets_and_the_corrections():
+def _sample_notes(category: str, number: int = 1) -> str:
+    text = (skill_ai.asset_dir(category) / 'references' / 'history.md').read_text(encoding='utf-8')
+    chunk = text.split(f'### 风格样本 {number:02d}', 1)[1].split('### 风格样本', 1)[0]
+    notes = chunk.split('**固定说明写法**', 1)[1]
+    return '\n'.join(line.strip() for line in notes.splitlines() if line.strip())
+
+
+def test_fixed_notes_are_the_sample_blocks_and_stay_out_of_the_body():
+    from app.briefs.delivery import complete_body
+
     token = FIXED_NOTES['token_cost']
     gpu = FIXED_NOTES['gpu_rental']
-    assert token.count('\n') == 2 and gpu.count('\n') == 2
-    assert '美元/百万Token' in token and '不能单独证明' in token
-    assert '美元/GPU每小时' in gpu and '只写并列' in gpu
-    assert '创半年新高' not in gpu
+    assert token == _sample_notes('token_cost')
+    assert gpu == _sample_notes('gpu_rental')
+    assert token == (
+        '1、各大模型降价以及用户从昂贵的前沿模型转向更便宜的开源模型、小模型，推动token价格下跌。\n'
+        '2、当前阶段价格下降可能刺激需求增加，这有利于AI应用等板块，对云厂商影响复杂，而对OpenAI、Anthropic等模型厂商来说，定价权下降则是个风险因素。\n'
+        '3、数据来自OpenAI、Anthropic、DeepSeek等全球顶尖AI模型。'
+    )
+    assert 'Silicon Data' not in token and '不能单独证明' not in token
+    assert '通过观察价格趋势' not in gpu
+    assert complete_body('token_cost', '最近一周，Token支出价格指数保持在0.97美元上方。') == (
+        '最近一周，Token支出价格指数保持在0.97美元上方。')
+    assert complete_body('gpu_rental', '截至10月15日，英伟达B200租赁价格升至6.01美元/GPU每小时。') == (
+        '截至10月15日，英伟达B200租赁价格升至6.01美元/GPU每小时。')
+    stuffed = '当日事实。\n\n--------\n\n' + token
+    assert complete_body('token_cost', stuffed) == '当日事实。'

@@ -75,6 +75,57 @@ def _direction(change):
     return '上涨' if value > 0 else '下跌' if value < 0 else '持平'
 
 
+def _series_price_text(value):
+    number = _decimal(value)
+    exponent = number.as_tuple().exponent
+    places = max(4, -exponent) if isinstance(exponent, int) else 4
+    return f'{number:.{places}f}'
+
+
+def _up_streak(valid):
+    streak = 0
+    for index in range(len(valid) - 1, 0, -1):
+        if valid[index]['token_price'] > valid[index - 1]['token_price']:
+            streak += 1
+        else:
+            break
+    return streak
+
+
+def _token_week_path(recent):
+    """Describe the last window as a desk path, without inventing a move size."""
+    prices = [row['token_price'] for row in recent]
+    if len(prices) < 3:
+        return ''
+
+    def side(left, right):
+        left, right = _decimal(left), _decimal(right)
+        if left in (None, 0) or right is None:
+            return 0
+        change = (right - left) / left
+        if change > Decimal('0.002'):
+            return 1
+        if change < Decimal('-0.002'):
+            return -1
+        return 0
+
+    mid = len(prices) // 2
+    first, second = side(prices[0], prices[mid]), side(prices[mid], prices[-1])
+    if first < 0 < second:
+        return 'down_then_up'
+    if first < 0 and second == 0:
+        return 'down_then_flat'
+    if first > 0 > second:
+        return 'up_then_down'
+    if first == 0 and second == 0:
+        return 'flat'
+    if _decimal(prices[-1]) > _decimal(prices[0]):
+        return 'up'
+    if _decimal(prices[-1]) < _decimal(prices[0]):
+        return 'down'
+    return 'flat'
+
+
 def token_cost(day, out, state, refresh=False):
     rows = _rows('token')
     selected_day = os.getenv('AI_COMPUTE_DATA_DATE', '').strip()
@@ -117,6 +168,9 @@ def token_cost(day, out, state, refresh=False):
     else:
         peak_relation, drawdown_pct = 'unavailable', ''
         prior_peak_text, prior_peak_date = '', ''
+    prior_low = min(earlier, key=lambda row: (row['token_price'], row['date'])) if earlier else None
+    # A two-row snippet is not a stage low. Require a real earlier history.
+    at_low = 'yes' if prior_low and len(earlier) >= 20 and price < _decimal(prior_low['token_price']) else ''
     title_dir = _direction(weekly) if weekly is not None else '持平'
     title = f"【AI算力CPI】Token支出价格指数{title_dir}" if weekly else "【AI算力CPI】Token支出价格指数更新"
     price_text = public['price'] if public else entered['price'] if entered else f'{price:.4f}'
@@ -160,6 +214,13 @@ def token_cost(day, out, state, refresh=False):
             'peak_date': peak['date'], 'prior_peak_price': prior_peak_text,
             'prior_peak_date': prior_peak_date, 'peak_relation': peak_relation,
             'drawdown_pct': drawdown_pct,
+            'range_start_date': recent[0]['date'] if recent else '',
+            'range_end_date': recent[-1]['date'] if recent else '',
+            'week_path': _token_week_path(recent),
+            'up_streak': str(_up_streak(valid)),
+            'at_low': at_low,
+            'prior_low_price': _series_price_text(prior_low['token_price']) if prior_low else '',
+            'prior_low_date': prior_low['date'] if prior_low else '',
             'source': '编辑人工录入' if entered else 'Silicon Data LLM Token Expenditure Index',
             'source_precision': public['precision'] if public else entered['precision'] if entered else 4,
             'weekly_source': 'manual_entry' if entered_week is not None else 'public_visible_summary' if public else 'calculated',

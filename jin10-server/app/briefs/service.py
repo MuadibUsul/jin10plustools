@@ -119,9 +119,9 @@ def version_out(issue,version):
     elif ai.get('status')=='ok':
         # Older candidates predate source tracking; never let them silently overwrite an edit.
         ai['untracked']=True
-    # Valuation and turnover keep their notes on the image; their body stays dynamic-only,
-    # including earlier editions that still stored the appended note block.
-    image_notes=issue.category in ('valuation','turnover','us_barometer')
+    # These categories keep notes on the chart. Token CPI and GPU rental are included
+    # so the draft body stays dynamic-only; drawing those two footers is separate.
+    image_notes=issue.category in ('valuation','turnover','us_barometer','token_cost','gpu_rental')
     body=complete_body(issue.category,copy_dates(version.dynamic_body),notes)
     return {'number':version.number,'kind':version.kind,'title':copy_dates(version.title),
         'dynamic_body':body if image_notes else copy_dates(version.dynamic_body),'body':body,
@@ -165,6 +165,8 @@ def artifact_path(issue,version,name):
 def delivered_image(issue,version,name):
     from app.services.image_delivery import delivery_signature, WATERMARK, MAX_BYTES, store_image
     source=artifact_path(issue,version,name)
+    # Token CPI and GPU rental notes stay in fixed_notes for the chart pipeline.
+    # This download path does not paint them onto the image.
     notes=version.payload.get('fixed_notes',default_notes(issue.category)) if issue.category in ('valuation','turnover','us_barometer') else ''
     # Earlier us-barometer editions kept two images; notes belong only on the merged chart.
     if issue.category=='us_barometer' and name!='美股晴雨表.png':notes=''

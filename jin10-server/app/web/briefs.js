@@ -235,7 +235,9 @@ async function showVersion() {
   $('#title').readOnly = $('#body').readOnly = !canEdit();
   $('#fixed').value = v.fixed_notes || '';
   $('#fixed').readOnly = !canEdit();
-  $('#notes-label').textContent = v.notes_placement === 'image' ? '注释（保存后显示在图片底部）' : '注释（自动加入完整正文）';
+  $('#notes-label').textContent = computeCategories.has(selected.category)
+    ? '注释（显示在图片页脚，不进正文）'
+    : v.notes_placement === 'image' ? '注释（保存后显示在图片底部）' : '注释（自动加入完整正文）';
   $('#detail-status').textContent = `数据日 ${copyDate(v.data_date)}`;
   const warnings = [...(v.warnings || [])];
   $('#warnings').replaceChildren(...warnings.map((s) => node('p', s)));

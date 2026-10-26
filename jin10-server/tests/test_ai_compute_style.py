@@ -217,10 +217,16 @@ def test_polish_prompt_contains_the_style_corpus(monkeypatch):
     assert 'Token价格波幅收窄' in user
 
 
-def test_fixed_notes_keep_three_bullets_and_the_corrections():
+def test_fixed_notes_are_the_sample_bullets():
     token = FIXED_NOTES['token_cost']
     gpu = FIXED_NOTES['gpu_rental']
+    assert token == (
+        '1、各大模型降价以及用户从昂贵的前沿模型转向更便宜的开源模型、小模型，推动token价格下跌。\n'
+        '2、当前阶段价格下降可能刺激需求增加，这有利于AI应用等板块，对云厂商影响复杂，而对OpenAI、Anthropic等模型厂商来说，定价权下降则是个风险因素。\n'
+        '3、数据来自OpenAI、Anthropic、DeepSeek等全球顶尖AI模型。')
+    assert gpu == (
+        '1、GPU租赁价格指数主要统计每天云服务商、数据中心和私人租赁市场中英伟达A100、H100、B200等GPU的实际租赁报价。\n'
+        '2、A100、H100、B200是英伟达从老到新三代芯片产品（GPU），通常代际越新的GPU性能越好、越能适应大规模复杂大模型，租赁价格也往往越高。\n'
+        '3、由于GPU价格太高、更新太快等原因，不少企业选择向云服务商、数据中心等租赁芯片，以节省资金投入。相关指数上涨通常意味着GPU更紧缺、需求更旺；下降则说明供应增加或需求降温。')
     assert token.count('\n') == 2 and gpu.count('\n') == 2
-    assert '美元/百万Token' in token and '不能单独证明' in token
-    assert '美元/GPU每小时' in gpu and '只写并列' in gpu
     assert '创半年新高' not in gpu

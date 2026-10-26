@@ -60,7 +60,7 @@ def test_long_history_keeps_a_thin_horizontal_axis_and_footer(tmp_path):
         axis_box = axis.get_window_extent(renderer)
         label_boxes = [tick.get_window_extent(renderer) for tick in axis.get_xticklabels() if tick.get_text()]
         legend_box = figure.legends[0].get_window_extent(renderer)
-        footer = [text for text in figure.texts if text.get_text().startswith('数据来源')][0]
+        footer = [text for text in figure.texts if text.get_text() == '单位以百万Token计。'][0]
         footer_box = footer.get_window_extent(renderer)
 
         assert len(figure.axes) == 1
@@ -75,11 +75,13 @@ def test_long_history_keeps_a_thin_horizontal_axis_and_footer(tmp_path):
         assert footer_box.y1 < legend_box.y0
         assert axis_box.height / figure.bbox.height > 0.62
         joined = '\n'.join(_texts(figure))
+        legend = '\n'.join(text.get_text() for text in figure.legends[0].get_texts())
         assert '最近30' not in joined
-        assert '美元/百万Token' in joined
-        assert '数据来源：Silicon Data · LLM Token Expenditure Index' in joined
+        assert '美元/百万Token' in legend
         assert '单位以百万Token计。' in joined
-        assert '七日' in joined
+        assert '数据来源' not in joined
+        assert '最新 ' not in joined
+        assert '七日' not in joined
         assert not any('Glyph' in str(item.message) for item in caught)
         assert path.name == 'AI算力CPI.png' and path.is_file()
 
@@ -113,8 +115,9 @@ def test_gpu_chart_is_one_panel_with_real_gaps_and_card_legend(tmp_path):
         labels = [text.get_text() for text in figure.legends[0].get_texts()]
         assert labels == ['H100价格', 'B200价格', 'A100价格']
         joined = '\n'.join(_texts(figure))
-        assert '美元/每块GPU每小时' in joined and '美元/GPU/小时' in joined
-        assert '数据来源：Silicon Data · A100/H100/B200 NeoCloud' in joined
+        assert '美元/每块GPU每小时' in joined
+        assert '数据来源' not in joined and '最新 ' not in joined and '七日' not in joined
+        assert 'GPU租赁价格指数主要统计每天云服务商' in joined
         assert axis.get_ylim()[0] == 0 and axis.get_yscale() == 'linear'
         assert len([tick.get_text() for tick in axis.get_xticklabels() if tick.get_text()]) <= 7
         assert not any('Glyph' in str(item.message) for item in caught)
@@ -124,7 +127,8 @@ def test_gpu_chart_is_one_panel_with_real_gaps_and_card_legend(tmp_path):
         assert suffix == '.png' and len(content) <= MAX_BYTES
 
 
-def test_footer_uses_published_price_and_manual_source(tmp_path):
+def test_footer_is_the_notes_field_not_the_data_caption(tmp_path):
+    from app.briefs.delivery import FIXED_NOTES
     rows = [
         {'date': '2026-10-07', 'token_price': '1.0000'},
         {'date': '2026-10-14', 'token_price': '0.9000', 'status': 'manual_entry',
@@ -133,24 +137,34 @@ def test_footer_uses_published_price_and_manual_source(tmp_path):
     ]
     with _drawn(token_chart, rows, tmp_path) as (figure, _path, _caught):
         joined = '\n'.join(_texts(figure))
-        assert '最新 0.90 美元/百万Token' in joined
-        assert '七日 -10%' in joined
-        assert '0.9000' not in joined
-        assert '历史工作簿及本期编辑人工录入' in joined
-        # A one-week span still uses the short horizontal form, not ISO dates.
+        for line in FIXED_NOTES['token_cost'].splitlines():
+            assert line in joined
+        assert '最新 ' not in joined and '数据来源' not in joined and '七日' not in joined
+        assert '0.90' not in joined and '0.9000' not in joined
         labels = [tick.get_text() for tick in figure.axes[0].get_xticklabels()]
         assert labels == ['10/7', '10/14']
         assert [tick.get_rotation() for tick in figure.axes[0].get_xticklabels()] == [0, 0]
+    custom = '1、团队改过的注释。\n2、第二句仍然只出现在页脚。'
+    with _drawn(token_chart, rows, tmp_path, notes=custom) as (figure, _path, _caught):
+        joined = '\n'.join(_texts(figure))
+        assert '团队改过的注释' in joined and '第二句仍然只出现在页脚' in joined
+        assert '各大模型降价' not in joined
+    with _drawn(token_chart, rows, tmp_path, notes='') as (figure, _path, _caught):
+        joined = '\n'.join(_texts(figure))
+        assert '各大模型降价' not in joined and '数据来源' not in joined
 
 
-def test_missing_week_baseline_is_omitted():
+def test_gpu_footer_uses_the_sample_notes_only():
+    from app.briefs.delivery import FIXED_NOTES
     rows = [{'date': '2026-10-14', 'a100': 1.5, 'h100': 2.8, 'b200': 6}]
     with patch('matplotlib.figure.Figure.savefig'), patch('matplotlib.pyplot.close'):
         gpu_chart(rows, Path('.'))
         joined = '\n'.join(_texts(plt.gcf()))
     plt.close('all')
-    assert '七日' not in joined
-    assert 'A100 1.50' in joined and 'B200 6.00' in joined
+    for line in FIXED_NOTES['gpu_rental'].splitlines():
+        assert line in joined
+    assert '七日' not in joined and '数据来源' not in joined
+    assert 'A100 1.50' not in joined and 'B200 6.00' not in joined
 
 
 def _rgb(value):
@@ -180,6 +194,48 @@ def test_series_colors_follow_the_reference_not_the_old_palette(tmp_path):
     with _drawn(token_chart, rows, folder) as (figure, _path, _caught):
         assert figure.axes[0].lines[0].get_color() == TOKEN_COLOR
         assert figure.legends[0].get_lines()[0].get_color() == TOKEN_COLOR
+
+
+def test_align_redraws_the_footer_when_published_notes_change(tmp_path):
+    import json
+    from app.briefs.ai_compute import align_chart_notes
+
+    rows = _series(8, token_price=1.1)
+    folder = tmp_path / 'align'
+    folder.mkdir()
+    (folder / 'ai-compute-source.json').write_text(json.dumps(rows), encoding='utf-8')
+    with patch('matplotlib.pyplot.close'):
+        token_chart(rows, folder, notes='1、旧注释。')
+        plt.close('all')
+        payload = {
+            'images': ['AI算力CPI.png'], 'data_date': rows[-1]['date'],
+            'chart_notes': '1、旧注释。', 'fixed_notes': '1、旧注释。',
+        }
+        assert align_chart_notes(payload, 'token_cost', folder, '1、新的页脚注释。') is True
+        figure = plt.gcf()
+        figure.canvas.draw()
+        joined = '\n'.join(_texts(figure))
+    plt.close('all')
+    assert '新的页脚注释' in joined and '旧注释' not in joined
+    assert payload['chart_notes'] == payload['fixed_notes'] == '1、新的页脚注释。'
+    assert payload['image_sha256']['AI算力CPI.png']
+
+
+def test_long_notes_stay_under_the_legend(tmp_path):
+    rows = _series(30, token_price=lambda index: 1.1 + index * 0.01)
+    notes = '\n'.join(
+        f'{index}、这是一条比较长的团队注释，用来确认页脚会换行并且仍然留在图例下面。'
+        for index in range(1, 7))
+    folder = tmp_path / 'long'
+    folder.mkdir()
+    with _drawn(token_chart, rows, folder, notes=notes) as (figure, _path, _caught):
+        renderer = figure.canvas.get_renderer()
+        legend = figure.legends[0].get_window_extent(renderer)
+        boxes = [text.get_window_extent(renderer) for text in figure.texts if '团队注释' in text.get_text()]
+        assert len(boxes) == 6
+        assert max(box.y1 for box in boxes) < legend.y0
+        assert min(box.y0 for box in boxes) > 0
+        assert len(figure.axes) == 1
 
 
 def test_token_history_cannot_be_empty(tmp_path):

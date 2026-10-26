@@ -1,4 +1,5 @@
 from __future__ import annotations
+import shutil
 import uuid
 from datetime import date, datetime
 from typing import Annotated, Literal
@@ -12,7 +13,8 @@ from app.db.models import BriefAudit, BriefConfig, BriefIssue, BriefJob, BriefVe
 from app.services.team_settings import update_notes
 from app.deps import CurrentUser, DbSession, Editor
 from app.briefs.policy import CATEGORIES, CHINA
-from app.briefs.service import owned, enqueue, issue_out, job_out, append_version, artifact_path, delivered_image
+from app.briefs.service import owned, enqueue, issue_out, job_out, append_version, artifact_path, delivered_image, prepare_compute_notes_revision
+from app.briefs.delivery import complete_body
 from app.services.image_delivery import download_name
 
 router=APIRouter(prefix='/api/briefs',tags=['fixed briefs'])
@@ -184,14 +186,35 @@ def edit(id:uuid.UUID,body:EditRequest,db:DbSession,user:Editor):
         raise HTTPException(422,'标题须为单行，标题和正文不能为空')
     previous=db.scalars(select(BriefVersion).where(BriefVersion.issue_id==id,BriefVersion.number==body.base_version)).one()
     payload=dict(previous.payload)
-    if body.fixed_notes is not None:payload['fixed_notes']=body.fixed_notes.strip()
-    if body.notes_as_default and body.fixed_notes is not None:
-        team=db.get(Team,user.team_id,with_for_update=True)
-        update_notes(db,team,{issue.category:body.fixed_notes},user.id)
-        team.settings={**team.settings,'settings_revision':team.settings.get('settings_revision',0)+1}
-    append_version(db,issue,payload,user_id=user.id,kind='edited',
-                   title=body.title.strip(),body=body.dynamic_body.strip())
-    db.commit();return issue_out(db,issue)
+    edited_notes=body.fixed_notes.strip() if body.fixed_notes is not None else payload.get('fixed_notes','')
+    if issue.category in ('token_cost','gpu_rental') and body.fixed_notes is not None and not edited_notes:
+        raise HTTPException(422,'AI 算力图表必须保留固定注释')
+    dynamic_body=(complete_body(issue.category,body.dynamic_body,edited_notes)
+                  if issue.category in ('token_cost','gpu_rental') else body.dynamic_body.strip())
+    if not dynamic_body:
+        raise HTTPException(422,'动态正文不能为空')
+    staged=None
+    if body.fixed_notes is not None:
+        if issue.category in ('token_cost','gpu_rental') and edited_notes != payload.get('chart_notes'):
+            try:
+                payload,staged=prepare_compute_notes_revision(issue,previous,edited_notes)
+            except (ValueError,OSError) as exc:
+                raise HTTPException(409,str(exc)) from None
+        else:
+            payload['fixed_notes']=edited_notes
+    try:
+        if body.notes_as_default and body.fixed_notes is not None:
+            team=db.get(Team,user.team_id,with_for_update=True)
+            update_notes(db,team,{issue.category:body.fixed_notes},user.id)
+            team.settings={**team.settings,'settings_revision':team.settings.get('settings_revision',0)+1}
+        append_version(db,issue,payload,user_id=user.id,kind='edited',
+                       title=body.title.strip(),body=dynamic_body)
+        db.commit()
+    except Exception:
+        db.rollback()
+        if staged is not None:shutil.rmtree(staged,ignore_errors=True)
+        raise
+    return issue_out(db,issue)
 
 
 @router.post('/issues/{id}/confirm')

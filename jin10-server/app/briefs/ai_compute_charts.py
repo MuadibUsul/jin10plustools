@@ -32,6 +32,7 @@ _CJK_CANDIDATES = (
 )
 INK = '#17233B'
 MUTED = '#7D8798'
+NOTE_COLOR = '#59677A'
 # Reference product chart: teal B200, lavender H100, yellow-gold A100.
 # These are not the older blue / green / orange brief palette.
 B200_COLOR = '#2EC8D4'
@@ -39,6 +40,11 @@ H100_COLOR = '#9B8CC9'
 A100_COLOR = '#F0C446'
 TOKEN_COLOR = B200_COLOR
 SERIES_COLORS = {'A100': A100_COLOR, 'H100': H100_COLOR, 'B200': B200_COLOR}
+# The embedded Excel charts reference Sheet1!A3:A311 (309 Token readings) and
+# Sheet2!A3:A371 (367 populated GPU readings plus two blank header/future rows).
+# Keep the same rolling number of observed dates when new rows are imported.
+TOKEN_VISIBLE_OBSERVATIONS = 309
+GPU_VISIBLE_OBSERVATIONS = 367
 
 
 def _line_shadow(offset, width, alpha):
@@ -244,9 +250,8 @@ def _legend(fig, handles, labels, *, expanded=False):
     )
 
 
-def _header(fig, kicker, title):
-    fig.text(0.07, 0.978, kicker, fontproperties=_type(11), color=MUTED, ha='left', va='top')
-    fig.text(0.5, 0.932, title, fontproperties=_type(17), color=INK, ha='center', va='center')
+def _header(fig, title):
+    fig.text(0.5, 0.945, title, fontproperties=_type(17), color=INK, ha='center', va='center')
 
 
 def _measure(text):
@@ -304,20 +309,20 @@ def _footer(fig, lines):
             4: (0.096, 0.072, 0.048, 0.022),
         }
         for line, y in zip(lines, slots[len(lines)]):
-            fig.text(0.07, y, line, fontproperties=font, color=MUTED, ha='left', va='bottom')
+            fig.text(0.07, y, line, fontproperties=font, color=NOTE_COLOR, ha='left', va='bottom')
         return
     pos = fig.axes[0].get_position()
     line_frac = (NOTE_SIZE * 1.45 / 72) / fig.get_figheight()
     y = pos.y0 - (0.62 / fig.get_figheight())
     for line in lines:
-        fig.text(0.07, y, line, fontproperties=font, color=MUTED, ha='left', va='top')
+        fig.text(0.07, y, line, fontproperties=font, color=NOTE_COLOR, ha='left', va='top')
         y -= line_frac
 
 
 # Four short lines fit the standard 6.5in page. Longer notes grow the page
 # downward so the plot keeps its height and the footer stays under the legend.
 _STANDARD_HEIGHT = 6.5
-NOTE_SIZE = 8.5
+NOTE_SIZE = 9.2
 _NOTE_WIDTH_PT = 730
 
 
@@ -344,7 +349,7 @@ def _save(fig, out, name):
 
 
 def token_chart(rows, out, *, notes=None):
-    rows = _ordered(rows)
+    rows = _ordered(rows)[-TOKEN_VISIBLE_OBSERVATIONS:]
     values = [(date.fromisoformat(row['date']), float(row.get('price', row.get('token_price')))) for row in rows]
     if not values:
         raise ValueError('Token历史为空')
@@ -360,13 +365,13 @@ def token_chart(rows, out, *, notes=None):
                           lambda value, _pos: f'${value:.2f}')
         _frame(ax)
         _legend(fig, [_swatch(TOKEN_COLOR)], ['价格（美元/百万Token）'], expanded=len(lines) > 4)
-        _header(fig, 'PLUS 快讯 / AI算力CPI', 'Token支出价格指数')
+        _header(fig, 'Silicon Data Token支出价格指数')
         _footer(fig, lines)
         return _save(fig, out, 'AI算力CPI.png')
 
 
 def gpu_chart(rows, out, *, notes=None):
-    rows = _ordered(rows)
+    rows = _ordered(rows)[-GPU_VISIBLE_OBSERVATIONS:]
     _install_fonts()
     lines = _wrap_notes(_category_notes('gpu_rental', notes))
     with plt.rc_context(_rc()):
@@ -390,6 +395,6 @@ def gpu_chart(rows, out, *, notes=None):
         order = [name for name in ('H100', 'B200', 'A100') if name in handles]
         _legend(fig, [_swatch(SERIES_COLORS[name]) for name in order], [f'{name}价格' for name in order],
                 expanded=len(lines) > 4)
-        _header(fig, 'PLUS 快讯 / AI景气度指标', 'AI芯片租赁价格走势（美元/每块GPU每小时）')
+        _header(fig, 'AI芯片租赁价格走势（美元/每块GPU每小时）')
         _footer(fig, lines)
         return _save(fig, out, 'AI景气度指标.png')

@@ -3,7 +3,7 @@ from pathlib import Path
 from unittest.mock import patch
 import pytest
 
-from app.briefs.runner import generate, pipeline_signature
+from app.briefs.runner import generate, pipeline_signature, rerender
 from app.briefs.sources import save,normalize_volume
 from app.briefs.delivery import IMAGE_NOTE_CATEGORIES,complete_body,FIXED_NOTES,OIL_CLOSING
 from app.briefs.policy import production_window,CHINA
@@ -55,6 +55,21 @@ def test_manual_produce_refreshes_and_accepts_the_newest_available_data_date(tmp
             generate('token_cost','2026-10-20',tmp_path,'automatic')
 
 
+def test_compute_render_rebuilds_chart_from_saved_observations(tmp_path):
+    source=tmp_path/'source';out=tmp_path/'rendered'
+    source.mkdir();out.mkdir()
+    rows=[{'date':'2026-10-07','token_price':'0.9931'},
+          {'date':'2026-10-14','token_price':'0.9750'}]
+    save(source/'ai-compute-source.json',rows)
+    previous={'title':'已审标题','dynamic_body':'已审正文。','data_date':'2026-10-14',
+              'images':['AI算力CPI.png'],'fixed_notes':'1、已审注释。'}
+    result=rerender('token_cost',previous,source,out,'2026-10-14')
+    assert result['title']=='已审标题' and result['dynamic_body']=='已审正文。'
+    assert result['chart_notes']=='1、已审注释。'
+    assert (out/'AI算力CPI.png').is_file()
+    assert (out/'ai-compute-source.json').is_file()
+
+
 def test_fixed_explanations_are_identical_and_not_duplicated():
     for category,note in FIXED_NOTES.items():
         body=complete_body(category,'当日事实。')
@@ -65,6 +80,9 @@ def test_fixed_explanations_are_identical_and_not_duplicated():
     # The oil closing note continues the last sentence and never starts its own line.
     assert complete_body('oil_etf','期货事实。')=='期货事实。'+OIL_CLOSING
     assert complete_body('oil_etf','期货事实。\n\n'+OIL_CLOSING)=='期货事实。'+OIL_CLOSING
+    for category in ('token_cost','gpu_rental'):
+        assert complete_body(category,'当期事实。\n--------\n1、编辑误贴注释。')=='当期事实。'
+        assert complete_body(category,'当期事实。\n1、编辑误贴注释。')=='当期事实。'
 
 
 def test_incomplete_volume_is_not_a_current_day_observation():

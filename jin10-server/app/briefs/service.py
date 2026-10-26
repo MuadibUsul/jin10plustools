@@ -84,6 +84,40 @@ def append_version(db,issue,payload,*,user_id=None,kind='generated',title=None,b
     db.flush();prune_versions(db,issue);return item
 
 
+def prepare_compute_notes_revision(issue, previous, notes):
+    """Render edited footer notes into a new immutable image for this edition."""
+    from .ai_compute_charts import gpu_chart, token_chart
+
+    images = previous.payload.get('images') or []
+    if len(images) != 1:
+        raise ValueError('本版图表不完整，请重新生成稿件后修改注释')
+    source_image = artifact_path(issue, previous, images[0])
+    source = source_image.parent / 'ai-compute-source.json'
+    if not source.is_file():
+        raise ValueError('本版缺少原始图表数据，请重新生成稿件后修改注释')
+    rows = json.loads(source.read_text(encoding='utf-8'))
+    root = root_for(issue.team_id)
+    folder = root / 'delivery' / uuid.uuid4().hex
+    folder.mkdir(parents=True, exist_ok=False)
+    try:
+        shutil.copy2(source, folder / source.name)
+        if issue.category == 'token_cost':
+            image = token_chart(rows, folder, notes=notes)
+        elif issue.category == 'gpu_rental':
+            actual = previous.payload.get('data_date') or ''
+            image = gpu_chart([row for row in rows if not actual or row['date'] <= actual], folder, notes=notes)
+        else:
+            raise ValueError('仅 AI 算力快讯需要重绘图内注释')
+        payload = dict(previous.payload)
+        payload['fixed_notes'] = payload['chart_notes'] = notes
+        payload['artifact_dir'] = folder.relative_to(root).as_posix()
+        payload['image_sha256'] = {image.name: hashlib.sha256(image.read_bytes()).hexdigest()}
+        return payload, folder
+    except Exception:
+        shutil.rmtree(folder, ignore_errors=True)
+        raise
+
+
 def prune_versions(db,issue):
     """Keep the latest two revisions plus the confirmed one; never drop a confirmation."""
     versions=list(db.scalars(select(BriefVersion).where(BriefVersion.issue_id==issue.id).order_by(BriefVersion.number.desc())))
@@ -103,8 +137,12 @@ def prune_versions(db,issue):
         db.execute(update(BriefSourceSnapshot).where(BriefSourceSnapshot.version_id==old.id).values(version_id=None))
         if issue.confirmed_version==old.number:
             issue.confirmed_version=None;issue.confirmed_by=None;issue.confirmed_at=None
-        delivery=root_for(issue.team_id)/'delivery'/str(old.id)
-        if delivery.is_dir(): shutil.rmtree(delivery, ignore_errors=True)
+        delivery_root=(root_for(issue.team_id)/'delivery').resolve()
+        delivery=(root_for(issue.team_id)/(old.payload or {}).get('artifact_dir','')).resolve()
+        if delivery.is_relative_to(delivery_root) and delivery.is_dir():
+            shutil.rmtree(delivery, ignore_errors=True)
+        legacy=delivery_root/str(old.id)
+        if legacy!=delivery and legacy.is_dir(): shutil.rmtree(legacy, ignore_errors=True)
         db.delete(old)
 
 

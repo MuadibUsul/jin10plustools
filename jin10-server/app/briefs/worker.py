@@ -119,6 +119,8 @@ def execute(factory,id):
         team_settings=dict(team.settings or {})
         config=db.get(BriefConfig,team_id)
         category_notes=(config.notes or {}).get(category,default_notes(category)) if config else default_notes(category)
+        if category in PUBLIC_COMPUTE_CATEGORIES and not str(category_notes or '').strip():
+            category_notes=default_notes(category)
     root=root_for(team_id);out=root/'runs'/str(id);out.mkdir(parents=True,exist_ok=True)
     record(out,1,f'任务开始：生产日 {day}，目标数据日 {expected_date(category,day)}')
     capture = None

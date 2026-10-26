@@ -81,7 +81,7 @@ def published_notes(category):
     """Notes the worker will store on the edition, known before the chart is drawn."""
     from .delivery import default_notes
     supplied = os.getenv('CATEGORY_NOTES')
-    if supplied is None:
+    if supplied is None or not supplied.strip():
         return default_notes(category)
     return str(supplied).strip()
 
@@ -136,6 +136,19 @@ def token_cost(day, out, state, refresh=False):
     recent = [row for row in valid if date.fromisoformat(row['date']) >= date.fromisoformat(actual_day) - timedelta(days=6)]
     low = min((row['token_price'] for row in recent), default=latest['token_price'])
     high = max((row['token_price'] for row in recent), default=latest['token_price'])
+    # A narrow five-day tail only counts as *narrowing* when the preceding five
+    # calendar days are also complete and had a wider range. A narrow range by
+    # itself does not establish that volatility has fallen.
+    by_day = {row['date']: _decimal(row['token_price']) for row in valid}
+    end = date.fromisoformat(actual_day)
+    tail_days = [(end - timedelta(days=offset)).isoformat() for offset in range(4, -1, -1)]
+    prior_days = [(end - timedelta(days=offset)).isoformat() for offset in range(9, 4, -1)]
+    tail_values = [by_day.get(key) for key in tail_days]
+    prior_values = [by_day.get(key) for key in prior_days]
+    tail_narrowed = (not (public or entered) and _decimal(latest['token_price']) > 0
+                     and all(value is not None for value in tail_values + prior_values)
+                     and (max(tail_values) - min(tail_values)) / _decimal(latest['token_price']) <= Decimal('0.01')
+                     and max(tail_values) - min(tail_values) < max(prior_values) - min(prior_values))
     peak = max(valid, key=lambda row: (row['token_price'], row['date']))
     price = _decimal(latest['token_price'])
     earlier = [row for row in valid if row['date'] < actual_day]
@@ -197,6 +210,10 @@ def token_cost(day, out, state, refresh=False):
             'range_low': '' if public or entered else f'{_decimal(low):.4f}',
             'range_high': '' if public or entered else f'{_decimal(high):.4f}',
             'range_count': 0 if public or entered else len(recent),
+            'tail_narrowed': tail_narrowed,
+            'tail_start': tail_days[0] if tail_narrowed else '',
+            'tail_low': f'{min(tail_values):.4f}' if tail_narrowed else '',
+            'tail_high': f'{max(tail_values):.4f}' if tail_narrowed else '',
             'peak_price': f"{_decimal(peak['token_price']):.4f}",
             'peak_date': peak['date'], 'prior_peak_price': prior_peak_text,
             'prior_peak_date': prior_peak_date, 'peak_relation': peak_relation,

@@ -3,12 +3,14 @@ from __future__ import annotations
 
 import json
 from decimal import Decimal
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
 from app.briefs import ai_compute, ai_compute_style, skill_ai, skill_library, skill_production
 from app.briefs.delivery import FIXED_NOTES
+from app.briefs.ai_compute_import import read_gpu, read_token
 
 
 def token_facts(**overrides):
@@ -69,10 +71,9 @@ def test_token_style_uses_corpus_rhythm_without_copying_sample_numbers():
         payload('token_cost', token_facts(), '2026-10-14'), 'token_cost')
     assert result['title'] == '【AI算力CPI】Token价格最近一周小幅下跌'
     body = result['dynamic_body']
-    assert body.startswith('截至10月14日，Token支出价格报0.9750美元/百万Token。')
-    assert '较10月7日的0.9931美元/百万Token下跌1.82%' in body
-    assert '累计跌幅为1.82%' in body
-    assert '0.9750—0.9931' in body
+    assert body.startswith('截至10月14日，Token支出价格指数报0.9750美元/百万Token，较10月7日下跌1.82%。')
+    assert '当前累计回落1.82%' in body
+    assert '波动较此前五日收窄' not in body
     assert '波动收窄' not in result['title']
     assert '0.95' not in body and '腰斩' not in result['title']
     assert result['facts_copy']['title'] == '事实标题'
@@ -86,7 +87,7 @@ def test_token_rebound_question_and_halving_need_the_fact_pack():
         peak_relation='below', drawdown_pct='52.54', range_low='', range_high='', range_count=0,
     ), '2026-10-14'), 'token_cost')
     assert halved['title'] == '【AI算力CPI】Token价格腰斩后一周回升，趋势是否扭转？'
-    assert '累计跌幅为52.54%' in halved['dynamic_body']
+    assert '当前累计回落52.54%' in halved['dynamic_body']
     assert '止跌' not in halved['title'] + halved['dynamic_body']
 
     tied = ai_compute_style.apply_compute_style(payload('token_cost', token_facts(
@@ -101,13 +102,13 @@ def test_token_rebound_question_and_halving_need_the_fact_pack():
 def test_gpu_style_matches_three_card_rhythm_and_refuses_half_year_high():
     result = ai_compute_style.apply_compute_style(
         payload('gpu_rental', gpu_facts(), '2026-10-15'), 'gpu_rental')
-    assert result['title'] == '【AI景气度指标】高端GPU租赁价分化，B200走强、A100走弱'
+    assert result['title'] == '【AI景气度指标】高端GPU租赁价接近已收录高点，代际价格分化'
     body = result['dynamic_body']
-    assert body.startswith('截至10月15日，英伟达B200租赁价格报6.01美元/GPU每小时，较七个自然日前（10月8日）上涨2.21%。')
-    assert 'H100租赁价格报2.81美元，上涨0.36%' in body
+    assert body.startswith('截至10月15日，英伟达B200租赁价格升至6.01美元/GPU每小时，较10月8日上涨2.21%')
+    assert 'H100租赁价格报2.81美元，微涨0.36%' in body
     assert 'A100报1.52美元，下跌0.65%' in body
-    assert '三卡价格呈现代际分化' in body
-    assert '低1.64%' in body
+    assert '三卡租赁价格呈现代际分化' in body
+    assert '仍低1.64%' in body
     assert '创半年新高' not in result['title'] + body
     assert '结构性紧缺' not in body
 
@@ -140,6 +141,14 @@ def test_style_rejects_numbers_outside_the_fact_pack_and_keeps_the_fact_copy():
             '【AI算力CPI】Token价格', '价格报9.99美元/百万Token。')
     original = payload('token_cost', {'token_price': ''}, '2026-10-14')
     assert ai_compute_style.apply_compute_style(original, 'token_cost')['dynamic_body'] == '事实正文。'
+
+
+def test_style_requires_each_category_corpus(monkeypatch):
+    monkeypatch.setattr(skill_ai,'_history',lambda _category:'不作为当期事实')
+    result=ai_compute_style.apply_compute_style(
+        payload('token_cost',token_facts(),'2026-10-14'),'token_cost')
+    assert result['dynamic_body']=='事实正文。'
+    assert any('风格模板未通过' in warning for warning in result['warnings'])
 
 
 def test_skill_stage_keeps_styled_copy_when_ai_fails_and_respects_a_team_template(monkeypatch):
@@ -179,6 +188,35 @@ def test_adapter_output_is_restyled_without_losing_its_numbers(monkeypatch, tmp_
     assert '0.9750' in styled_token['dynamic_body'] and '1.82' in styled_token['dynamic_body']
     assert '6.01' in styled_gpu['dynamic_body'] and '1.64' in styled_gpu['dynamic_body']
     assert styled_gpu['facts_copy']['body'] != styled_gpu['dynamic_body']
+
+
+def test_reference_workbooks_produce_the_editorial_examples_without_false_highs(monkeypatch,tmp_path):
+    sources=Path(__file__).resolve().parents[2]/'docs'/'ai-compute'/'sources'
+    token=read_token(next(sources.glob('*Token*.xlsx')))
+    gpu=read_gpu(next(sources.glob('*AI芯片*.xlsx')))
+    rows={
+        'token':sorted([{'date':row['date'].isoformat(),'token_price':row['token_price']} for row in token],
+                       key=lambda row:row['date']),
+        'gpu':sorted([{'date':row['date'].isoformat(),**{key:row[key] for key in ('a100','h100','b200')}}
+                      for row in gpu],key=lambda row:row['date']),
+    }
+    monkeypatch.setattr(ai_compute,'_rows',lambda kind:rows[kind])
+    monkeypatch.setenv('MANUAL_GENERATION','1')
+    token_payload=ai_compute_style.apply_compute_style(
+        ai_compute.token_cost('2026-10-14',tmp_path,None),'token_cost')
+    assert token_payload['title']=='【AI算力CPI】Token价格最近一周小幅下跌，低位横盘格局延续'
+    assert '10月10日至14日' in token_payload['dynamic_body']
+    assert '0.9705—0.9750' in token_payload['dynamic_body']
+    assert '下跌1.82%' in token_payload['dynamic_body']
+    assert '52.79%' in token_payload['dynamic_body']
+    gpu_payload=ai_compute_style.apply_compute_style(
+        ai_compute.gpu_rental('2026-10-15',tmp_path,None),'gpu_rental')
+    assert '代际价格分化' in gpu_payload['title']
+    assert '6.01美元/GPU每小时' in gpu_payload['dynamic_body']
+    assert '2.81美元，微涨0.36%' in gpu_payload['dynamic_body']
+    assert '1.52美元，下跌0.65%' in gpu_payload['dynamic_body']
+    assert '1.64%' in gpu_payload['dynamic_body']
+    assert '创半年新高' not in gpu_payload['title']+gpu_payload['dynamic_body']
 
 
 def test_polish_prompt_contains_the_style_corpus(monkeypatch):

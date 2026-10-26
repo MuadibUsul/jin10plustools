@@ -47,10 +47,14 @@ def complete_body(category,body,notes=None):
     category=ALIASES.get(category,category);body=body.strip()
     note=default_notes(category) if notes is None else notes
     if category in IMAGE_NOTE_CATEGORIES:
-        cleaned=re.split(r'\n\s*-{3,}\s*\n(?=\s*注：)',body,maxsplit=1)[0]
+        separator = r'\n\s*-{3,}\s*\n'
+        cleaned = re.split(separator if category in ('token_cost', 'gpu_rental')
+                           else separator + r'(?=\s*注：)', body, maxsplit=1)[0]
         for block in (default_notes(category), note):
             if block:
                 cleaned=cleaned.replace(block,'')
+        if category in ('token_cost', 'gpu_rental'):
+            cleaned=re.split(r'\n\s*(?:注：|1[、.])',cleaned,maxsplit=1)[0]
         return cleaned.strip()
     if category=='oil_etf':
         # The closing line continues the dynamic sentence instead of starting a new paragraph.

@@ -10,13 +10,11 @@ from __future__ import annotations
 import re
 from decimal import Decimal, InvalidOperation
 
-STYLE_CONTRACT = 'ai-compute-corpus-20261026'
+STYLE_CONTRACT = 'ai-compute-editorial-20261026-v2'
 SMALL_MOVE = Decimal('3')
 FLAT_MOVE = Decimal('1')
 LOW_DRAWDOWN = Decimal('40')
 HALVED_DRAWDOWN = Decimal('50')
-NARROW_RATIO = Decimal('0.02')
-MIN_RANGE_DAYS = 5
 NEAR_PEAK_GAP = Decimal('5')
 _NUMBER = re.compile(r'\d[\d,]*(?:\.\d+)?')
 _CARDS = ('A100', 'H100', 'B200')
@@ -25,6 +23,20 @@ _BANNED = (
     '结构性紧缺', '全面紧缺', '定价权', '烧钱', '消费降级', '需求迁移',
     '供应紧缺', '需求旺盛', '开源模型', '止跌', '紧缺',
 )
+_CORPUS = {
+    'token_cost': (18, '【AI算力CPI】Token价格最近一周小幅下跌，低位横盘格局延续'),
+    'gpu_rental': (11, '【AI景气度指标】高端GPU租赁价创半年新高，市场呈现代际分化'),
+}
+
+
+def require_corpus(category: str) -> None:
+    """Keep the executable templates tied to the two distinct approved corpora."""
+    from .skill_ai import _history
+
+    count, anchor = _CORPUS[category]
+    text = _history(category)
+    if text.count('### 风格样本 ') != count or anchor not in text:
+        raise ValueError(f'{category} 风格语料不完整')
 
 
 def apply_compute_style(payload: dict, category: str) -> dict:
@@ -40,6 +52,7 @@ def apply_compute_style(payload: dict, category: str) -> dict:
     if not month_day:
         return payload
     try:
+        require_corpus(category)
         if category == 'token_cost':
             title, body = _token_copy(facts, month_day)
         elif category == 'gpu_rental':
@@ -104,20 +117,27 @@ def _token_copy(facts: dict, month_day: str) -> tuple[str, str]:
     weekly = _decimal(weekly_raw)
     relation = facts.get('peak_relation') or ''
     drawdown = _decimal(facts.get('drawdown_pct'))
-    narrow = _token_narrow(facts, _decimal(price))
+    narrow = facts.get('tail_narrowed') is True
     low = relation == 'below' and drawdown is not None and drawdown >= LOW_DRAWDOWN
     halved = relation == 'below' and drawdown is not None and drawdown >= HALVED_DRAWDOWN
     title = _token_title(month_day, price, weekly, relation, low, halved, narrow)
-    parts = [f'截至{month_day}，Token支出价格报{price}美元/百万Token']
-    parts.append(_baseline_clause(
-        weekly_raw, facts.get('previous_date') or '', facts.get('previous_price') or '', '美元/百万Token'))
-    parts.append(_token_peak_clause(facts, relation))
-    low_text, high_text = facts.get('range_low') or '', facts.get('range_high') or ''
-    if low_text and high_text:
-        parts.append(f'最近七日已收录价格区间为{low_text}—{high_text}美元/百万Token')
-        if narrow:
-            parts.append('按最近七日高低差不超过最新价的百分之二，短线波动收窄')
-    body = _paragraph(parts)
+    first = f'截至{month_day}，Token支出价格指数报{price}美元/百万Token'
+    move = _move_text(weekly_raw)
+    if move is not None:
+        previous = _month_day(facts.get('previous_date') or '')
+        first += f'，较{previous if previous else "七个自然日前"}{move}'
+    else:
+        first += '，七个自然日前的基准价缺失，暂不计算周变化'
+    sentences = [first + '。']
+    if narrow and facts.get('tail_start') and facts.get('tail_low') and facts.get('tail_high'):
+        period = _date_span(facts['tail_start'], month_day)
+        sentences.append(f'{period}，指数介于{facts["tail_low"]}—{facts["tail_high"]}美元/百万Token，短期波动较此前五日收窄。')
+    elif int(facts.get('range_count') or 0) >= 5 and facts.get('range_low') and facts.get('range_high'):
+        sentences.append(f'最近七日，已收录价格介于{facts["range_low"]}—{facts["range_high"]}美元/百万Token。')
+    peak = _token_peak_clause(facts, relation)
+    if peak:
+        sentences.append(peak + '。')
+    body = ''.join(sentences)
     if price not in body:
         raise ValueError('风格稿遗漏Token价格')
     if weekly is not None and weekly != 0 and _unsigned(weekly_raw) not in body:
@@ -150,7 +170,7 @@ def _token_title(month_day, price, weekly, relation, low, halved, narrow) -> str
     if weekly > 0:
         return '【AI算力CPI】Token价格一周回升'
     if change < SMALL_MOVE and narrow and low:
-        return '【AI算力CPI】Token价格最近一周小幅下跌，低位波动收窄'
+        return '【AI算力CPI】Token价格最近一周小幅下跌，低位横盘格局延续'
     if change < SMALL_MOVE and narrow:
         return '【AI算力CPI】Token价格最近一周小幅下跌，波动收窄'
     if change < SMALL_MOVE and low:
@@ -169,25 +189,12 @@ def _token_peak_clause(facts: dict, relation: str) -> str:
     if not prior or not prior_day:
         return ''
     if relation == 'below' and drawdown:
-        return f'按此前已收录高点{prior}美元/百万Token（{prior_day}）计算，目前累计跌幅为{drawdown}%'
+        return f'较{prior_day}的已收录高点{prior}美元/百万Token，当前累计回落{drawdown}%'
     if relation == 'tie':
         return f'该价格与此前已收录高点{prior}美元/百万Token（{prior_day}）持平，属于并列高位'
     if relation == 'above':
         return f'该价格高于此前已收录高点{prior}美元/百万Token（{prior_day}）'
     return ''
-
-
-def _token_narrow(facts: dict, price: Decimal | None) -> bool:
-    if price in (None, 0):
-        return False
-    try:
-        count = int(facts.get('range_count') or 0)
-    except (TypeError, ValueError):
-        return False
-    low, high = _decimal(facts.get('range_low')), _decimal(facts.get('range_high'))
-    if count < MIN_RANGE_DAYS or low is None or high is None or high < low:
-        return False
-    return (high - low) / price <= NARROW_RATIO
 
 
 def _gpu_copy(facts: dict, month_day: str) -> tuple[str, str]:
@@ -196,17 +203,22 @@ def _gpu_copy(facts: dict, month_day: str) -> tuple[str, str]:
     title = _gpu_title(facts, month_day, signs, relation)
     previous = _month_day(facts.get('previous_date') or '')
     b200_move = _move_text(facts.get('b200_change_pct'))
-    if b200_move is None:
-        b200 = f"英伟达B200租赁价格报{facts['b200']}美元/GPU每小时，周变化基准缺失"
-    elif previous:
-        b200 = f"英伟达B200租赁价格报{facts['b200']}美元/GPU每小时，较七个自然日前（{previous}）{b200_move}"
+    verb = '升至' if signs and signs['b200'] > 0 else '回落至' if signs and signs['b200'] < 0 else '报'
+    first = f'截至{month_day}，英伟达B200租赁价格{verb}{facts["b200"]}美元/GPU每小时'
+    if b200_move is not None:
+        first += f'，较{previous if previous else "七个自然日前"}{b200_move}'
     else:
-        b200 = f"英伟达B200租赁价格报{facts['b200']}美元/GPU每小时，较七个自然日前{b200_move}"
-    parts = [f'截至{month_day}，{b200}。同期，{_card("H100", facts["h100"], facts.get("h100_change_pct"))}；'
-             f'{_card("A100", facts["a100"], facts.get("a100_change_pct"))}']
-    parts.append(_divergence(signs))
-    parts.append(_gpu_peak_clause(facts, relation))
-    body = _paragraph(parts)
+        first += '，七个自然日前的基准价缺失'
+    peak = _gpu_peak_clause(facts, relation)
+    if peak:
+        first += '，' + peak
+    second = (f'同期，{_card("H100", facts["h100"], facts.get("h100_change_pct"))}；'
+              f'{_card("A100", facts["a100"], facts.get("a100_change_pct"))}')
+    sentences = [first + '。', second + '。']
+    divergence = _divergence(signs)
+    if divergence:
+        sentences.append(divergence + '。')
+    body = ''.join(sentences)
     for key in ('a100', 'h100', 'b200'):
         if str(facts[key]) not in body:
             raise ValueError(f'风格稿遗漏{key}价格')
@@ -223,6 +235,8 @@ def _gpu_title(facts, month_day, signs, relation) -> str:
     ktype = bool(signs) and signs['b200'] > 0 and signs['a100'] < 0 and signs['h100'] <= 0
     diverge = bool(signs) and ((signs['b200'] > 0 > signs['a100']) or (signs['a100'] > 0 > signs['b200']))
     older_idle = bool(signs) and signs['b200'] > 0 and signs['h100'] <= 0 and signs['a100'] <= 0
+    if near and diverge and signs['b200'] > 0:
+        return '【AI景气度指标】高端GPU租赁价接近已收录高点，代际价格分化'
     if relation == 'tie' and ktype:
         return '【AI景气度指标】B200与已收录高点并列，三卡价格呈K型分化'
     if relation == 'tie' and diverge:
@@ -264,7 +278,7 @@ def _divergence(signs) -> str:
     if signs['b200'] > 0 and signs['a100'] < 0 and signs['h100'] <= 0:
         return 'B200一周上涨，H100与A100未跟随上涨，三卡价格呈K型分化'
     if signs['b200'] > 0 > signs['a100']:
-        return 'B200一周上涨、A100一周下跌，三卡价格呈现代际分化'
+        return '新一代B200一周走强，而A100下跌，三卡租赁价格呈现代际分化'
     if signs['a100'] > 0 > signs['b200']:
         return 'B200一周下跌、A100一周上涨，三卡价格呈现代际分化'
     if signs['b200'] > 0 and signs['h100'] <= 0 and signs['a100'] <= 0:
@@ -280,7 +294,7 @@ def _gpu_peak_clause(facts: dict, relation: str) -> str:
         return ''
     located = f'（{peak_day}）' if peak_day else ''
     if relation == 'below' and gap:
-        return f'B200较此前已收录高点{peak}美元/GPU每小时{located}低{gap}%'
+        return f'距离此前已收录高点{peak}美元/GPU每小时{located}仍低{gap}%'
     if relation == 'tie':
         return f'B200与此前已收录高点{peak}美元/GPU每小时{located}持平，属于并列高位'
     if relation == 'above':
@@ -293,17 +307,10 @@ def _card(label: str, price, change_raw) -> str:
     move = _move_text(change_raw)
     if move is None:
         return f'{name}，周变化基准缺失'
+    value = _decimal(change_raw)
+    if value is not None and 0 < value < 1:
+        move = f'微涨{_unsigned(change_raw)}%'
     return f'{name}，{move}'
-
-
-def _baseline_clause(raw, previous_date, previous_price, unit) -> str:
-    move = _move_text(raw)
-    if move is None:
-        return '七个自然日前的基准值缺失，本次不报告周变化'
-    when = _month_day(previous_date)
-    if when and previous_price:
-        return f'最近七个自然日，该指标较{when}的{previous_price}{unit}{move}'
-    return f'最近七个自然日，该指标{move}'
 
 
 def _signs(facts: dict):
@@ -323,12 +330,6 @@ def _move_text(raw) -> str | None:
     if value == 0:
         return '持平'
     return f'{_direction(value)}{_unsigned(raw)}%'
-
-
-def _paragraph(parts: list[str]) -> str:
-    cleaned = [(part or '').strip().strip('。') for part in parts]
-    cleaned = [part for part in cleaned if part]
-    return '。'.join(cleaned) + '。'
 
 
 def _direction(value: Decimal) -> str:
@@ -360,3 +361,11 @@ def _month_day(value: str) -> str:
         return f'{int(month)}月{int(day)}日'
     except ValueError:
         return ''
+
+
+def _date_span(start: str, end: str) -> str:
+    beginning = _month_day(start)
+    if not beginning:
+        return end
+    month = beginning.split('月', 1)[0] + '月'
+    return f'{beginning}至{end.removeprefix(month)}' if end.startswith(month) else f'{beginning}至{end}'

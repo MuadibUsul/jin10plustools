@@ -17,8 +17,10 @@ from PIL import Image
 from matplotlib.patheffects import SimpleLineShadow
 
 from app.briefs.ai_compute_charts import (
-    A100_COLOR, B200_COLOR, H100_COLOR, TOKEN_COLOR, gpu_chart, token_chart,
+    A100_COLOR, B200_COLOR, H100_COLOR, TOKEN_COLOR,
+    GPU_VISIBLE_OBSERVATIONS, TOKEN_VISIBLE_OBSERVATIONS, gpu_chart, token_chart,
 )
+from app.briefs.ai_compute_import import read_gpu, read_token
 from app.services.image_delivery import MAX_BYTES, compose_image, encode_image
 
 
@@ -99,19 +101,20 @@ def test_gpu_chart_is_one_panel_with_real_gaps_and_card_legend(tmp_path):
         return lambda index: None if index < offset else 2 + offset / 10 + index * 0.001
 
     rows = _series(400, a100=price(0), h100=price(0), b200=price(180))
-    rows[4]['h100'] = None
+    rows[40]['h100'] = None
     folder = tmp_path / 'gpu'
     folder.mkdir()
     with _drawn(gpu_chart, rows, folder) as (figure, path, caught):
         axis = figure.axes[0]
         by_label = {line.get_label(): line for line in axis.lines}
-        expected = [mdates.date2num(date.fromisoformat(row['date'])) for row in rows]
+        visible = rows[-GPU_VISIBLE_OBSERVATIONS:]
+        expected = [mdates.date2num(date.fromisoformat(row['date'])) for row in visible]
 
         assert list(by_label) == ['A100价格', 'H100价格', 'B200价格']
         assert by_label['A100价格'].get_xdata(orig=False).tolist() == expected
-        assert math.isnan(by_label['H100价格'].get_ydata()[4])
-        assert all(math.isnan(value) for value in by_label['B200价格'].get_ydata()[:180])
-        assert math.isfinite(by_label['B200价格'].get_ydata()[180])
+        assert math.isnan(by_label['H100价格'].get_ydata()[7])
+        assert all(math.isnan(value) for value in by_label['B200价格'].get_ydata()[:147])
+        assert math.isfinite(by_label['B200价格'].get_ydata()[147])
         labels = [text.get_text() for text in figure.legends[0].get_texts()]
         assert labels == ['H100价格', 'B200价格', 'A100价格']
         joined = '\n'.join(_texts(figure))
@@ -162,7 +165,7 @@ def test_gpu_footer_uses_the_sample_notes_only():
         joined = '\n'.join(_texts(plt.gcf()))
     plt.close('all')
     for line in FIXED_NOTES['gpu_rental'].splitlines():
-        assert line in joined
+        assert line in joined.replace('\n','')
     assert '七日' not in joined and '数据来源' not in joined
     assert 'A100 1.50' not in joined and 'B200 6.00' not in joined
 
@@ -241,3 +244,42 @@ def test_long_notes_stay_under_the_legend(tmp_path):
 def test_token_history_cannot_be_empty(tmp_path):
     with pytest.raises(ValueError, match='Token历史为空'):
         token_chart([], tmp_path)
+
+
+def test_charts_use_the_same_rolling_rows_as_the_excel_chart(tmp_path):
+    sources = Path(__file__).resolve().parents[2] / 'docs' / 'ai-compute' / 'sources'
+    token = read_token(next(sources.glob('*Token*.xlsx')))
+    gpu = read_gpu(next(sources.glob('*AI芯片*.xlsx')))
+    assert len(token) >= TOKEN_VISIBLE_OBSERVATIONS
+    assert len(gpu) >= GPU_VISIBLE_OBSERVATIONS
+    token_rows = [{'date': row['date'].isoformat(), 'token_price': row['token_price']} for row in token]
+    gpu_rows = [{'date': row['date'].isoformat(), **{key: row[key] for key in ('a100', 'h100', 'b200')}}
+                for row in gpu]
+
+    with _drawn(token_chart, token_rows, tmp_path, notes='') as (figure, _path, _caught):
+        line = figure.axes[0].lines[0]
+        expected = sorted(token_rows, key=lambda row: row['date'])[-TOKEN_VISIBLE_OBSERVATIONS:]
+        assert len(line.get_ydata()) == 309
+        assert date.fromisoformat(expected[0]['date']) == date(2025, 12, 6)
+        assert line.get_xdata()[0] == date(2025, 12, 6)
+        assert line.get_ydata()[-1] == pytest.approx(0.975)
+        assert list(line.get_ydata()) == pytest.approx([float(row['token_price']) for row in expected])
+        assert figure.axes[0].get_ylim() == (0, 2.5)
+        assert 'Silicon Data Token支出价格指数' in _texts(figure)
+
+    with _drawn(gpu_chart, gpu_rows, tmp_path, notes='') as (figure, _path, _caught):
+        expected = sorted(gpu_rows, key=lambda row: row['date'])[-GPU_VISIBLE_OBSERVATIONS:]
+        assert len(expected) == 367 and expected[0]['date'] == '2025-10-07'
+        by_label = {line.get_label(): line for line in figure.axes[0].lines}
+        for label, key in [('A100价格', 'a100'), ('H100价格', 'h100'), ('B200价格', 'b200')]:
+            line = by_label[label]
+            assert line.get_xdata()[0] == date(2025, 10, 7)
+            assert len(line.get_ydata()) == 367
+            for plotted, row in zip(line.get_ydata(), expected):
+                if row[key] is None:
+                    assert math.isnan(plotted)
+                else:
+                    assert plotted == pytest.approx(float(row[key]))
+        assert [by_label[name].get_ydata()[-1] for name in ('A100价格', 'H100价格', 'B200价格')] == [1.52, 2.81, 6.01]
+        assert figure.axes[0].get_ylim() == (0, 7)
+        assert 'AI芯片租赁价格走势（美元/每块GPU每小时）' in _texts(figure)

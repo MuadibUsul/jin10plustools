@@ -68,6 +68,19 @@ def rerender(category,previous,source,out,day):
     elif category=='us_structure':
         from .engines.us_structure.run import render
         payload=render(read(out/'us-structure-snapshot.json'),out)
+    elif category in ('token_cost','gpu_rental'):
+        from .ai_compute_charts import token_chart,gpu_chart
+        rows=read(source/'ai-compute-source.json')
+        notes=previous.get('fixed_notes','')
+        if category=='token_cost':
+            chart=token_chart(rows,out,notes=notes)
+        else:
+            actual=previous.get('data_date') or ''
+            chart=gpu_chart([row for row in rows if not actual or row['date']<=actual],out,notes=notes)
+        payload=dict(previous)
+        payload['images']=[chart.name]
+        payload['chart_notes']=notes
+        shutil.copy2(source/'ai-compute-source.json',out/'ai-compute-source.json')
     else:
         payload=dict(previous)
         for name in payload['images']:shutil.copy2(source/name,out/name)

@@ -1,13 +1,16 @@
 from datetime import date,datetime,time,timezone
 import hashlib
+import json
 from sqlalchemy import select
 import pytest
 
 from app.briefs.policy import AUTO_CATEGORIES, CATEGORIES,CHINA,first_run,previous_weekday,expected_date,production_window,next_slot
-from app.briefs.service import ensure_issue,append_version,root_for,version_out
+from app.briefs.service import ensure_issue,append_version,root_for,version_out,artifact_path
+from app.briefs.ai_compute_charts import token_chart
+from app.briefs.delivery import default_notes
 from app.briefs.worker import schedule,claim
 from app.briefs.central_bank import parse_article
-from app.db.models import BriefConfig,BriefJob,BriefVersion
+from app.db.models import BriefConfig,BriefIssue,BriefJob,BriefVersion
 from tests.conftest import login
 from PIL import Image
 
@@ -74,6 +77,49 @@ def test_edit_conflict_keeps_old_confirmed_edition(client,db_factory,seed):
     assert client.post(f'/api/briefs/issues/{id}/confirm',json={'version':1},headers=headers).status_code==409
     assert '注：' in res.json()['versions'][0]['body']
     assert client.post(f'/api/briefs/issues/{id}/unconfirm',headers=headers).json()['confirmed_version'] is None
+
+
+def test_editing_compute_notes_redraws_an_immutable_image_and_strips_body_notes(client,db_factory,seed):
+    editor=seed['editor']
+    rows=[{'date':'2026-10-07','token_price':'0.9931'},
+          {'date':'2026-10-14','token_price':'0.9750'}]
+    folder=root_for(editor.team_id)/'runs'/'compute-notes-test'
+    folder.mkdir(parents=True,exist_ok=True)
+    (folder/'ai-compute-source.json').write_text(json.dumps(rows),encoding='utf-8')
+    image=token_chart(rows,folder)
+    original_notes=default_notes('token_cost')
+    with db_factory() as db:
+        issue=ensure_issue(db,editor.team_id,date(2026,10,14),'token_cost')
+        payload={'title':'原稿','dynamic_body':'当期事实。','data_date':'2026-10-14',
+                 'images':[image.name],'image_sha256':{image.name:hashlib.sha256(image.read_bytes()).hexdigest()},
+                 'artifact_dir':'runs/compute-notes-test','fixed_notes':original_notes,
+                 'chart_notes':original_notes,'valid':True,'preview':True}
+        append_version(db,issue,payload,user_id=editor.id)
+        db.commit()
+        issue_id=issue.id
+    changed='1、更新后的固定注释。\n2、仅在图片显示。'
+    headers=login(client,'editor@plus.test')
+    result=client.post(f'/api/briefs/issues/{issue_id}/revisions',headers=headers,json={
+        'base_version':1,'title':'更新标题',
+        'dynamic_body':'当期事实。\n--------\n1、更新后的固定注释。\n2、仅在图片显示。',
+        'fixed_notes':changed,
+    })
+    assert result.status_code==201,result.text
+    assert result.json()['versions'][0]['body']=='当期事实。'
+    blank=client.post(f'/api/briefs/issues/{issue_id}/revisions',headers=headers,json={
+        'base_version':2,'title':'不应保存','dynamic_body':'当期事实。','fixed_notes':''})
+    assert blank.status_code==422
+    with db_factory() as db:
+        versions=list(db.scalars(select(BriefVersion).where(BriefVersion.issue_id==issue_id)
+                                 .order_by(BriefVersion.number)))
+        assert len(versions)==2
+        issue=db.get(BriefIssue,issue_id)
+        before=artifact_path(issue,versions[0],image.name)
+        after=artifact_path(issue,versions[1],image.name)
+        assert before!=after and before.read_bytes()!=after.read_bytes()
+        assert versions[1].payload['fixed_notes']==versions[1].payload['chart_notes']==changed
+        assert versions[0].payload['fixed_notes']==original_notes
+        assert (after.parent/'ai-compute-source.json').is_file()
 
 
 def test_corrupt_image_cannot_be_confirmed(client,db_factory,seed):

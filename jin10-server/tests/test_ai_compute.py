@@ -47,6 +47,9 @@ def test_token_and_gpu_adapters(monkeypatch, tmp_path):
     monkeypatch.setattr(ai_compute, '_rows', lambda kind: token_rows if kind == 'token' else gpu_rows)
     token = ai_compute.token_cost('2026-10-14', tmp_path, None)
     assert token['data_date'] == '2026-10-14'
+    assert token['fixed_notes'] == token['chart_notes']
+    assert '各大模型降价以及用户从昂贵的前沿模型' in token['fixed_notes']
+    assert token['fixed_notes'] not in token['dynamic_body']
     assert '0.9750' in token['dynamic_body'] and '1.82' in token['dynamic_body']
     assert token['facts']['peak_relation'] == 'below'
     assert token['facts']['drawdown_pct'] == '1.82'
@@ -54,6 +57,9 @@ def test_token_and_gpu_adapters(monkeypatch, tmp_path):
     assert (tmp_path / token['images'][0]).is_file()
     gpu = ai_compute.gpu_rental('2026-10-15', tmp_path, None)
     assert gpu['data_date'] == '2026-10-15'
+    assert 'GPU租赁价格指数主要统计每天云服务商' in gpu['fixed_notes']
+    assert gpu['fixed_notes'] == gpu['chart_notes']
+    assert gpu['fixed_notes'] not in gpu['dynamic_body']
     assert '6.01' in gpu['dynamic_body'] and '2.81' in gpu['dynamic_body'] and '1.52' in gpu['dynamic_body']
     assert '低1.64%' in gpu['dynamic_body']
     assert gpu['facts']['b200_peak_relation'] == 'below'

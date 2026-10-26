@@ -105,7 +105,7 @@ def generate(category,day,root,run_id,action='produce'):
         if action!='render':
             for name,digest in previous['image_sha256'].items():
                 if hashlib.sha256((source/name).read_bytes()).hexdigest()!=digest:raise ValueError('缓存图片损坏，请从快照重建')
-        for name in ('plot-data.json','liquidity-snapshot.json','source.json','oil-source.json','oil-previous-source.json','buffett-plot-data.json','erp-plot-data.json','us-snapshot.json','us-structure-snapshot.json'):
+        for name in ('plot-data.json','liquidity-snapshot.json','source.json','oil-source.json','oil-previous-source.json','buffett-plot-data.json','erp-plot-data.json','us-snapshot.json','us-structure-snapshot.json','ai-compute-source.json'):
             if (source/name).is_file():shutil.copy2(source/name,out/name)
         if action in ('produce','ai'):
             payload=dict(previous)

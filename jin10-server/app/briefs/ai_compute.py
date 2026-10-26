@@ -1,11 +1,13 @@
 """Adapters for the two AI-compute fixed briefs, backed by imported observations."""
 from __future__ import annotations
 
+import hashlib
 import os
 import uuid
 import json
 from datetime import date, timedelta
 from decimal import Decimal
+from pathlib import Path
 
 from sqlalchemy import select
 
@@ -73,6 +75,43 @@ def _manual_reading(row, metric):
 def _direction(change):
     value = Decimal(change)
     return '上涨' if value > 0 else '下跌' if value < 0 else '持平'
+
+
+def published_notes(category):
+    """Notes the worker will store on the edition, known before the chart is drawn."""
+    from .delivery import default_notes
+    supplied = os.getenv('CATEGORY_NOTES')
+    if supplied is None:
+        return default_notes(category)
+    return str(supplied).strip()
+
+
+def align_chart_notes(payload, category, out, notes):
+    """Redraw the chart when the published notes differ from the footer already drawn."""
+    notes = '' if notes is None else str(notes).strip()
+    if payload.get('chart_notes') == notes and payload.get('fixed_notes') == notes:
+        return False
+    out = Path(out)
+    source = out / 'ai-compute-source.json'
+    redrew = False
+    if source.is_file() and payload.get('chart_notes') != notes:
+        rows = json.loads(source.read_text(encoding='utf-8'))
+        if category == 'token_cost':
+            token_chart(rows, out, notes=notes)
+        elif category == 'gpu_rental':
+            actual = payload.get('data_date') or ''
+            gpu_chart([row for row in rows if not actual or row['date'] <= actual], out, notes=notes)
+        else:
+            payload['fixed_notes'] = notes
+            return False
+        payload['chart_notes'] = notes
+        payload['image_sha256'] = {
+            name: hashlib.sha256((out / name).read_bytes()).hexdigest()
+            for name in payload.get('images') or []
+        }
+        redrew = True
+    payload['fixed_notes'] = notes
+    return redrew
 
 
 def token_cost(day, out, state, refresh=False):
@@ -145,9 +184,11 @@ def token_cost(day, out, state, refresh=False):
     elif not previous:
         warnings.append(f"缺少 {actual_day} 七个自然日前的 Token 基准值，本期未报告周变化")
     (out/'ai-compute-source.json').write_text(json.dumps(valid,ensure_ascii=False,default=str),encoding='utf-8')
-    chart = token_chart(valid, out)
+    notes = published_notes('token_cost')
+    chart = token_chart(valid, out, notes=notes)
     return {
         'title': title, 'dynamic_body': body, 'images': [chart.name], 'data_date': actual_day,
+        'fixed_notes': notes, 'chart_notes': notes,
         'warnings': warnings,
         'facts': {
             'token_price': price_text, 'previous_date': '' if public or entered_week is not None else previous['date'] if previous else '',
@@ -252,10 +293,13 @@ def gpu_rental(day, out, state, refresh=False):
         b200_gap_pct = f'{(peak_price - latest_b200) / peak_price * 100:.2f}'
         b200_peak_relation = 'below'
         body += f"B200较已收录数据高点{peak_price:.2f}美元低{b200_gap_pct}%。"
+    chart_rows = [row for row in rows if row['date']<=actual_day]
     (out/'ai-compute-source.json').write_text(json.dumps(rows,ensure_ascii=False,default=str),encoding='utf-8')
-    chart = gpu_chart([row for row in rows if row['date']<=actual_day], out)
+    notes = published_notes('gpu_rental')
+    chart = gpu_chart(chart_rows, out, notes=notes)
     return {
         'title': title, 'dynamic_body': body, 'images': [chart.name], 'data_date': actual_day,
+        'fixed_notes': notes, 'chart_notes': notes,
         'warnings': warnings,
         'facts': {
             'a100': prices['a100'], 'h100': prices['h100'],

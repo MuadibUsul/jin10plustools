@@ -11,12 +11,23 @@ FIXED_NOTES={
     'us_structure':'注：如果标普500等权重与标普500市值加权指数之差减少，说明市场资金集中度上升，科技巨头（比如美股七姐妹）吸收了大量资金，差值若变为负值说明资金过分集中，需要警惕崩盘风险。如果指数之差扩大，说明市场上涨动能可能正在向更多公司扩散，市场有望走向普涨。',
     'us_barometer':'注：1、巴菲特指数是通过将股市总市值和GDP来比较，判断目前股市是否高估，通常70-100%为正常估值，低于该区间为低估，高于该区间为高估。不过该数据具有一定滞后性。\n2、ERP是将股市整体收益率与国债收益对比，来判断股市是否具有投资价值。ERP越高股市越有投资价值，反之则是债市更有吸引力。如果ERP > 7%说明股票比国债便宜得多，通常是大底部或绝佳的买入机会。ERP＜4.5%说明股票明显比国债昂贵，买股票承担了高风险却拿不到应有的高回报。',
 }
-FIXED_NOTES['token_cost']=('注：1、各大模型降价，以及用户从更贵的前沿模型转向更便宜的开源模型、小模型，都可能压低这份使用量加权的Token支出价格；指数变动不能单独证明某一家厂商当期降价。'
-    +chr(10)+'2、价格下降有可能刺激使用量，对AI应用、云厂商和模型厂商的影响并不相同，不能从指数直接判断定价权或需求已经变化。'
-    +chr(10)+'3、数据来自Silicon Data的Token支出价格指数，单位为美元/百万Token；成分厂商仅在当期可核验时点名，历史缺日和估读值需人工核对。')
-FIXED_NOTES['gpu_rental']=('注：1、GPU租赁价格指数主要统计每天云服务商、数据中心和私人租赁市场中英伟达A100、H100、B200的实际租赁报价；本栏目只覆盖这三卡的NeoCloud口径，单位为美元/GPU每小时。'
-    +chr(10)+'2、A100、H100、B200是英伟达从老到新的三代GPU，代际越新通常越适应大规模复杂模型，租赁价格也往往更高；价差不是性能价格比。'
-    +chr(10)+'3、不少企业因芯片价格高、更新快而改为租赁。价格上升通常被用来观察是否更紧缺、需求是否更旺，下降则可能来自供应增加或需求降温；单日涨跌不能单独证明紧缺。严格高于此前高点才写高于已收录高点，价格相同只写并列。')
+# Sample bullets, verbatim. These are the chart footer and the draft notes field.
+# The dynamic body does not repeat them.
+FIXED_NOTES['token_cost']=(
+    '1、各大模型降价以及用户从昂贵的前沿模型转向更便宜的开源模型、小模型，推动token价格下跌。'
+    +chr(10)+'2、当前阶段价格下降可能刺激需求增加，这有利于AI应用等板块，对云厂商影响复杂，而对OpenAI、Anthropic等模型厂商来说，定价权下降则是个风险因素。'
+    +chr(10)+'3、数据来自OpenAI、Anthropic、DeepSeek等全球顶尖AI模型。')
+FIXED_NOTES['gpu_rental']=(
+    '1、GPU租赁价格指数主要统计每天云服务商、数据中心和私人租赁市场中英伟达A100、H100、B200等GPU的实际租赁报价。'
+    +chr(10)+'2、A100、H100、B200是英伟达从老到新三代芯片产品（GPU），通常代际越新的GPU性能越好、越能适应大规模复杂大模型，租赁价格也往往越高。'
+    +chr(10)+'3、由于GPU价格太高、更新太快等原因，不少企业选择向云服务商、数据中心等租赁芯片，以节省资金投入。相关指数上涨通常意味着GPU更紧缺、需求更旺；下降则说明供应增加或需求降温。')
+
+# Notes for these categories stay off the dynamic body. Valuation, turnover and the
+# US barometer are composed under the delivered image; the two AI-compute charts
+# draw the same notes inside the plot footer instead.
+IMAGE_NOTE_CATEGORIES=frozenset({
+    'valuation','turnover','us_barometer','token_cost','gpu_rental',
+})
 
 OIL_CLOSING='点击查看完整持仓数据，捕捉油价之外的资金变化。'
 ALIASES={'01_成交额':'volume','02_换手率':'turnover','03_估值指标':'valuation',
@@ -30,13 +41,17 @@ def default_notes(category):
 def complete_body(category,body,notes=None):
     """Append verbatim user-supplied evergreen text, once, after dynamic facts.
 
-    Valuation and turnover carry their notes on the delivered image, so their body
-    keeps only the dynamic facts.
+    Valuation, turnover, the US barometer and the two AI-compute briefs carry their
+    notes on the delivered image, so their body keeps only the dynamic facts.
     """
     category=ALIASES.get(category,category);body=body.strip()
     note=default_notes(category) if notes is None else notes
-    if category in ('valuation','turnover','us_barometer'):
-        return re.split(r'\n\s*-{3,}\s*\n(?=\s*注：)',body,maxsplit=1)[0].replace(default_notes(category),'').strip()
+    if category in IMAGE_NOTE_CATEGORIES:
+        cleaned=re.split(r'\n\s*-{3,}\s*\n(?=\s*注：)',body,maxsplit=1)[0]
+        for block in (default_notes(category), note):
+            if block:
+                cleaned=cleaned.replace(block,'')
+        return cleaned.strip()
     if category=='oil_etf':
         # The closing line continues the dynamic sentence instead of starting a new paragraph.
         if not note:return body

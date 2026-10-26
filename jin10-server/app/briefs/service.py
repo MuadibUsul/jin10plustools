@@ -12,7 +12,7 @@ from sqlalchemy.exc import IntegrityError
 from app.config import get_settings
 from app.services.copy_dates import copy_dates
 from app.db.models import BriefAudit, BriefConfig, BriefIssue, BriefJob, BriefVersion, BriefSourceSnapshot, Team, utcnow
-from .delivery import complete_body, default_notes
+from .delivery import IMAGE_NOTE_CATEGORIES, complete_body, default_notes
 from .policy import CATEGORIES, expected_date
 
 
@@ -119,9 +119,9 @@ def version_out(issue,version):
     elif ai.get('status')=='ok':
         # Older candidates predate source tracking; never let them silently overwrite an edit.
         ai['untracked']=True
-    # Valuation and turnover keep their notes on the image; their body stays dynamic-only,
+    # These categories keep notes on the image. The body stays dynamic-only,
     # including earlier editions that still stored the appended note block.
-    image_notes=issue.category in ('valuation','turnover','us_barometer')
+    image_notes=issue.category in IMAGE_NOTE_CATEGORIES
     body=complete_body(issue.category,copy_dates(version.dynamic_body),notes)
     return {'number':version.number,'kind':version.kind,'title':copy_dates(version.title),
         'dynamic_body':body if image_notes else copy_dates(version.dynamic_body),'body':body,
@@ -165,7 +165,10 @@ def artifact_path(issue,version,name):
 def delivered_image(issue,version,name):
     from app.services.image_delivery import delivery_signature, WATERMARK, MAX_BYTES, store_image
     source=artifact_path(issue,version,name)
-    notes=version.payload.get('fixed_notes',default_notes(issue.category)) if issue.category in ('valuation','turnover','us_barometer') else ''
+    # AI-compute notes are already drawn in the chart footer. A second delivery
+    # band would repeat them under the watermark.
+    band_notes=issue.category in ('valuation','turnover','us_barometer')
+    notes=version.payload.get('fixed_notes',default_notes(issue.category)) if band_notes else ''
     # Earlier us-barometer editions kept two images; notes belong only on the merged chart.
     if issue.category=='us_barometer' and name!='美股晴雨表.png':notes=''
     policy=delivery_signature() + ('-turnover-notes-1' if issue.category=='turnover' else '-us-barometer-merged-1' if issue.category=='us_barometer' else '')

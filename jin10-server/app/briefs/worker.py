@@ -193,6 +193,28 @@ def execute(factory,id):
         if payload.get('skill'):
             record(out,4,'Skill AI 文案已采用' if payload['skill'].get('status')=='ok'
                    else 'Skill AI 未完成，已保留固定组合文案')
+    if payload and payload.get('valid') and category in PUBLIC_COMPUTE_CATEGORIES:
+        final_notes = category_notes
+        if action != 'produce':
+            with factory() as db:
+                existing = find_issue(db, team_id, day, category)
+                if existing and existing.version:
+                    previous_notes = db.scalars(select(BriefVersion).where(
+                        BriefVersion.issue_id == existing.id,
+                        BriefVersion.number == existing.version)).first()
+                    if previous_notes and 'fixed_notes' in (previous_notes.payload or {}):
+                        final_notes = previous_notes.payload['fixed_notes']
+        from .ai_compute import align_chart_notes
+        from .sources import save as save_payload
+        if align_chart_notes(payload, category, out, final_notes):
+            cache = root / 'cache' / category / f'{expected_date(category, day).isoformat()}.json'
+            if cache.is_file():
+                cached = json.loads(cache.read_text(encoding='utf-8'))
+                if cached.get('artifact_dir') == payload.get('artifact_dir'):
+                    cached['fixed_notes'] = payload.get('fixed_notes')
+                    cached['chart_notes'] = payload.get('chart_notes')
+                    cached['image_sha256'] = payload.get('image_sha256')
+                    save_payload(cache, cached)
     if payload and payload.get('valid'):
         from .sources import save
         # The date cache deliberately keeps the validated pre-Skill rule product;

@@ -1,14 +1,14 @@
 """Product charts for the Token-cost and GPU-rental fixed briefs.
 
 Regenerating either brief calls these functions and gets this layout: one panel,
-a thin horizontal date band, the legend centered under the plot, and the source,
-unit and latest readings as small footer text. ``image_delivery`` adds the PLUS
-watermark and the size cap afterwards.
+a thin horizontal date band, the legend centered under the plot, and the brief's
+editorial notes as small wrapped footer text. The source, unit and latest-reading
+caption is not drawn here. ``image_delivery`` adds the PLUS watermark and the
+size cap afterwards.
 """
 from __future__ import annotations
 
 from datetime import date, timedelta
-from decimal import Decimal
 from pathlib import Path
 import math
 import warnings
@@ -226,12 +226,19 @@ def _swatch(color):
     return Line2D([0], [0], color=color, lw=2.6, solid_capstyle='round')
 
 
-def _legend(fig, handles, labels):
+def _legend(fig, handles, labels, *, expanded=False):
     if not handles:
         return None
+    if expanded and fig.axes:
+        pos = fig.axes[0].get_position()
+        anchor_y = pos.y0 - (0.20 / fig.get_figheight())
+        anchor_x = pos.x0 + pos.width / 2
+    else:
+        anchor_x = AXES[0] + AXES[2] / 2
+        anchor_y = 0.168
     return fig.legend(
         handles, labels, prop=_type(11), frameon=False, loc='upper center',
-        bbox_to_anchor=(AXES[0] + AXES[2] / 2, 0.168), bbox_transform=fig.transFigure,
+        bbox_to_anchor=(anchor_x, anchor_y), bbox_transform=fig.transFigure,
         ncol=max(1, len(handles)), handlelength=1.7, handletextpad=0.4,
         columnspacing=1.45, borderaxespad=0,
     )
@@ -242,94 +249,90 @@ def _header(fig, kicker, title):
     fig.text(0.5, 0.932, title, fontproperties=_type(17), color=INK, ha='center', va='center')
 
 
-def _footer(fig, lines):
-    slots = {
-        1: (0.028,),
-        2: (0.050, 0.022),
-        3: (0.074, 0.048, 0.022),
-        4: (0.096, 0.072, 0.048, 0.022),
-    }
-    for line, y in zip(lines, slots.get(len(lines), slots[4])):
-        fig.text(0.07, y, line, fontproperties=_type(9), color=MUTED, ha='left', va='bottom')
+def _measure(text):
+    from matplotlib.textpath import TextPath
+    if not text:
+        return 0.0
+    return TextPath((0, 0), text, size=NOTE_SIZE, prop=_type(NOTE_SIZE)).get_extents().width
 
 
-def _display(row):
-    if not row:
-        return {}
-    if row.get('status') == 'manual_entry':
-        return row.get('manual_display') or {}
-    return row.get('public_display') or {}
+def _wrap_paragraph(paragraph):
+    if _measure(paragraph) <= _NOTE_WIDTH_PT:
+        return [paragraph]
+    lines, buf = [], ''
+    for char in paragraph:
+        trial = buf + char
+        if buf and _measure(trial) > _NOTE_WIDTH_PT:
+            lines.append(buf)
+            buf = char
+        else:
+            buf = trial
+    if buf:
+        lines.append(buf)
+    return lines or [paragraph]
 
 
-def _reading(row, metric):
-    matches = [item for item in (_display(row).get('readings') or [])
-               if item.get('metric') == metric and item.get('date') == row.get('date')]
-    return matches[0] if len(matches) == 1 else None
-
-
-def _price_text(row, metric, value, places):
-    reading = _reading(row, metric)
-    if reading and reading.get('price') not in (None, ''):
-        return str(reading['price'])
-    return f'{Decimal(str(value)):.{places}f}'
-
-
-def _stored(row, key):
-    if key == 'token_price':
-        value = row.get('token_price')
-        return row.get('price') if value is None else value
-    return row.get(key)
-
-
-def _week_text(row, metric, rows, key):
-    reading = _reading(row, metric)
-    if reading and reading.get('week_change_pct') not in (None, ''):
-        return _signed_percent(reading['week_change_pct'])
-    current = _stored(row, key)
-    if current is None:
-        return None
-    target = (date.fromisoformat(row['date']) - timedelta(days=7)).isoformat()
-    previous = next((item for item in rows if item.get('date') == target and _stored(item, key) is not None), None)
-    if previous is None:
-        return None
-    base = Decimal(str(_stored(previous, key)))
-    if base == 0:
-        return None
-    change = (Decimal(str(current)) / base - 1) * 100
-    return f'{change:+.2f}%'
-
-
-def _signed_percent(raw):
-    text = str(raw).strip()
-    if text.endswith('%'):
-        return text
-    number = Decimal(text)
-    if number > 0 and not text.startswith('+'):
-        text = '+' + text
-    return f'{text}%'
-
-
-def _dated(day):
-    return f'{day.year}/{day.month}/{day.day}'
-
-
-def _source(row, automatic):
-    if row.get('status') == 'manual_entry':
-        return '历史工作簿及本期编辑人工录入'
-    return automatic
-
-
-def _note_lines(notes):
-    if notes is None:
+def _wrap_notes(notes):
+    """Keep each numbered bullet, wrapping only when a line does not fit."""
+    text = '' if notes is None else str(notes).strip()
+    if not text:
         return []
-    text = ' '.join(str(notes).split())
-    return [text] if text else []
+    lines = []
+    for paragraph in text.splitlines():
+        paragraph = paragraph.strip()
+        if paragraph:
+            lines.extend(_wrap_paragraph(paragraph))
+    return lines
 
 
-def _figure():
-    fig = plt.figure(figsize=(12, 6.5), dpi=100, facecolor='white')
-    # Bottom band is labels + a compact legend + the footer, not a second panel.
-    ax = fig.add_axes(list(AXES))
+def _category_notes(category, notes):
+    if notes is None:
+        from .delivery import default_notes
+        return default_notes(category)
+    return str(notes).strip()
+
+
+def _footer(fig, lines):
+    if not lines:
+        return
+    font = _type(NOTE_SIZE)
+    if len(lines) <= 4 and abs(fig.get_figheight() - _STANDARD_HEIGHT) < 0.01:
+        slots = {
+            1: (0.028,),
+            2: (0.050, 0.022),
+            3: (0.074, 0.048, 0.022),
+            4: (0.096, 0.072, 0.048, 0.022),
+        }
+        for line, y in zip(lines, slots[len(lines)]):
+            fig.text(0.07, y, line, fontproperties=font, color=MUTED, ha='left', va='bottom')
+        return
+    pos = fig.axes[0].get_position()
+    line_frac = (NOTE_SIZE * 1.45 / 72) / fig.get_figheight()
+    y = pos.y0 - (0.62 / fig.get_figheight())
+    for line in lines:
+        fig.text(0.07, y, line, fontproperties=font, color=MUTED, ha='left', va='top')
+        y -= line_frac
+
+
+# Four short lines fit the standard 6.5in page. Longer notes grow the page
+# downward so the plot keeps its height and the footer stays under the legend.
+_STANDARD_HEIGHT = 6.5
+NOTE_SIZE = 8.5
+_NOTE_WIDTH_PT = 730
+
+
+def _figure(line_count=0):
+    extra = max(0, line_count - 4)
+    height = _STANDARD_HEIGHT + extra * 0.26
+    fig = plt.figure(figsize=(12, height), dpi=100, facecolor='white')
+    if extra == 0:
+        # Bottom band is labels + a compact legend + the footer, not a second panel.
+        ax = fig.add_axes(list(AXES))
+        return fig, ax
+    plot_in = AXES[3] * _STANDARD_HEIGHT
+    header_in = _STANDARD_HEIGHT * (1 - (AXES[1] + AXES[3]))
+    footer_in = height - header_in - plot_in
+    ax = fig.add_axes([AXES[0], footer_in / height, AXES[2], plot_in / height])
     return fig, ax
 
 
@@ -346,8 +349,9 @@ def token_chart(rows, out, *, notes=None):
     if not values:
         raise ValueError('Token历史为空')
     _install_fonts()
+    lines = _wrap_notes(_category_notes('token_cost', notes))
     with plt.rc_context(_rc()):
-        fig, ax = _figure()
+        fig, ax = _figure(len(lines))
         days = [day for day, _ in values]
         prices = [price for _, price in values]
         _plot(ax, days, prices, TOKEN_COLOR, '价格（美元/百万Token）')
@@ -355,26 +359,18 @@ def token_chart(rows, out, *, notes=None):
         _apply_price_axis(ax, prices, 0.5 if max(prices) > 1.2 else 0.2,
                           lambda value, _pos: f'${value:.2f}')
         _frame(ax)
-        _legend(fig, [_swatch(TOKEN_COLOR)], ['价格（美元/百万Token）'])
+        _legend(fig, [_swatch(TOKEN_COLOR)], ['价格（美元/百万Token）'], expanded=len(lines) > 4)
         _header(fig, 'PLUS 快讯 / AI算力CPI', 'Token支出价格指数')
-        latest = rows[-1]
-        shown = _price_text(latest, 'token', prices[-1], 4)
-        week = _week_text(latest, 'token', rows, 'token_price')
-        summary = f'最新 {shown} 美元/百万Token（{_dated(days[-1])}'
-        summary += f'，七日 {week}）' if week else '）'
-        _footer(fig, [
-            summary,
-            '数据来源：' + _source(latest, 'Silicon Data · LLM Token Expenditure Index'),
-            *_note_lines(notes),
-        ])
+        _footer(fig, lines)
         return _save(fig, out, 'AI算力CPI.png')
 
 
 def gpu_chart(rows, out, *, notes=None):
     rows = _ordered(rows)
     _install_fonts()
+    lines = _wrap_notes(_category_notes('gpu_rental', notes))
     with plt.rc_context(_rc()):
-        fig, ax = _figure()
+        fig, ax = _figure(len(lines))
         # Draw A100 first so a missing observation stays a gap on that series.
         series = [('A100', 'a100', A100_COLOR), ('H100', 'h100', H100_COLOR), ('B200', 'b200', B200_COLOR)]
         days = _days(rows)
@@ -392,52 +388,8 @@ def gpu_chart(rows, out, *, notes=None):
         _apply_price_axis(ax, finite or [1], step, _gpu_tick)
         _frame(ax)
         order = [name for name in ('H100', 'B200', 'A100') if name in handles]
-        _legend(fig, [_swatch(SERIES_COLORS[name]) for name in order], [f'{name}价格' for name in order])
+        _legend(fig, [_swatch(SERIES_COLORS[name]) for name in order], [f'{name}价格' for name in order],
+                expanded=len(lines) > 4)
         _header(fig, 'PLUS 快讯 / AI景气度指标', 'AI芯片租赁价格走势（美元/每块GPU每小时）')
-        _footer(fig, _gpu_footer(rows, notes))
+        _footer(fig, lines)
         return _save(fig, out, 'AI景气度指标.png')
-
-
-def _gpu_footer(rows, notes):
-    if not rows:
-        return ['数据来源：Silicon Data · A100/H100/B200 NeoCloud', *_note_lines(notes)]
-    cards = (('A100', 'a100'), ('H100', 'h100'), ('B200', 'b200'))
-    latest = {}
-    for label, key in cards:
-        found = next((row for row in reversed(rows) if row.get(key) is not None), None)
-        if found:
-            latest[label] = (found, key)
-    if not latest:
-        lines = ['数据来源：' + _source(rows[-1], 'Silicon Data · A100/H100/B200 NeoCloud')]
-        return lines + _note_lines(notes)
-    dates = {row['date'] for row, _key in latest.values()}
-    parts = []
-    for label, _key in cards:
-        if label not in latest:
-            continue
-        row, key = latest[label]
-        parts.append(f'{label} {_price_text(row, key, row[key], 2)}')
-    if len(dates) == 1:
-        summary = f"最新 {' · '.join(parts)} 美元/GPU/小时（{_dated(date.fromisoformat(next(iter(dates))))}）"
-    else:
-        detailed = []
-        for label, _key in cards:
-            if label not in latest:
-                continue
-            row, key = latest[label]
-            detailed.append(f'{label} {_price_text(row, key, row[key], 2)}（{_dated(date.fromisoformat(row["date"]))}）')
-        summary = f"最新 {' · '.join(detailed)} 美元/GPU/小时"
-    weeks = []
-    for label, key in cards:
-        if label not in latest:
-            continue
-        row, series_key = latest[label]
-        week = _week_text(row, key, rows, series_key)
-        if week:
-            weeks.append(f'{label} {week}')
-    source = '数据来源：' + _source(rows[-1], 'Silicon Data · A100/H100/B200 NeoCloud')
-    lines = [summary]
-    if weeks:
-        lines.append(f"七日 {' · '.join(weeks)}")
-    lines.append(source)
-    return lines + _note_lines(notes)

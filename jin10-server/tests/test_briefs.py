@@ -33,7 +33,9 @@ def test_weekday_policy_has_no_holiday_calendar():
     assert production_window(datetime(2026,10,1,8,0,tzinfo=CHINA))
     assert not production_window(datetime(2026,10,17,8,0,tzinfo=CHINA))
     assert not production_window(datetime(2026,10,15,10,0,tzinfo=CHINA))
-    assert expected_date('liquidity',date(2026,10,19))==date(2026,10,19)
+    assert expected_date('liquidity',date(2026,10,19))==date(2026,10,16)
+    assert first_run('liquidity')==time(8)
+    assert next_slot('liquidity',datetime(2026,10,15,8,40,tzinfo=CHINA)).time()==time(9)
     assert next_slot('liquidity',datetime(2026,10,15,9,55,tzinfo=CHINA)) is None
 
 
@@ -63,7 +65,8 @@ def test_draft_team_isolation_confirmation_and_viewer_files(client,db_factory,se
     assert client.get(f'/api/briefs/issues/{id}/files/1/test.png',headers=viewer).status_code==403
     assert client.post(f'/api/briefs/issues/{id}/confirm',json={'version':1},headers=editor).status_code==200
     assert client.get(f'/api/briefs/issues/{id}/files/1/test.png',headers=viewer).status_code==200
-    assert '注：短期货币市场' in client.get(f'/api/briefs/issues/{id}',headers=viewer).json()['versions'][0]['body']
+    shown=client.get(f'/api/briefs/issues/{id}',headers=viewer).json()['versions'][0]
+    assert shown['notes_placement']=='image' and '注：' not in shown['body']
     assert client.get(f'/api/briefs/issues/{id}/export',headers=viewer).status_code==404
 
 
@@ -75,7 +78,7 @@ def test_edit_conflict_keeps_old_confirmed_edition(client,db_factory,seed):
     assert res.status_code==201;assert res.json()['version']==2;assert res.json()['confirmed_version']==1
     assert client.post(f'/api/briefs/issues/{id}/revisions',json=edit,headers=headers).status_code==409
     assert client.post(f'/api/briefs/issues/{id}/confirm',json={'version':1},headers=headers).status_code==409
-    assert '注：' in res.json()['versions'][0]['body']
+    assert '注：' not in res.json()['versions'][0]['body']
     assert client.post(f'/api/briefs/issues/{id}/unconfirm',headers=headers).json()['confirmed_version'] is None
 
 
@@ -149,8 +152,11 @@ def test_disabled_schedule_and_late_jobs(db_factory,seed,monkeypatch):
     with db_factory() as db:
         db.add(BriefConfig(team_id=seed['editor'].team_id,enabled=True));db.commit()
     schedule(db_factory,now);schedule(db_factory,now)
-    with db_factory() as db:assert len(db.scalars(select(BriefJob)).all())==sum(
-        1 for category in AUTO_CATEGORIES if first_run(category)<=time(8,10))
+    with db_factory() as db:
+        jobs=db.scalars(select(BriefJob)).all()
+        assert len(jobs)==sum(1 for category in AUTO_CATEGORIES if first_run(category)<=time(8,10))
+        liquidity_job=next(job for job in jobs if job.category=='liquidity')
+    assert claim(db_factory,now)==liquidity_job.id
     # A later publication day exercises the expired-window branch.
     assert claim(db_factory,datetime(2026,10,16,10,0,tzinfo=CHINA)) is None
     with db_factory() as db:assert db.scalars(select(BriefJob).where(BriefJob.status=='skipped')).first().active_key is None

@@ -9,7 +9,7 @@ import sys
 import time
 from datetime import date,datetime,timedelta,time as clock
 
-from sqlalchemy import select,text,update
+from sqlalchemy import case,select,text,update
 
 from app.config import get_settings
 from app.db.models import BriefConfig,BriefIssue,BriefJob,BriefVersion,BriefSourceSnapshot,Team,utcnow
@@ -94,7 +94,9 @@ def claim(factory,now=None):
         db.execute(update(BriefJob).where(BriefJob.status=='running',BriefJob.lease_until<now)
                    .values(status='queued',error='上次运行中断，已重新排队',lease_until=None))
         row=db.scalars(select(BriefJob).where(BriefJob.status.in_(['queued','waiting']),
-            BriefJob.next_attempt_at<=now).order_by(BriefJob.next_attempt_at,BriefJob.created_at)
+            BriefJob.next_attempt_at<=now).order_by(
+                case((BriefJob.category=='liquidity',0),else_=1),
+                BriefJob.next_attempt_at,BriefJob.created_at)
             .with_for_update(skip_locked=True).limit(1)).first()
         if not row:db.commit();return None
         if row.created_by is None and not row.preview and (row.issue_date!=now.astimezone(CHINA).date() or not production_window(now)):
@@ -119,7 +121,7 @@ def execute(factory,id):
         team_settings=dict(team.settings or {})
         config=db.get(BriefConfig,team_id)
         category_notes=(config.notes or {}).get(category,default_notes(category)) if config else default_notes(category)
-        if category in PUBLIC_COMPUTE_CATEGORIES and not str(category_notes or '').strip():
+        if category in PUBLIC_COMPUTE_CATEGORIES | {'liquidity'} and not str(category_notes or '').strip():
             category_notes=default_notes(category)
     root=root_for(team_id);out=root/'runs'/str(id);out.mkdir(parents=True,exist_ok=True)
     record(out,1,f'任务开始：生产日 {day}，目标数据日 {expected_date(category,day)}')

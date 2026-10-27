@@ -46,7 +46,8 @@ def rerender(category,previous,source,out,day):
         shutil.copy2(source/'plot-data.json',out/'plot-data.json')
     elif category=='liquidity':
         from .sources import render_liquidity
-        payload=render_liquidity(read(source/'liquidity-snapshot.json'),out)
+        payload=render_liquidity(read(source/'liquidity-snapshot.json'),out,
+                                 notes=previous.get('fixed_notes'))
         shutil.copy2(source/'liquidity-snapshot.json',out/'liquidity-snapshot.json')
     elif category=='turnover':
         end=date.fromisoformat(day)

@@ -53,7 +53,7 @@ def test_five_registered_skills_use_only_current_evidence_and_team_note(category
     assert note not in result["dynamic_body"]
     assert result["publication_allowed"] is False
     assert set(result["evidence_ids"]) == {f["evidence_id"] for f in CASES[category].values()}
-    if category in ("turnover", "valuation"):
+    if category in ("turnover", "valuation", "liquidity"):
         assert note not in result["body"]
         assert result["notes_placement"] == "image"
     else:

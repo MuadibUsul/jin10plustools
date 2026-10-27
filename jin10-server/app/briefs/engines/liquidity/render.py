@@ -7,6 +7,7 @@ import html
 import io
 import json
 import re
+from functools import lru_cache
 from pathlib import Path
 import xml.etree.ElementTree as ET
 from decimal import Decimal,ROUND_FLOOR,ROUND_CEILING
@@ -17,17 +18,22 @@ import matplotlib.pyplot as plt
 import numpy as np
 from PIL import Image,ImageDraw,ImageFont
 from app.services.copy_dates import copy_dates
+from app.briefs.delivery import default_notes
+from app.services.image_delivery import SYSTEM_CJK
 
 HERE=Path(__file__).resolve().parent
 TITLE='【流动性指标】质押式回购利率走势与最新行情'
 COLORS={'DR001':'#1677FF','DR007':'#13A69B','DR014':'#DC6671'}
 NAVY='#18385F';TEXT='#30465E';MUTED='#7B8C9D';BG='#F3F6FA';BORDER='#E7EDF4'
-EXPLANATION=(
-    '短期货币市场利率如DR007，反映的是市场资金充裕程度。除了实体经济贷款利率，股市、债市等金融市场很多交易本质上是靠“贷款”加杠杆，贷款成本取决于短期资金利率。DR007通常被视为中国短端利率锚。',
-    'DR007与央行7天逆回购利率（政策利率）之间的差距，可以用来判断市场是否缺钱：',
-    'DR007明显高于政策利率： 说明资金偏紧，央行可能投放流动性；',
-    'DR007低于或接近政策利率：说明市场资金宽松。',
-)
+EXPLANATION=tuple(default_notes('liquidity').splitlines())
+
+
+@lru_cache(maxsize=4)
+def coverage(path):
+    from fontTools.ttLib import TTFont
+    font=TTFont(str(path),fontNumber=0)
+    try:return set(font.getBestCmap() or {})
+    finally:font.close()
 
 
 class Poster:
@@ -35,12 +41,25 @@ class Poster:
         self.width=2160;self.height=height
         self.image=Image.new('RGB',(self.width,height),BG);self.draw=ImageDraw.Draw(self.image)
         self.font_cache={};self.svg=[];self.texts=[]
+        self.fallback_path=next((path for path in SYSTEM_CJK if path.is_file() and coverage(path)),None)
 
     def font(self,size,bold=False):
         key=(size,bold)
         if key not in self.font_cache:
             self.font_cache[key]=ImageFont.truetype(str(HERE/'assets'/('PlusPosterSans-Semibold.ttf' if bold else 'PlusPosterSans-Regular.ttf')),size)
         return self.font_cache[key]
+
+    def glyph_font(self,char,size,bold=False):
+        primary_path=HERE/'assets'/('PlusPosterSans-Semibold.ttf' if bold else 'PlusPosterSans-Regular.ttf')
+        if ord(char) in coverage(primary_path):return self.font(size,bold)
+        if self.fallback_path and ord(char) in coverage(self.fallback_path):
+            key=(size,bold,'fallback')
+            if key not in self.font_cache:self.font_cache[key]=ImageFont.truetype(str(self.fallback_path),size)
+            return self.font_cache[key]
+        raise ValueError(f'No available font can render U+{ord(char):04X}')
+
+    def text_width(self,value,size,bold=False):
+        return sum(self.glyph_font(char,size,bold).getlength(char) for char in value)
 
     def rectangle(self,box,fill,radius=0,outline=None):
         self.draw.rounded_rectangle(box,radius=radius,fill=fill,outline=outline,width=2)
@@ -49,12 +68,16 @@ class Poster:
                         (f' stroke="{outline}" stroke-width="2"' if outline else '')+'/>')
 
     def text(self,xy,text,size=44,color=TEXT,bold=False,anchor='lt'):
-        font=self.font(size,bold);self.draw.text(xy,text,font=font,fill=color,anchor=anchor)
-        width=font.getlength(text);x,y=xy
+        width=self.text_width(text,size,bold);x,y=xy
         if anchor=='mt':x-=width/2
         elif anchor=='rt':x-=width
-        baseline=y-font.getbbox(text,anchor='ls')[1]
-        self.svg.append(f'<text x="{x:.3f}" y="{baseline:.3f}" font-family="PlusPosterSans" '
+        cursor=x
+        baseline=y-self.font(size,bold).getbbox('中',anchor='ls')[1]
+        for char in text:
+            font=self.glyph_font(char,size,bold)
+            self.draw.text((cursor,baseline),char,font=font,fill=color,anchor='ls')
+            cursor+=font.getlength(char)
+        self.svg.append(f'<text x="{x:.3f}" y="{baseline:.3f}" font-family="PlusPosterSans, Noto Sans CJK SC, sans-serif" '
                         f'font-size="{size}" font-weight="{600 if bold else 400}" fill="{color}">{html.escape(text)}</text>')
         self.texts.append(text)
 
@@ -67,11 +90,12 @@ class Poster:
         self.svg.append(f'<circle cx="{x}" cy="{y}" r="{radius}" fill="{fill}"/>')
 
     def paragraph(self,text,x,y,width,*,size=44,line_height=72,color=TEXT):
-        font=self.font(size);line=''
+        line='';line_width=0
         for char in text:
-            if line and font.getlength(line+char)>width:
-                self.text((x,y),line,size,color);y+=line_height;line=''
-            line+=char
+            char_width=self.glyph_font(char,size).getlength(char)
+            if line and line_width+char_width>width:
+                self.text((x,y),line,size,color);y+=line_height;line='';line_width=0
+            line+=char;line_width+=char_width
         if line:self.text((x,y),line,size,color);y+=line_height
         return y
 
@@ -154,13 +178,16 @@ def plot_history(history):
     return Image.open(png).convert('RGB'),svg.getvalue(),audit
 
 
-def render_poster(snapshot,out_dir,*,logo_path=None,logo_kind='original_user_file'):
+def render_poster(snapshot,out_dir,*,logo_path=None,logo_kind='original_user_file',notes=None):
     quote=snapshot['quotes'];history=snapshot['history'];out=Path(out_dir);out.mkdir(parents=True,exist_ok=True)
-    # Estimate the required explanation height using actual glyph widths.
+    notes=default_notes('liquidity') if notes is None else notes
+    paragraphs=notes.strip().splitlines()
+    # Size the editable note card from the same font and wrapping used for output.
     explanation_top=1464+320+len(quote['rows'])*126+52
     measuring=Poster(5000);body_end=explanation_top+164
-    for paragraph in EXPLANATION[:2]:body_end=measuring.paragraph(paragraph,152,body_end,1856,size=44)+34
-    explanation_bottom=body_end+2*82+32
+    for paragraph in paragraphs:
+        body_end=measuring.paragraph(paragraph,152,body_end,1856,size=44,line_height=68)+26
+    explanation_bottom=max(explanation_top+300,body_end+36)
     height=explanation_bottom+210
     poster=Poster(height)
     poster.text((96,96),TITLE,76,NAVY,True)
@@ -182,7 +209,7 @@ def render_poster(snapshot,out_dir,*,logo_path=None,logo_kind='original_user_fil
     # Latest quotation card. Values are copied as original source strings.
     table_top=1464;table_bottom=table_top+320+len(quote['rows'])*126
     poster.rectangle((80,table_top,2080,table_bottom),'white',40,BORDER)
-    poster.text((136,table_top+54),'最新成交行情',60,NAVY,True)
+    poster.text((136,table_top+54),'前一交易日收盘行情',60,NAVY,True)
     poster.text((2024,table_top+72),'行情时间 '+copy_dates(quote['updated_at']),34,MUTED,anchor='rt')
     header_y=table_top+174
     poster.rectangle((128,header_y,2032,header_y+116),'#F0F6FD',20)
@@ -198,7 +225,7 @@ def render_poster(snapshot,out_dir,*,logo_path=None,logo_kind='original_user_fil
             poster.text((x,y+12),display,52,'#1677FF' if key=='weighted_rate' else TEXT,key=='weighted_rate','mt')
             values_audit.append({'product':row['product'],'field':key,'source':row[key],'display':display})
         if i<len(quote['rows'])-1:poster.line((136,y+103,2024,y+103),BORDER,2)
-    # Explanation card: verbatim supplied paragraphs; no current policy judgement.
+    # Editable explanation is drawn into the image of this immutable edition.
     poster.rectangle((80,explanation_top,2080,explanation_bottom),'#F2F9FF',28,'#DDEDF8')
     cx,cy=174,explanation_top+86
     poster.circle(cx,cy,43,'#1677FF');poster.circle(cx,cy-3,13,'white')
@@ -207,21 +234,8 @@ def render_poster(snapshot,out_dir,*,logo_path=None,logo_kind='original_user_fil
         poster.line((cx+dx*.78,cy+dy*.78,cx+dx,cy+dy),'white',3)
     poster.text((252,explanation_top+52),'指标解读',60,NAVY,True)
     y=explanation_top+164
-    for paragraph in EXPLANATION[:2]:y=poster.paragraph(paragraph,152,y,1856,size=44)+34
-    inline_audit=[]
-    for index,paragraph in enumerate(EXPLANATION[2:]):
-        label='资金偏紧' if index==0 else '资金宽松';color='#F23D62' if index==0 else '#0BA98D'
-        prefix,suffix=paragraph.split(label)
-        poster.circle(154,y+25,12,color)
-        x=194;poster.text((x,y),prefix,44,NAVY)
-        x+=poster.font(44).getlength(prefix)+8
-        pill_width=poster.font(44,True).getlength(label)+44
-        poster.rectangle((x,y-7,x+pill_width,y+58),'#FFE9EE' if index==0 else '#DDF6F0',28)
-        poster.text((x+22,y),label,44,color,True)
-        poster.text((x+pill_width+8,y),suffix,44,NAVY)
-        assert x+pill_width+8+poster.font(44).getlength(suffix)<=2008
-        inline_audit.append({'label':label,'text_y':y,'pill_y':y,'inline':True})
-        y+=82
+    for paragraph in paragraphs:
+        y=poster.paragraph(paragraph,152,y,1856,size=44,line_height=68)+26
     footer_y=explanation_bottom+78
     poster.text((104,footer_y),'数据来源：中国货币网',34,MUTED)
     poster.text((104,footer_y+50),'利率单位：%   平均回购期限单位：天',30,MUTED)
@@ -246,9 +260,9 @@ def render_poster(snapshot,out_dir,*,logo_path=None,logo_kind='original_user_fil
     audit={'title':TITLE,'size':list(poster.image.size),'source_range':[history['start'],history['end']],
            'quote_updated_at':quote['updated_at'],'chart_series':history['series'],
            'quote_time_basis':'ChinaMoney overall quote timestamp; not fetch time or individual instrument update time',
-           'table_columns':headers,'explanation_inline_labels':inline_audit,
+           'table_columns':headers,'explanation_text':notes,
            'quotation_products':[r['product'] for r in quote['rows']],
-           'curves':plot_audit,'table_cells':values_audit,'original_instructions_paragraphs':list(EXPLANATION),
+           'curves':plot_audit,'table_cells':values_audit,
            'policy_rate_supplied':False,'current_liquidity_conclusion':False,
            'website_watermark_included':False,'font':'bundled PlusPosterSans (OFL Noto-derived subset)',
            'logo':logo_audit,'release_ready':logo_path is not None,'code_only':True,

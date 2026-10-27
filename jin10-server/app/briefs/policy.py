@@ -11,7 +11,7 @@ CATEGORIES = {
     'token_cost': 'AI算力CPI',
     'gpu_rental': 'AI景气度指标',
 }
-AUTO_CATEGORIES = ('volume', 'turnover', 'valuation', 'liquidity', 'oil_etf',
+AUTO_CATEGORIES = ('liquidity', 'volume', 'turnover', 'valuation', 'oil_etf',
                    'us_barometer', 'us_structure')
 
 
@@ -25,7 +25,7 @@ def previous_weekday(day: date) -> date:
 def expected_date(category: str, issue_day: date) -> date:
     if category not in CATEGORIES:
         raise ValueError('Unknown category')
-    return issue_day if category == 'liquidity' else previous_weekday(issue_day)
+    return previous_weekday(issue_day)
 
 
 def production_window(now: datetime) -> bool:
@@ -34,11 +34,11 @@ def production_window(now: datetime) -> bool:
 
 
 def first_run(category: str) -> time:
-    return time(9, 20) if category == 'liquidity' else time(8)
+    return time(8)
 
 
 def next_slot(category: str, now: datetime) -> datetime | None:
     local = now.astimezone(CHINA)
-    slots = (time(9, 20), time(9, 25), time(9, 40), time(9, 55)) if category == 'liquidity' else (time(8), time(8, 30), time(9), time(9, 20), time(9, 40), time(9, 55))
+    slots = (time(8), time(8, 30), time(9), time(9, 10), time(9, 20), time(9, 40), time(9, 55)) if category == 'liquidity' else (time(8), time(8, 30), time(9), time(9, 20), time(9, 40), time(9, 55))
     return next((datetime.combine(local.date(), slot, CHINA) for slot in slots
                  if datetime.combine(local.date(), slot, CHINA) > local), None)

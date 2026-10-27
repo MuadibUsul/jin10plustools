@@ -34,7 +34,7 @@ def apply_skill_copy(payload: dict, category: str, team_settings: dict | None) -
         else:
             warning = f"Skill AI 未完成（{result.get('reason') or 'unknown'}），已自动回退固定组合文案"
         payload.setdefault("warnings", []).append(warning)
-    if category in ("token_cost", "gpu_rental"):
+    if category in ("token_cost", "gpu_rental", "liquidity"):
         from .delivery import complete_body
         # Notes stay on the chart footer. Drop them if a model pasted the block into the body.
         payload["dynamic_body"] = complete_body(category, payload["dynamic_body"], payload.get("fixed_notes"))

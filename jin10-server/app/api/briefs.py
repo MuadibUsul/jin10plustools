@@ -13,7 +13,7 @@ from app.db.models import BriefAudit, BriefConfig, BriefIssue, BriefJob, BriefVe
 from app.services.team_settings import update_notes
 from app.deps import CurrentUser, DbSession, Editor
 from app.briefs.policy import CATEGORIES, CHINA
-from app.briefs.service import owned, enqueue, issue_out, job_out, append_version, artifact_path, delivered_image, prepare_compute_notes_revision
+from app.briefs.service import owned, enqueue, issue_out, job_out, append_version, artifact_path, delivered_image, prepare_chart_notes_revision
 from app.briefs.delivery import complete_body
 from app.services.image_delivery import download_name
 
@@ -77,7 +77,7 @@ def categories(db:DbSession,user:CurrentUser):
     config=db.get(BriefConfig,user.team_id)
     return {'categories':[{'id':key,'label':label,'image_required':key!='oil_etf'} for key,label in CATEGORIES.items()],
             'schedule_enabled':bool(config and config.enabled),'window':'工作日 08:00—10:00（北京时间）',
-            'date_policy':'周一取周五，其余取前一工作日；流动性取当天；不维护节假日日历',
+            'date_policy':'周一取周五，其余取前一工作日；流动性在 08:00 后优先读取前一交易日 17:00 收盘行情；不维护节假日日历',
             'can_edit':user.role in (Role.ADMIN,Role.EDITOR),'can_configure':user.role==Role.ADMIN}
 
 
@@ -187,17 +187,17 @@ def edit(id:uuid.UUID,body:EditRequest,db:DbSession,user:Editor):
     previous=db.scalars(select(BriefVersion).where(BriefVersion.issue_id==id,BriefVersion.number==body.base_version)).one()
     payload=dict(previous.payload)
     edited_notes=body.fixed_notes.strip() if body.fixed_notes is not None else payload.get('fixed_notes','')
-    if issue.category in ('token_cost','gpu_rental') and body.fixed_notes is not None and not edited_notes:
-        raise HTTPException(422,'AI 算力图表必须保留固定注释')
+    if issue.category in ('token_cost','gpu_rental','liquidity') and body.fixed_notes is not None and not edited_notes:
+        raise HTTPException(422,'图片注释不能为空')
     dynamic_body=(complete_body(issue.category,body.dynamic_body,edited_notes)
-                  if issue.category in ('token_cost','gpu_rental') else body.dynamic_body.strip())
+                  if issue.category in ('token_cost','gpu_rental','liquidity') else body.dynamic_body.strip())
     if not dynamic_body:
         raise HTTPException(422,'动态正文不能为空')
     staged=None
     if body.fixed_notes is not None:
-        if issue.category in ('token_cost','gpu_rental') and edited_notes != payload.get('chart_notes'):
+        if issue.category in ('token_cost','gpu_rental','liquidity') and edited_notes != payload.get('chart_notes'):
             try:
-                payload,staged=prepare_compute_notes_revision(issue,previous,edited_notes)
+                payload,staged=prepare_chart_notes_revision(issue,previous,edited_notes)
             except (ValueError,OSError) as exc:
                 raise HTTPException(409,str(exc)) from None
         else:

@@ -137,6 +137,11 @@ def polish(team, category: str, source_title: str, source_body: str) -> dict:
         examples = _history(category)
     except (OSError, ValueError):
         return {"status": "failed", "reason": "skill_asset_missing"}
+    if category == "liquidity":
+        # The archived Skill asset is hash-locked; the current data and image-note
+        # policy is supplied here without rewriting historical evidence.
+        skill_md += ("\n当前生产口径：早间使用前一交易日17:00收盘的DR001和DR007，"
+                     "不要引入当日盘初值；可编辑注释绘在图片中，不加入动态正文。")
     system = (
         "你是金十 PLUS 固定快讯编辑。严格遵守下面的 Skill 编辑规范：\n"
         f"{skill_md}\n\n"

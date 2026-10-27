@@ -148,6 +148,6 @@ def render(category: str, payload: dict) -> dict:
         title = "【原油ETF】美油与布油ETF持仓数据更新"
     return {"title": title, "dynamic_body": body, "fixed_note": note,
             "body": complete_body(category, body, note),
-            "notes_placement": "image" if category in ("turnover", "valuation") else "inline" if category == "oil_etf" else "body",
+            "notes_placement": "image" if category in ("turnover", "valuation", "liquidity") else "inline" if category == "oil_etf" else "body",
             "evidence_ids": sorted({fact["evidence_id"] for fact in facts.values()}),
             "publication_allowed": False}

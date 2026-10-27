@@ -1,4 +1,4 @@
-"""Independent daily liquidity job; wait for current-day DR007, then stop."""
+"""Independent liquidity job for the previous trading day's close."""
 from __future__ import annotations
 import argparse
 import hashlib
@@ -7,7 +7,7 @@ import os
 import sys
 import time
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime,timedelta
 from pathlib import Path
 from uuid import uuid4
 
@@ -64,7 +64,11 @@ def artifacts_valid(out,manifest):
 
 
 def make_job(args,state):
-    day=args.expected_date or datetime.now(CHINA).date().isoformat()
+    day=args.expected_date
+    if not day:
+        trading_day=datetime.now(CHINA).date()-timedelta(days=1)
+        while trading_day.weekday()>=5:trading_day-=timedelta(days=1)
+        day=trading_day.isoformat()
     replay=args.quotes is not None or args.history is not None
     if replay and (not args.quotes or not args.history or not args.expected_date):
         raise SourceError('configuration_error','Replay needs both --quotes and --history plus --expected-date')

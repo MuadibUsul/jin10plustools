@@ -12,6 +12,7 @@ from urllib.parse import urlencode
 from urllib.request import Request,urlopen
 
 from .policy import previous_weekday
+from .delivery import default_notes
 from . import central_bank
 from .progress import record
 
@@ -113,11 +114,12 @@ def liquidity(day,out,state,refresh=False):
     return payload
 
 
-def render_liquidity(snapshot,out):
+def render_liquidity(snapshot,out,notes=None):
     record(out,3,'行情与历史序列已校验，正在绘制流动性图片')
     from .engines.liquidity.render import render_poster
     from .engines.liquidity.copy_tracks import build_copy
-    png,svg,audit=render_poster(snapshot,out,logo_path=HERE/'engines/liquidity/assets/plus-original.png')
+    notes=os.getenv('CATEGORY_NOTES',default_notes('liquidity')) if notes is None else notes
+    png,svg,audit=render_poster(snapshot,out,logo_path=HERE/'engines/liquidity/assets/plus-original.png',notes=notes)
     rule=build_copy(snapshot);bank=snapshot.get('central_bank');warning=[]
     if bank:
         dr=next(r for r in snapshot['quotes']['rows'] if r['product']=='DR007')
@@ -128,6 +130,7 @@ def render_liquidity(snapshot,out):
     else:warning.append('未取得对应日期央行操作信息，仅描述DR行情')
     save(out/'chart-audit.json',audit)
     return {'title':'【流动性指标】质押式回购利率走势与最新行情','dynamic_body':rule['body'],'images':[png.name],'data_date':snapshot['quotes']['quote_date'],
+            'fixed_notes':notes,'chart_notes':notes,
             'facts':{'quotes':snapshot['quotes'],'central_bank':bank,'history_range':[snapshot['history']['start'],snapshot['history']['end']]},'warnings':warning}
 
 

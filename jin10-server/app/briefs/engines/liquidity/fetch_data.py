@@ -48,7 +48,9 @@ def parse_quotes(raw,expected_date):
     except (ValueError,KeyError,TypeError,UnicodeError):
         raise SourceError('source_changed','Quotation response does not match the official page schema') from None
     if updated.date().isoformat()!=expected_date:
-        raise SourceError('pending_dr007',f'Quotation data day {updated.date()} does not match required day {expected_date}')
+        raise SourceError('pending_close',f'Quotation data day {updated.date()} does not match required closing day {expected_date}')
+    if updated.hour < 17:
+        raise SourceError('pending_close','Quotation is not the previous trading day 17:00 close')
     rows=[];seen=set()
     for record in records:
         code=record.get('productCode','')
@@ -62,9 +64,10 @@ def parse_quotes(raw,expected_date):
                      'latest_rate':numeric(record.get('latestRate'),'latest rate'),
                      'average_term_days':numeric(record.get('avgPrd'),'average term'),
                      'updated_at':stamp})
-    dr007=next((r for r in rows if r['product']=='DR007'),None)
-    if not dr007 or dr007['weighted_rate'] is None or Decimal(dr007['weighted_rate'])<=0:
-        raise SourceError('pending_dr007','No positive current-day DR007 weighted rate has been published')
+    for code in ('DR001','DR007'):
+        row=next((r for r in rows if r['product']==code),None)
+        if not row or row['weighted_rate'] is None or Decimal(row['weighted_rate'])<=0:
+            raise SourceError('pending_close',f'No positive closing {code} weighted rate has been published')
     return {'updated_at':stamp,'quote_date':expected_date,'rows':rows}
 
 
@@ -103,7 +106,7 @@ def read_source(name,method,*,timeout=25,opener=urlopen):
 
 
 def fetch_snapshot(output_dir,expected_date,*,timeout=25,opener=urlopen):
-    """One quote request; history is requested once only after DR007 is ready."""
+    """One quote request; history follows only after both DR closing rates pass validation."""
     date.fromisoformat(expected_date)
     out=Path(output_dir);out.mkdir(parents=True,exist_ok=True)
     quotes_raw,quotes_meta=read_source('prr-md.json','GET',timeout=timeout,opener=opener)

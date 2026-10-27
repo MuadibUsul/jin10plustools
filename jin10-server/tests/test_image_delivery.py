@@ -11,11 +11,13 @@ from PIL import Image, ImageChops
 
 from app.briefs.delivery import FIXED_NOTES
 from app.briefs.charts import VALUATION_PLOT_BOUNDS, valuation_chart
-from app.briefs.service import append_version, ensure_issue
+from app.briefs.service import append_version, ensure_issue, root_for
+from app.briefs.engines.liquidity.render import render_poster
 from app.db.models import BriefConfig, BriefIssue, BriefVersion
 from app.services.image_delivery import MAX_BYTES, compose_image, download_name, encode_image
 from tests.conftest import login
 from tests.test_briefs import draft
+from tests.test_liquidity_layout import sample_snapshot
 
 
 def test_turnover_new_and_archived_images_have_one_standard_watermark(db_factory, seed):
@@ -135,7 +137,18 @@ def test_turnover_notes_move_onto_the_image_and_leave_the_body(client,db_factory
 
 
 def test_notes_are_versioned_and_defaults_apply_to_future_issues(client,db_factory,seed):
-    id=draft(db_factory,seed)
+    from datetime import date
+    snapshot=sample_snapshot()
+    with db_factory() as db:
+        issue=ensure_issue(db,seed['editor'].team_id,date(2026,10,16),'liquidity')
+        folder=root_for(issue.team_id)/'runs/liquidity-notes';folder.mkdir(parents=True)
+        (folder/'liquidity-snapshot.json').write_text(json.dumps(snapshot),encoding='utf-8')
+        chart,_,_=render_poster(snapshot,folder,logo_path=Path('app/briefs/engines/liquidity/assets/plus-original.png'))
+        append_version(db,issue,{'title':'原始标题','dynamic_body':'动态事实','data_date':'2026-10-15',
+            'images':[chart.name],'image_sha256':{chart.name:hashlib.sha256(chart.read_bytes()).hexdigest()},
+            'artifact_dir':'runs/liquidity-notes','valid':True,'fixed_notes':FIXED_NOTES['liquidity'],
+            'chart_notes':FIXED_NOTES['liquidity']})
+        db.commit();id=str(issue.id)
     headers=login(client,'editor@plus.test')
     request={'base_version':1,'title':'更新标题','dynamic_body':'动态事实',
              'fixed_notes':'注：自定义说明。','notes_as_default':True}
@@ -143,21 +156,26 @@ def test_notes_are_versioned_and_defaults_apply_to_future_issues(client,db_facto
     assert response.status_code==201
     versions=response.json()['versions']
     assert versions[0]['fixed_notes']=='注：自定义说明。'
-    assert '自定义说明' in versions[0]['body']
+    assert versions[0]['body']=='动态事实' and versions[0]['notes_placement']=='image'
     assert [v['number'] for v in versions]==[2,1]
     assert versions[1]['fixed_notes']!=versions[0]['fixed_notes']
     with db_factory() as db:
         previous=db.scalar(select(BriefVersion).where(BriefVersion.issue_id==uuid.UUID(id),BriefVersion.number==1))
         assert previous.payload['fixed_notes']!=versions[0]['fixed_notes']
     image=client.get(versions[0]['images'][0]['url'],headers=headers)
-    assert image.status_code==200 and len(image.content)<=MAX_BYTES
-    assert download_name('2026-10-15','更新标题','.png') in unquote(image.headers['content-disposition'])
+    old_image=client.get(versions[1]['images'][0]['url'],headers=headers)
+    assert image.status_code==old_image.status_code==200 and len(image.content)<=MAX_BYTES
+    assert image.content!=old_image.content
+    assert download_name('2026-10-16','更新标题',
+        '.jpg' if image.headers['content-type']=='image/jpeg' else '.png') in unquote(image.headers['content-disposition'])
     with db_factory() as db:
         config=db.get(BriefConfig,seed['editor'].team_id)
         assert config.notes['liquidity']=='注：自定义说明。'
         assert not config.enabled
-        from datetime import date
-        issue=ensure_issue(db,seed['editor'].team_id,date(2026,10,16),'liquidity')
+        current=db.scalar(select(BriefVersion).where(BriefVersion.issue_id==uuid.UUID(id),BriefVersion.number==2))
+        assert '注：自定义说明。' in (root_for(seed['editor'].team_id)/current.payload['artifact_dir']/chart.with_suffix('.svg').name).read_text(encoding='utf-8')
+        assert current.payload['chart_notes']==config.notes['liquidity']
+        issue=ensure_issue(db,seed['editor'].team_id,date(2026,10,19),'liquidity')
         old=db.get(BriefIssue,uuid.UUID(id))
         payload=dict(db.query(BriefVersion).filter_by(issue_id=old.id,number=1).one().payload)
         payload.pop('fixed_notes')

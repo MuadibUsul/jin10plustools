@@ -84,7 +84,7 @@ def append_version(db,issue,payload,*,user_id=None,kind='generated',title=None,b
     db.flush();prune_versions(db,issue);return item
 
 
-def prepare_compute_notes_revision(issue, previous, notes):
+def prepare_chart_notes_revision(issue, previous, notes):
     """Render edited footer notes into a new immutable image for this edition."""
     from .ai_compute_charts import gpu_chart, token_chart
 
@@ -92,7 +92,8 @@ def prepare_compute_notes_revision(issue, previous, notes):
     if len(images) != 1:
         raise ValueError('本版图表不完整，请重新生成稿件后修改注释')
     source_image = artifact_path(issue, previous, images[0])
-    source = source_image.parent / 'ai-compute-source.json'
+    source_name = 'liquidity-snapshot.json' if issue.category == 'liquidity' else 'ai-compute-source.json'
+    source = source_image.parent / source_name
     if not source.is_file():
         raise ValueError('本版缺少原始图表数据，请重新生成稿件后修改注释')
     rows = json.loads(source.read_text(encoding='utf-8'))
@@ -106,8 +107,12 @@ def prepare_compute_notes_revision(issue, previous, notes):
         elif issue.category == 'gpu_rental':
             actual = previous.payload.get('data_date') or ''
             image = gpu_chart([row for row in rows if not actual or row['date'] <= actual], folder, notes=notes)
+        elif issue.category == 'liquidity':
+            from .engines.liquidity.render import render_poster
+            logo = Path(__file__).parent / 'engines/liquidity/assets/plus-original.png'
+            image, _, _ = render_poster(rows, folder, logo_path=logo, notes=notes)
         else:
-            raise ValueError('仅 AI 算力快讯需要重绘图内注释')
+            raise ValueError('该栏目暂不支持重绘图内注释')
         payload = dict(previous.payload)
         payload['fixed_notes'] = payload['chart_notes'] = notes
         payload['artifact_dir'] = folder.relative_to(root).as_posix()

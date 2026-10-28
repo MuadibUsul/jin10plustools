@@ -1,6 +1,7 @@
 """Team-scoped Skill library: list, versioned overrides and admin-only writes."""
 from __future__ import annotations
 
+from app.config import get_settings
 from tests.conftest import login
 
 
@@ -8,11 +9,11 @@ def test_standalone_skill_pages_are_routed(client):
     assert client.get("/skills/").status_code == 200
     assert "SKILL LIBRARY" in client.get("/skills/").text
     assert client.get("/skills/volume/").status_code == 200
-    assert client.get("/skills/news.event-extraction/").status_code == 200
+    assert client.get("/skills/news.event-extraction/").status_code == 404
     assert client.get("/skills/unknown/").status_code == 404
 
 
-def test_every_member_can_read_five_installed_skills(client):
+def test_every_member_sees_only_production_text_skills(client):
     for email in ("viewer@plus.test", "editor@plus.test", "admin@plus.test"):
         response = client.get("/api/settings/skills", headers=login(client, email))
         assert response.status_code == 200, response.text
@@ -22,17 +23,26 @@ def test_every_member_can_read_five_installed_skills(client):
         assert all(item["instructions"] and item["bundled_instructions"] == item["instructions"] for item in skills[:5])
         assert skills[0]["skill_id"] == "news.fixed-volume"
         assert skills[0]["group"] == "A股温度计" and skills[3]["group"] == "流动性"
-        research = [item for item in skills if item.get("group") == "研究型 Skill"]
-        assert len(research) == 5 and all(item["editable"] is False for item in research)
-        assert {item["skill_id"] for item in research} == {
-            "news.event-extraction", "news.fact-verification", "news.background-research",
-            "finance.causal-analysis", "news.quality-review"}
+        assert len(skills) == 7
+        assert all(item["editable"] is True for item in skills)
     detail = client.get("/api/settings/skills/volume", headers=login(client, "viewer@plus.test"))
     assert detail.status_code == 200 and detail.json()["skill"]["category"] == "volume"
     assert len(detail.json()["skill"]["history_samples"]) == 20
     research = client.get("/api/settings/skills/news.event-extraction", headers=login(client, "viewer@plus.test"))
-    assert research.status_code == 200 and research.json()["skill"]["editable"] is False
+    assert research.status_code == 404
     assert client.get("/api/settings/skills/unknown", headers=login(client, "viewer@plus.test")).status_code == 404
+
+
+def test_unused_research_workflow_endpoints_are_removed(client, monkeypatch):
+    monkeypatch.setenv("NEWS_SKILL_OS_ENABLED", "true")
+    get_settings.cache_clear()
+    editor = login(client, "editor@plus.test")
+    for path in ("/api/news-skill-os/fixtures/official/run",
+                 "/api/news-skill-os/workflows/research/runs",
+                 "/api/news-skill-os/events/00000000-0000-0000-0000-000000000001/workflows/research/runs"):
+        assert client.post(path, headers=editor, json={}).status_code in (404, 405)
+    assert client.get("/api/news-skill-os/workflow-runs", headers=editor).status_code == 404
+    get_settings.cache_clear()
 
 
 def test_admin_override_is_versioned_and_can_be_restored(client):

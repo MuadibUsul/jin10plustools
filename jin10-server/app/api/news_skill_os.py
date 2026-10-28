@@ -9,13 +9,9 @@ nothing can be published: there is no CMS/publisher endpoint here.
 from __future__ import annotations
 
 import datetime as dt
-import json
 import logging
 import uuid
 from contextlib import contextmanager
-from dataclasses import asdict
-from importlib.resources import files
-from pathlib import Path
 from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Query
@@ -27,7 +23,6 @@ from app.db.models import BriefConfig
 from app.deps import CurrentUser, DbSession, Editor
 from app.news_skill_os.annotation_ai import analyze as analyze_annotation
 from app.news_skill_os.article_ai import extract as extract_article
-from app.news_skill_os.event_workflow import research_input
 from app.news_skill_os.fresh_ai import analyze as analyze_fresh_link
 from app.news_skill_os.fresh_research import research as research_fresh_link
 from app.news_skill_os.link_ingest import fetch_article
@@ -37,16 +32,13 @@ from app.news_skill_os.models import (
 from app.news_skill_os.store import (
     StoreConflict, StoreError, StoreNotFound, add_draft_revision, append_revision,
     create_draft, create_event, get_draft, get_event, get_event_revision,
-    get_workflow_node, get_workflow_run, list_audit, list_draft_revisions, list_drafts,
+    list_audit, list_draft_revisions, list_drafts,
     now_utc,
-    list_event_revisions, list_events, list_workflow_nodes, list_workflow_runs,
-    record_workflow_run, review_draft, submit_draft,
+    list_event_revisions, list_events, review_draft, submit_draft,
 )
-from app.news_skill_os.workflow import Workflow, WorkflowEngine, WorkflowError
 
 router = APIRouter(prefix="/api/news-skill-os", tags=["news skill os"])
 logger = logging.getLogger(__name__)
-FIXTURES = frozenset({"official", "rumour", "wrong-number"})
 FIXED_BRIEFS = {"volume": "news.fixed-volume", "turnover": "news.fixed-turnover",
                 "valuation": "news.fixed-valuation", "liquidity": "news.fixed-liquidity",
                 "oil_etf": "news.fixed-oil-etf"}
@@ -66,7 +58,7 @@ def _errors():
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except StoreConflict as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    except (StoreError, WorkflowError, ValueError, KeyError, TypeError) as exc:
+    except (StoreError, ValueError, KeyError, TypeError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
@@ -130,7 +122,7 @@ class RevisionCreate(StrictModel):
 class DraftCreate(StrictModel):
     title: str = Field(min_length=1, max_length=300)
     body: str = Field(min_length=1, max_length=100_000)
-    target: Literal["fresh", "annotation", "brief_text", "research"] = "fresh"
+    target: Literal["fresh", "annotation", "brief_text"] = "fresh"
     event_id: uuid.UUID | None = None
     event_revision: int | None = Field(default=None, ge=1)
     skill_id: str | None = Field(default=None, max_length=200)
@@ -149,18 +141,6 @@ class DraftRevisionCreate(StrictModel):
 class DraftReview(StrictModel):
     decision: Literal["approve", "reject"]
     note: str = Field(default="", max_length=2000)
-
-
-class WorkflowRunCreate(StrictModel):
-    fixture: Literal["official", "rumour", "wrong-number"]
-
-
-class EventWorkflowRun(StrictModel):
-    revision: int | None = Field(default=None, ge=1)
-
-
-class RunDraftCreate(StrictModel):
-    target: Literal["fresh", "annotation"] = "fresh"
 
 
 def _iso(value: dt.datetime | None) -> str | None:
@@ -212,33 +192,6 @@ def _draft_revision_out(row) -> dict:
         "reviewed_at": _iso(row.reviewed_at),
         "created_by": str(row.created_by) if row.created_by else None,
         "created_at": _iso(row.created_at),
-    }
-
-
-def _run_out(row, *, detail: bool = False) -> dict:
-    out = {
-        "id": str(row.id), "run_key": row.run_key, "event_id": str(row.event_id) if row.event_id else None,
-        "event_revision": row.event_revision,
-        "workflow_id": row.workflow_id, "workflow_digest": row.workflow_digest,
-        "status": row.status, "input_digest": row.input_digest,
-        "error": row.error, "started_at": _iso(row.started_at),
-        "finished_at": _iso(row.finished_at), "created_at": _iso(row.created_at),
-        "publication_allowed": False,
-    }
-    if detail:
-        out["input"] = row.input
-        out["output"] = row.output
-    return out
-
-
-def _node_out(row) -> dict:
-    return {
-        "id": str(row.id), "run_id": str(row.run_id), "node_id": row.node_id,
-        "skill_id": row.skill_id, "skill_version": row.skill_version, "status": row.status,
-        "input_digest": row.input_digest, "output_digest": row.output_digest,
-        "source_snapshot_hashes": row.source_snapshot_hashes,
-        "duration_ms": row.duration_ms, "attempts": row.attempts, "cached": row.cached,
-        "error": row.error, "output": row.output, "created_at": _iso(row.created_at),
     }
 
 
@@ -470,33 +423,6 @@ def append_event_revision(event_id: uuid.UUID, payload: RevisionCreate, db: DbSe
         return _revision_out(row)
 
 
-@router.post("/events/{event_id}/workflows/research/runs", status_code=201)
-def run_event_research(event_id: uuid.UUID, payload: EventWorkflowRun, db: DbSession, user: Editor):
-    """Run the research DAG over a persisted revision; record only, never publish."""
-    _enabled()
-    with _errors():
-        from app.news_skill_os.manifest import bundled_registry
-
-        event = get_event(db, user.team_id, event_id)
-        if payload.revision is not None:
-            event_revision = get_event_revision(db, user.team_id, event_id, payload.revision)
-        else:
-            revisions = list_event_revisions(db, user.team_id, event_id)
-            if not revisions:
-                raise StoreConflict("事件尚无修订，不能运行工作流")
-            event_revision = revisions[-1]
-        data = research_input(event_revision.snapshot)
-        root = Path(str(files("app.news_skill_os")))
-        registry = bundled_registry()
-        workflow = Workflow.load_yaml(root / "manifests" / "research-workflow.yaml", registry)
-        result = WorkflowEngine(registry).run(workflow, data)
-        run = record_workflow_run(db, team_id=user.team_id, user=user, workflow=workflow,
-                                  payload=data, result=result, event_id=event.id,
-                                  event_revision=event_revision.number)
-        return {"run": _run_out(run, detail=True), "result": asdict(result),
-                "publication_allowed": False, "human_approval_required": True}
-
-
 @router.get("/drafts")
 def drafts(db: DbSession, user: CurrentUser, event_id: uuid.UUID | None = None,
            limit: int = Query(50, ge=1, le=100), offset: int = Query(0, ge=0)):
@@ -565,97 +491,6 @@ def audit_route(db: DbSession, user: CurrentUser, entity_type: str | None = None
             "action": row.action, "revision": row.revision, "actor_name": row.actor_name,
             "reason": row.reason, "details": row.details, "created_at": _iso(row.created_at),
         } for row in rows]}
-
-
-@router.get("/workflow-runs")
-def workflow_runs(db: DbSession, user: CurrentUser, limit: int = Query(50, ge=1, le=100),
-                  offset: int = Query(0, ge=0)):
-    _enabled()
-    with _errors():
-        return {"items": [_run_out(row) for row in list_workflow_runs(
-            db, user.team_id, limit=limit, offset=offset)]}
-
-
-@router.get("/workflow-runs/{run_id}")
-def workflow_run_detail(run_id: uuid.UUID, db: DbSession, user: CurrentUser):
-    _enabled()
-    with _errors():
-        run = get_workflow_run(db, user.team_id, run_id)
-        return {"run": _run_out(run, detail=True),
-                "nodes": [_node_out(row) for row in list_workflow_nodes(db, user.team_id, run_id)]}
-
-
-@router.post("/workflow-runs/{run_id}/drafts", status_code=201)
-def draft_from_run(run_id: uuid.UUID, payload: RunDraftCreate, db: DbSession, user: Editor):
-    """Materialise a reviewable draft from a persisted analysis node; never publish."""
-    _enabled()
-    with _errors():
-        run = get_workflow_run(db, user.team_id, run_id)
-        if run.status != "succeeded":
-            raise StoreConflict("只有成功完成的工作流才能生成草稿")
-        if run.event_id is None or run.event_revision is None:
-            raise StoreError("该运行未绑定事件修订，不能生成草稿")
-        analysis = (run.output or {}).get("analysis")
-        if not isinstance(analysis, dict):
-            raise StoreError("工作流输出中没有分析节点结果")
-        node = get_workflow_node(db, user.team_id, run.id, "analysis")
-        event = get_event(db, user.team_id, run.event_id)
-        if payload.target == "fresh":
-            generated = analysis.get("draft") or {}
-            title, body = generated.get("title", ""), generated.get("body", "")
-        else:
-            sections = analysis.get("sections") or {}
-            labels = ("前因", "后果", "补充说明")
-            if any(not isinstance(sections.get(label), str) or not sections[label].strip()
-                   for label in labels):
-                raise StoreError("三段分析不完整，不能生成注解草稿")
-            title = f"{event.title}·注解"[:300]
-            body = "\n\n".join(f"【{label}】\n{sections[label].strip()}" for label in labels)
-        draft = create_draft(
-            db, team_id=user.team_id, user=user, title=title, body=body, target=payload.target,
-            event_id=run.event_id, event_revision=run.event_revision,
-            skill_id=node.skill_id, skill_version=node.skill_version,
-            payload={"workflow_run_id": str(run.id), "node_id": node.node_id,
-                     "claim_ids": analysis.get("claim_ids", []),
-                     "evidence_ids": analysis.get("evidence_ids", []),
-                     "confidence": analysis.get("confidence"),
-                     "unresolved": analysis.get("unresolved", [])},
-        )
-        return _draft_out(draft)
-
-
-@router.post("/workflows/research/runs", status_code=201)
-def run_research_workflow(payload: WorkflowRunCreate, db: DbSession, user: Editor):
-    """Run a bundled offline fixture and persist the DAG record; never publish."""
-    _enabled()
-    with _errors():
-        from app.news_skill_os.manifest import bundled_registry
-
-        root = Path(str(files("app.news_skill_os")))
-        data = json.loads((root / "fixtures" / f"{payload.fixture}.json").read_text(encoding="utf-8"))
-        registry = bundled_registry()
-        workflow = Workflow.load_yaml(root / "manifests" / "research-workflow.yaml", registry)
-        result = WorkflowEngine(registry).run(workflow, data)
-        run = record_workflow_run(db, team_id=user.team_id, user=user, workflow=workflow,
-                                  payload=data, result=result)
-        return {"run": _run_out(run, detail=True), "result": asdict(result),
-                "publication_allowed": False, "human_approval_required": True}
-
-
-@router.post("/fixtures/{name}/run")
-def run_fixture(name: str, user: Editor):
-    _enabled()
-    if name not in FIXTURES:
-        raise HTTPException(status_code=404, detail="样例不存在")
-    from app.news_skill_os.manifest import bundled_registry
-
-    root = Path(str(files("app.news_skill_os")))
-    payload = json.loads((root / "fixtures" / f"{name}.json").read_text(encoding="utf-8"))
-    registry = bundled_registry()
-    workflow = Workflow.load_yaml(root / "manifests" / "research-workflow.yaml", registry)
-    result = WorkflowEngine(registry).run(workflow, payload)
-    return {"result": asdict(result), "publication_allowed": False,
-            "human_approval_required": True, "requested_by": str(user.id)}
 
 
 @router.post("/fixed-briefs/{category}/preview")

@@ -134,8 +134,7 @@ def bundled_registry() -> SkillRegistry:
     directory = Path(str(files("app.news_skill_os").joinpath("manifests")))
     lock = json.loads(files("app.news_skill_os").joinpath("manifest.lock.json").read_text(encoding="utf-8"))
     seen: set[str] = set()
-    for name in ("event-extraction", "fact-verification", "background-research",
-                 "causal-annotation", "quality-review", "fixed-volume", "fixed-turnover",
+    for name in ("fixed-volume", "fixed-turnover",
                  "fixed-valuation", "fixed-liquidity", "fixed-oil-etf"):
         registered = registry.register_yaml(directory / f"{name}.yaml")
         key = f"{registered.key[0]}@{registered.key[1]}"

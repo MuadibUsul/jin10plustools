@@ -1,4 +1,4 @@
-"""Team-scoped persistence for News Skill OS facts, drafts and workflow runs.
+"""Team-scoped persistence for news facts and drafts.
 
 This module is deliberately separate from the fixed-brief tables and workers.
 Every public function requires a team_id from the authenticated user; callers
@@ -19,14 +19,13 @@ from sqlalchemy.orm import Session
 from app.db.models import (
     NewsAuditEvent, NewsDraft, NewsDraftRevision, NewsEvent, NewsEventAnalysis,
     NewsEventClaim, NewsEventClaimEvidence, NewsEventEvidence, NewsEventRevision,
-    NewsSkillVersion, NewsWorkflowNode, NewsWorkflowRun,
+    NewsSkillVersion,
 )
 from app.news_skill_os.models import (
     Analysis, ArtifactRevision, AuditEvent, Claim, ClaimEvidenceLink, Draft, Evidence,
     NewsEvent as DomainEvent, RevisionConflict, Source, validate_revision,
     validate_revision_sequence,
 )
-from app.news_skill_os.workflow import RunResult, Workflow, digest as workflow_digest
 
 
 class StoreError(ValueError):
@@ -41,7 +40,7 @@ class StoreConflict(StoreError):
     """The object exists but the request conflicts with current state."""
 
 
-DRAFT_TARGETS = frozenset({"fresh", "annotation", "brief_text", "research"})
+DRAFT_TARGETS = frozenset({"fresh", "annotation", "brief_text"})
 DRAFT_STATUSES = frozenset({"draft", "pending_review", "approved", "rejected", "archived"})
 
 
@@ -455,99 +454,6 @@ def review_draft(db: Session, *, draft: NewsDraft, user, decision: str, note: st
           details={"publication_allowed": False})
     db.flush()
     return draft
-
-
-def workflow_signature(workflow: Workflow) -> str:
-    return workflow_digest({
-        "id": workflow.id,
-        "input_schema": workflow.input_schema,
-        "order": list(workflow.order),
-        "nodes": [
-            {"id": node.id, "skill_id": node.skill_id, "skill_version": node.skill_version,
-             "depends_on": list(node.depends_on), "bindings": node.bindings,
-             "review_gate": node.review_gate}
-            for node in workflow.nodes
-        ],
-    })
-
-
-def record_workflow_run(db: Session, *, team_id: uuid.UUID, user, workflow: Workflow,
-                        payload: Mapping[str, Any], result: RunResult,
-                        event_id: uuid.UUID | None = None,
-                        event_revision: int | None = None) -> NewsWorkflowRun:
-    existing = db.scalar(select(NewsWorkflowRun).where(NewsWorkflowRun.run_key == result.run_id))
-    if existing is not None:
-        if existing.team_id != team_id:
-            raise StoreConflict("运行记录已被其他团队占用")
-        return existing
-    if event_id is not None:
-        get_event(db, team_id, event_id)
-        if event_revision is not None:
-            get_event_revision(db, team_id, event_id, event_revision)
-    nodes = {node.id: node for node in workflow.nodes}
-    for record in result.records:
-        node = nodes[record.node_id]
-        ensure_skill_version(db, team_id=team_id, user=user, skill_id=node.skill_id,
-                             version=node.skill_version)
-    stamp = now_utc()
-    total_ms = sum(record.duration_ms for record in result.records)
-    started = stamp - dt.timedelta(milliseconds=total_ms)
-    run = NewsWorkflowRun(
-        id=uuid.uuid4(), run_key=result.run_id, team_id=team_id, event_id=event_id,
-        event_revision=event_revision if event_id is not None else None,
-        workflow_id=workflow.id, workflow_digest=workflow_signature(workflow),
-        status=result.status, input=dict(payload), input_digest=sha256_json(payload),
-        output=dict(result.outputs), error=None, started_at=started, finished_at=stamp,
-        created_by=getattr(user, "id", None), created_at=stamp,
-    )
-    db.add(run)
-    db.flush()
-    for record in result.records:
-        node = nodes[record.node_id]
-        db.add(NewsWorkflowNode(
-            team_id=team_id, run_id=run.id, node_id=record.node_id, skill_id=node.skill_id,
-            skill_version=record.skill_version, status=record.status,
-            input_digest=record.input_digest, output_digest=record.output_digest,
-            source_snapshot_hashes=list(record.source_snapshot_hashes),
-            duration_ms=record.duration_ms, attempts=record.attempts, cached=record.cached,
-            error=record.error, output=result.outputs.get(record.node_id), created_at=stamp,
-        ))
-    audit(db, team_id=team_id, user=user, entity_type="workflow_run", entity_id=run.id,
-          action="workflow.run", details={"workflow_id": workflow.id, "status": result.status,
-                                          "publication_allowed": False})
-    db.flush()
-    return run
-
-
-def get_workflow_run(db: Session, team_id: uuid.UUID, run_id: uuid.UUID) -> NewsWorkflowRun:
-    row = db.scalar(select(NewsWorkflowRun).where(
-        NewsWorkflowRun.id == run_id, NewsWorkflowRun.team_id == team_id))
-    if row is None:
-        raise StoreNotFound("工作流运行不存在")
-    return row
-
-
-def list_workflow_nodes(db: Session, team_id: uuid.UUID, run_id: uuid.UUID) -> list[NewsWorkflowNode]:
-    return list(db.scalars(select(NewsWorkflowNode).where(
-        NewsWorkflowNode.team_id == team_id, NewsWorkflowNode.run_id == run_id)
-        .order_by(NewsWorkflowNode.created_at, NewsWorkflowNode.node_id)))
-
-
-def get_workflow_node(db: Session, team_id: uuid.UUID, run_id: uuid.UUID,
-                      node_id: str) -> NewsWorkflowNode:
-    row = db.scalar(select(NewsWorkflowNode).where(
-        NewsWorkflowNode.team_id == team_id, NewsWorkflowNode.run_id == run_id,
-        NewsWorkflowNode.node_id == node_id))
-    if row is None:
-        raise StoreNotFound("工作流节点记录不存在")
-    return row
-
-
-def list_workflow_runs(db: Session, team_id: uuid.UUID, *, limit: int = 50,
-                       offset: int = 0) -> list[NewsWorkflowRun]:
-    return list(db.scalars(select(NewsWorkflowRun).where(NewsWorkflowRun.team_id == team_id)
-                           .order_by(NewsWorkflowRun.created_at.desc(), NewsWorkflowRun.id)
-                           .limit(max(1, min(limit, 100))).offset(max(0, offset))))
 
 
 def list_audit(db: Session, team_id: uuid.UUID, *, entity_type: str | None = None,

@@ -42,6 +42,8 @@ def test_scope_is_only_editor_generate_for_two_compute_briefs():
 
 def test_click_capture_persists_visible_precision_and_generates_both_briefs(
         db_factory, seed, monkeypatch, tmp_path):
+    monkeypatch.setattr(worker, 'datetime',
+                        SimpleNamespace(now=lambda zone: datetime(2026, 10, 22, tzinfo=zone)))
     team_id = seed['editor'].team_id
     with db_factory() as db:
         import_workbooks(db, team_id, DOCS/'【定时定点】Token支出价格指数.xlsx',

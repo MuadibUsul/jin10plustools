@@ -1,4 +1,4 @@
-"""Team-managed overrides for the five fixed-brief text Skills.
+"""Team-managed overrides for fixed-brief text Skills.
 
 The code always carries a bundled SKILL.md. A team may enable/disable a skill
 and replace its instructions; the effective text is used by the optional
@@ -37,22 +37,6 @@ CATEGORY_GROUPS = {
     "token_cost": "AI算力",
     "gpu_rental": "AI算力",
 }
-RESEARCH_LABELS = {
-    "news.event-extraction": "事件提取",
-    "news.fact-verification": "事实核查",
-    "news.background-research": "背景研究",
-    "finance.causal-analysis": "深度注解",
-    "news.quality-review": "质量审核",
-}
-RESEARCH_DESCRIPTIONS = {
-    "news.event-extraction": "从输入稿件中提取事件、来源与原子断言。",
-    "news.fact-verification": "按来源链和原始出处核验断言，拒绝冲突数字。",
-    "news.background-research": "只选择与已核实断言关联的背景材料。",
-    "finance.causal-analysis": "依据已核实事实生成前因、后果和补充说明。",
-    "news.quality-review": "检查事实依赖、三段结构和未核实内容，阻断不合格草稿。",
-}
-
-
 class SkillNotFound(ValueError):
     pass
 
@@ -166,58 +150,14 @@ def effective(team, category: str, *, include_history: bool = False) -> dict[str
     return result
 
 
-def research_skills() -> list[dict[str, Any]]:
-    """Runtime research skills are visible but not team-editable text assets."""
-    from app.news_skill_os.manifest import bundled_registry
-
-    fixed = set(SKILL_IDS.values())
-    registry = bundled_registry()
-    items = []
-    for skill_id, version in registry.keys():
-        if skill_id in fixed:
-            continue
-        manifest = registry.get(skill_id, version).manifest
-        items.append({
-            "category": skill_id,
-            "label": RESEARCH_LABELS.get(skill_id, skill_id),
-            "group": "研究型 Skill",
-            "skill_id": skill_id,
-            "version": version,
-            "enabled": True,
-            "editable": False,
-            "kind": "runtime",
-            "customized": False,
-            "instructions": "",
-            "bundled_instructions": "",
-            "description": RESEARCH_DESCRIPTIONS.get(skill_id, manifest.get("description", "")),
-            "digest": registry.get(skill_id, version).digest[:16],
-            "bundled_digest": registry.get(skill_id, version).digest[:16],
-            "samples": 0,
-            "revision": 0,
-            "updated_at": None,
-            "updated_by": None,
-            "updated_by_name": None,
-            "history": [],
-            "model_profile": manifest.get("model_profile"),
-            "allowed_tools": manifest.get("allowed_tools", []),
-            "permissions": manifest.get("permissions", {}),
-            "quality_gates": manifest.get("quality_gates", []),
-            "dependencies": manifest.get("dependencies", []),
-        })
-    return items
-
-
 def get_skill(team, category: str, *, include_history: bool = False) -> dict[str, Any]:
     if category in CATEGORY_ORDER:
         return effective(team, category, include_history=include_history)
-    for item in research_skills():
-        if item["category"] == category:
-            return item
     raise SkillNotFound("Skill 不存在")
 
 
 def list_skills(team) -> list[dict[str, Any]]:
-    return [effective(team, category) for category in CATEGORY_ORDER] + research_skills()
+    return [effective(team, category) for category in CATEGORY_ORDER]
 
 
 def update_skill(db, team, user, category: str, *, revision: int, enabled: bool,

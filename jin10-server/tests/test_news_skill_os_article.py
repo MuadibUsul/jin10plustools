@@ -64,32 +64,3 @@ def test_article_permissions_and_extraction_errors(client, db_factory, monkeypat
     assert response.status_code == 422
     with db_factory() as db:
         assert db.scalars(select(NewsEvent)).all() == []
-
-
-def test_article_chain_reaches_reviewable_draft(client, db_factory, monkeypatch):
-    enable(monkeypatch)
-    monkeypatch.setattr("app.api.news_skill_os.extract_article", lambda *args: {
-        "title": "某公司拟融资1亿美元",
-        "claims": [{"id": "c1", "subject": "某公司", "predicate": "融资金额",
-                    "text": "拟融资1亿美元", "evidence": "拟融资1亿美元", "numeric": None}],
-        "analyses": [
-            {"id": "a1", "section": "前因", "text": "公司公告披露融资计划。", "label": "inference",
-             "claim_ids": ["c1"], "evidence_ids": ["e1"]},
-            {"id": "a2", "section": "后果", "text": "项目将分阶段推进。", "label": "inference",
-             "claim_ids": ["c1"], "evidence_ids": ["e1"]},
-            {"id": "a3", "section": "补充说明", "text": "本条仅依据公司公告。", "label": "inference",
-             "claim_ids": ["c1"], "evidence_ids": ["e1"]},
-        ],
-    })
-    editor = login(client, "editor@plus.test")
-    created = client.post("/api/news-skill-os/events/from-article", headers=editor, json=article_body())
-    assert created.status_code == 201, created.text
-    event_id = created.json()["event"]["id"]
-    run = client.post(f"/api/news-skill-os/events/{event_id}/workflows/research/runs",
-                      headers=editor, json={"revision": 1})
-    assert run.status_code == 201, run.text
-    assert run.json()["run"]["status"] == "succeeded", run.text
-    draft = client.post(f"/api/news-skill-os/workflow-runs/{run.json()['run']['id']}/drafts",
-                        headers=editor, json={"target": "fresh"})
-    assert draft.status_code == 201, draft.text
-    assert draft.json()["status"] == "draft" and draft.json()["publication_allowed"] is False

@@ -8,11 +8,9 @@ function msg(text, error = false) {
 }
 async function safe(action) { try { await action(); } catch (e) { msg(e.message, true); toast(e.message, 'error'); } }
 function badge(item) {
-  if (item.editable === false) return node('span', '只读', 'badge');
   return node('span', item.enabled ? '已启用' : '已停用', `badge ${item.enabled ? 'ready' : 'warning'}`);
 }
 function meta(item) {
-  if (item.editable === false) return `${item.skill_id}@${item.version} · 运行时 Skill · 只读`;
   return `${item.skill_id}@${item.version} · ${item.customized ? '团队规范' : '内置规范'} · ${item.samples} 条历史样本`;
 }
 
@@ -35,9 +33,8 @@ async function renderList() {
       head.append(node('h3', item.label), badge(item));
       card.append(head, node('p', meta(item), 'skill-id'));
       if (item.description) card.append(node('p', item.description, 'skill-description'));
-      const detail = item.editable === false ? '服务端内置研究步骤，可通过独立工作流接口运行'
-        : item.updated_at ? `最后修改 ${displayTime(item.updated_at)}${item.updated_by_name ? ` · ${item.updated_by_name}` : ''}`
-          : '尚未创建团队版本，使用内置规范';
+      const detail = item.updated_at ? `最后修改 ${displayTime(item.updated_at)}${item.updated_by_name ? ` · ${item.updated_by_name}` : ''}`
+        : '尚未创建团队版本，使用内置规范';
       card.append(node('p', detail, 'skill-meta'));
       grid.append(card);
     }
@@ -70,19 +67,6 @@ async function renderDetail(category) {
   head.append(node('h2', 'Skill 规范'), badge(item));
   card.append(head, node('p', meta(item), 'skill-id'));
   if (item.description) card.append(node('p', item.description, 'muted'));
-  if (item.editable === false) {
-    const info = node('div', undefined, 'skill-runtime-info');
-    info.append(node('p', `模型配置：${item.model_profile || '—'}`, 'muted'));
-    info.append(node('p', `允许工具：${(item.allowed_tools || []).join('、') || '无'}`, 'muted'));
-    const permissions = Object.entries(item.permissions || {}).map(([key, enabled]) => `${key}=${enabled ? '允许' : '拒绝'}`).join('，') || '无';
-    info.append(node('p', `权限：${permissions}`, 'muted'));
-    info.append(node('p', `质量门槛：${(item.quality_gates || []).join('、') || '无'}`, 'muted'));
-    info.append(node('p', `依赖：${(item.dependencies || []).join('、') || '无'}`, 'muted'));
-    card.append(info, node('p', '研究型 Skill 是可执行的服务端步骤，目前可通过独立研究工作流接口运行，尚未接入 Plus新鲜事的“分析链接”按钮。此处只读。', 'skill-readonly-note'));
-    host.append(card);
-    msg('研究型 Skill 为只读。');
-    return;
-  }
   const area = node('textarea', undefined, 'skill-instructions');
   area.value = item.instructions; area.rows = 16; area.maxLength = 8000;
   area.readOnly = !canAdmin;

@@ -1,2 +1,2 @@
-"""Isolated, opt-in research workflow for news drafts and evidence review."""
+"""News event, evidence and review services for Plus editorial workbenches."""
 

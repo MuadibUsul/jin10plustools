@@ -1,4 +1,4 @@
-"""Persistent, team-scoped News Skill OS facts, drafts and workflow runs.
+"""Persistent, team-scoped News Skill OS facts and drafts.
 
 No network, no paid model and no publication path is exercised here.
 """
@@ -197,59 +197,6 @@ def test_draft_revision_review_and_audit(client, db_factory, monkeypatch):
         "title": "无 Skill", "body": "正文", "skill_id": "news.fixed-volume",
         "skill_version": "9.9.9",
     }).status_code == 422
-
-
-def test_event_workflow_uses_persisted_fact_chain(client, db_factory, monkeypatch):
-    enable(monkeypatch)
-    editor = login(client, "editor@plus.test")
-    viewer = login(client, "viewer@plus.test")
-    event_id = create_event(client, editor)["id"]
-    assert client.post(f"/api/news-skill-os/events/{event_id}/revisions", headers=editor,
-                       json=revision_body()).status_code == 201
-    response = client.post(f"/api/news-skill-os/events/{event_id}/workflows/research/runs",
-                           headers=editor, json={"revision": 1})
-    assert response.status_code == 201, response.text
-    body = response.json()
-    assert body["run"]["event_id"] == event_id
-    assert body["run"]["event_revision"] == 1
-    assert body["run"]["status"] == "succeeded"
-    assert body["publication_allowed"] is False
-    assert body["result"]["outputs"]["analysis"]["sections"]["前因"]
-    detail = client.get(f"/api/news-skill-os/workflow-runs/{body['run']['id']}", headers=viewer)
-    assert detail.status_code == 200 and detail.json()["run"]["event_revision"] == 1
-    empty = create_event(client, editor, event_key="empty-event")["id"]
-    assert client.post(f"/api/news-skill-os/events/{empty}/workflows/research/runs",
-                       headers=editor, json={}).status_code == 409
-    draft = client.post(f"/api/news-skill-os/workflow-runs/{body['run']['id']}/drafts",
-                        headers=editor, json={"target": "annotation"})
-    assert draft.status_code == 201, draft.text
-    generated = draft.json()
-    assert generated["event_id"] == event_id and generated["target"] == "annotation"
-    assert generated["skill_id"] == "finance.causal-analysis"
-    assert "【前因】" in generated["body"] and generated["status"] == "draft"
-    assert generated["publication_allowed"] is False
-    assert client.post(f"/api/news-skill-os/workflow-runs/{body['run']['id']}/drafts",
-                       headers=login(client, "viewer@plus.test"),
-                       json={"target": "fresh"}).status_code == 403
-
-
-def test_workflow_run_is_persisted_without_publishing(client, db_factory, monkeypatch):
-    enable(monkeypatch)
-    editor = login(client, "editor@plus.test")
-    before = counts(db_factory)
-    response = client.post("/api/news-skill-os/workflows/research/runs", headers=editor,
-                           json={"fixture": "official"})
-    assert response.status_code == 201, response.text
-    payload = response.json()
-    assert payload["run"]["status"] == "succeeded"
-    assert payload["publication_allowed"] is False
-    after = counts(db_factory)
-    assert after["NewsWorkflowRun"] == 1 and after["NewsWorkflowNode"] >= 4
-    assert after["NewsSkillVersion"] >= 4
-    assert after["Material"] == before["Material"]
-    detail = client.get(f"/api/news-skill-os/workflow-runs/{payload['run']['id']}", headers=editor)
-    assert detail.status_code == 200 and len(detail.json()["nodes"]) >= 4
-    assert client.get("/api/news-skill-os/workflow-runs", headers=login(client, "viewer@plus.test")).status_code == 200
 
 
 def test_export_registers_news_tables_and_keeps_team_scope(client, db_factory, monkeypatch):

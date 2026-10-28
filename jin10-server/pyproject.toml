@@ -41,7 +41,7 @@ include = ["app*"]
 
 [tool.setuptools.package-data]
 "app.briefs" = ["seed/*.json", "assets/*", "engines/*/assets/*", "samples/*/*"]
-"app.news_skill_os" = ["*.json", "manifests/*.yaml", "fixtures/*.json"]
+"app.news_skill_os" = ["*.json", "manifests/*.yaml"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

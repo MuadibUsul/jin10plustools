@@ -24,6 +24,18 @@ def _normal(text: str) -> str:
     return re.sub(r"\s+", "", text)
 
 
+def _source_span(source: str, quote: str) -> str:
+    """Return the original contiguous source span, allowing whitespace differences."""
+    positions = [index for index, char in enumerate(source) if not char.isspace()]
+    needle = _normal(quote)
+    if not needle:
+        return ""
+    offset = _normal(source).find(needle)
+    if offset < 0:
+        return ""
+    return source[positions[offset]:positions[offset + len(needle) - 1] + 1]
+
+
 def _numbers(text: str) -> set[str]:
     return {item.replace(",", "") for item in re.findall(r"\d[\d,]*(?:\.\d+)?", text)}
 
@@ -36,6 +48,48 @@ def _list(value, limit: int = 20) -> list[str]:
     if not isinstance(value, list):
         return []
     return [_text(item, 1000) for item in value[:limit] if _text(item, 1000)]
+
+
+def _repair_evidence(ai: dict, article_text: str, missing: list[dict]) -> dict[str, str]:
+    """Ask for literal source spans only when the first response paraphrased them.
+
+    The caller still verifies every returned span against the fetched article.
+    An empty or invented quote cannot become stored evidence.
+    """
+    system = (
+        "你是原文定位器，只输出 JSON：{\"quotes\":{\"序号\":\"原文片段\"}}。"
+        "根据每条断言，从提供的网页正文中逐字复制一段连续原文作为证据，最多500字。"
+        "保留原文的大小写、标点和数字；不要改写、拼接或补充。"
+        "如果正文没有直接支持该断言的连续片段，该序号的值填空字符串。"
+    )
+    user = json.dumps({"article": article_text[:60000], "claims": missing}, ensure_ascii=False)
+    payload = {
+        "model": ai["model"], "stream": False, "max_tokens": 1800, "temperature": 0,
+        "response_format": {"type": "json_object"},
+        "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
+    }
+    if ai.get("provider") == "deepseek":
+        payload["thinking"] = {"type": "disabled"}
+    try:
+        request = Request(ai["base_url"].rstrip("/") + "/chat/completions",
+                          data=json.dumps(payload).encode("utf-8"),
+                          headers={"Authorization": "Bearer " + ai["key"],
+                                   "Content-Type": "application/json"}, method="POST")
+        with urlopen(request, timeout=90) as response:
+            raw = response.read(65537)
+        if len(raw) > 65536:
+            return {}
+        data = json.loads(raw)
+        choice = data["choices"][0]
+        if choice.get("finish_reason") != "stop":
+            return {}
+        answer = parse_answer(choice.get("message", {}).get("content", ""))
+    except (HTTPError, URLError, TimeoutError, OSError, ValueError, KeyError, IndexError, TypeError):
+        return {}
+    quotes = answer.get("quotes") if isinstance(answer, dict) else None
+    if not isinstance(quotes, dict):
+        return {}
+    return {str(key): _text(value, 500) for key, value in quotes.items()}
 
 
 def analyze(team, article: dict, focus: str = "") -> dict:
@@ -108,15 +162,31 @@ def analyze(team, article: dict, focus: str = "") -> dict:
         raise FreshAIError("新闻链接中没有提取到可核验断言")
     article_text = article["text"]
     claims = []
-    seen = set()
+    candidates = []
+    missing = []
     for item in raw_claims[:12]:
         if not isinstance(item, dict):
             continue
-        subject, predicate, text, evidence = (_text(item.get(key), 500) for key in
-                                               ("subject", "predicate", "text", "evidence"))
-        if not (subject and predicate and text and evidence):
+        subject, predicate, claim_text, evidence = (_text(item.get(key), 500) for key in
+                                                    ("subject", "predicate", "text", "evidence"))
+        if not (subject and predicate and claim_text and evidence):
             continue
+        index = len(candidates)
+        candidates.append([subject, predicate, claim_text, evidence])
         if _normal(evidence) not in _normal(article_text):
+            missing.append({"index": index, "claim": claim_text, "previous_quote": evidence})
+    if missing:
+        replacements = _repair_evidence(ai, article_text, missing)
+        for item in missing:
+            index = item["index"]
+            replacement = replacements.get(str(index), "")
+            source_quote = _source_span(article_text, replacement)
+            if source_quote:
+                candidates[index][3] = source_quote
+    seen = set()
+    for subject, predicate, text, evidence in candidates:
+        evidence = _source_span(article_text, evidence)
+        if not evidence:
             raise FreshAIError("AI 断言的原文证据在新闻页面中不存在")
         if not _numbers(text) <= _numbers(evidence):
             raise FreshAIError("AI 断言包含原文证据中没有的数字")

@@ -253,6 +253,8 @@ def gpu_rental(day, out, state, refresh=False):
     previous = next((row for row in complete if row['date'] == baseline_day), None)
     public = {key: _public_week(latest, key) for key in ('a100', 'h100', 'b200')}
     public_mode = all(public.values())
+    history_week = {key for key, reading in public.items()
+                    if reading and reading.get('week_change_source') == 'visible_history'}
     entered = {key: _manual_reading(latest, key) for key in ('a100', 'h100', 'b200')}
     manual_mode = all(entered.values())
     manual_week = manual_mode and all(entered[key].get('week_change_pct') is not None for key in entered)
@@ -270,7 +272,12 @@ def gpu_rental(day, out, state, refresh=False):
     if actual_day != day:
         warnings.append(f"使用最新可用完整三卡日 {actual_day}，目标数据日 {day} 尚无更新")
     if public_mode:
-        warnings.append('七日变化取自官网公开卡片的一位小数展示值，未用两位价格反推精确涨跌幅')
+        if history_week:
+            warnings.append('部分七日变化按官网可见历史价格计算并保留一位小数；历史价格经网页舍入，结果不是指数的精确涨跌幅')
+            if len(history_week) < 3:
+                warnings.append('其余七日变化取自官网公开卡片的一位小数展示值')
+        else:
+            warnings.append('七日变化取自官网公开卡片的一位小数展示值，未用两位价格反推精确涨跌幅')
     elif manual_mode:
         warnings.append('本期三卡价格由编辑人工录入；生成前请核对来源和数字')
         if not manual_week and not previous:
@@ -286,7 +293,7 @@ def gpu_rental(day, out, state, refresh=False):
         body += '。'
         for label, key in (('B200', 'b200'), ('H100', 'h100'), ('A100', 'a100')):
             change = changes[key]
-            origin = '官网展示' if public_mode else '人工录入'
+            origin = ('依据官网历史价格计算' if key in history_week else '官网展示') if public_mode else '人工录入'
             body += f'{label}{origin}的七日变化为{_direction(change)}{abs(Decimal(change))}%；'
         body = body.rstrip('；') + '。'
     elif previous:
@@ -326,14 +333,17 @@ def gpu_rental(day, out, state, refresh=False):
             'b200_peak_date': peaks['b200']['date'], 'b200_peak_relation': b200_peak_relation,
             'b200_gap_pct': b200_gap_pct,
             'source': '编辑人工录入' if manual_mode else 'Silicon Data A100/H100/B200 NeoCloud',
-            'weekly_source': 'public_visible_summary' if public_mode else 'manual_entry' if manual_week else 'calculated_from_seven_day_baseline',
+            'weekly_source': ('public_visible_history_mixed' if history_week else 'public_visible_summary') if public_mode else 'manual_entry' if manual_week else 'calculated_from_seven_day_baseline',
             'source_note': (latest.get('manual_display') or {}).get('source_note', '') if manual_mode else '',
         },
         'process_details': {
             'sources': [{'label': '编辑人工录入：'+(latest.get('manual_display') or {}).get('source_note', ''), 'url': ''}] if manual_mode else
+                       [{'label': f"{key.upper()} · {actual_day} · " + ('网页历史价格表' if key in history_week else '公开卡片'),
+                         'url': public[key].get('source_url') or f'https://www.silicondata.com/products/silicon-index/{key}'}
+                        for key in ('a100', 'h100', 'b200')] if public_mode else
                        [{'label': 'Silicon Data GPU Index', 'url': 'https://www.silicondata.com/products/silicon-index'}],
             'inputs': [{'label': 'A100/H100/B200 租赁价格', 'value': f"{prices['a100']}/{prices['h100']}/{prices['b200']}", 'unit': '美元/GPU/小时'}],
-            'calculations': (['三卡同日公开页面展示价格及七日变化；按页面一位小数精度保留。',
+            'calculations': (['三卡价格来自同一目标数据日；已更新到更晚日期的卡片改取网页可见历史行，七日变化由该日及七个自然日前的历史价格计算，保留一位小数。' if history_week else '三卡同日公开页面展示价格及七日变化；按页面一位小数精度保留。',
                               '历史峰值按已收录数据计算，等于高点记为并列。'] if public_mode else
                              ['本期三卡价格使用编辑人工录入值；七日变化优先使用人工录入值，缺失时按七日前记录计算。',
                               '历史峰值按已收录数据计算，等于高点记为并列。'] if manual_mode else

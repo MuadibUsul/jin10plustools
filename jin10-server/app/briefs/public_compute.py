@@ -6,8 +6,8 @@ pages, private endpoints, embedded Next.js data, or chart APIs.
 from __future__ import annotations
 
 import re
-from datetime import date, datetime, timezone
-from decimal import Decimal, InvalidOperation
+from datetime import date, datetime, timedelta, timezone
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from urllib.robotparser import RobotFileParser
 
 import httpx
@@ -54,7 +54,36 @@ def _bounded(client: httpx.Client, url: str, limit: int) -> bytes:
         raise ValueError('来源网页暂时无法访问，请稍后重试') from None
 
 
-def _parse(raw: bytes, metric: str, url: str, today: date) -> dict:
+def _history_prices(tree, metric: str) -> dict[date, Decimal]:
+    """Read the one visible daily price table, rejecting ambiguous rows."""
+    tables = []
+    for table in tree.xpath('//table'):
+        headings = [re.sub(r'\s+', ' ', ''.join(node.itertext())).strip()
+                    for node in table.xpath('./thead/tr/th')]
+        if headings == ['Date', 'Price (USD /hr)']:
+            tables.append(table)
+    if len(tables) != 1:
+        raise ValueError(f'{metric}网页没有唯一的可见历史价格表')
+    prices: dict[date, Decimal] = {}
+    for row in tables[0].xpath('./tbody/tr'):
+        cells = row.xpath('./th|./td')
+        if len(cells) != 2 or cells[0].tag != 'th' or cells[1].tag != 'td':
+            raise ValueError(f'{metric}网页历史价格表结构已变化')
+        label = re.sub(r'\s+', ' ', ''.join(cells[0].itertext())).strip()
+        value = re.sub(r'\s+', ' ', ''.join(cells[1].itertext())).strip()
+        try:
+            day = datetime.strptime(label, '%b %d, %Y').date()
+            price = Decimal(value)
+        except (ValueError, InvalidOperation):
+            raise ValueError(f'{metric}网页历史价格无法核对') from None
+        if day in prices or not price.is_finite() or price <= 0 or price >= 1000000:
+            raise ValueError(f'{metric}网页历史价格重复或无效')
+        prices[day] = price
+    return prices
+
+
+def _parse(raw: bytes, metric: str, url: str, today: date,
+           target_date: date | None = None) -> dict:
     try:
         tree = html.fromstring(raw)
         headings = [' '.join(node.itertext()).strip() for node in tree.xpath('//h1')]
@@ -93,12 +122,31 @@ def _parse(raw: bytes, metric: str, url: str, today: date) -> dict:
             raise ValueError('来源网页涨跌方向无法核对')
         direction = 'flat' if change == 0 else 'up' if arrows else 'down'
         signed = change if direction != 'down' else -change
-        return {'metric': metric, 'date': source_day.isoformat(),
+        reading = {'metric': metric, 'date': source_day.isoformat(),
                 'price': format(price, 'f'),
                 'precision': max(0, -price.as_tuple().exponent),
                 'week_change_pct': format(signed, 'f'),
                 'week_direction': direction, 'source_url': url,
-                'source_status': 'public_summary'}
+                'source_status': 'public_summary', 'week_change_source': 'card'}
+        if target_date is None or target_date == source_day:
+            return reading
+        if source_day < target_date:
+            raise ValueError(f'{metric}公开卡片仅更新到{source_day}，缺少目标数据日{target_date}')
+        history = _history_prices(tree, metric)
+        baseline_day = target_date - timedelta(days=7)
+        if target_date not in history or baseline_day not in history:
+            raise ValueError(f'{metric}网页历史表缺少{target_date}或七日前{baseline_day}的价格')
+        target_price, baseline = history[target_date], history[baseline_day]
+        change = ((target_price / baseline - 1) * 100).quantize(
+            Decimal('0.1'), rounding=ROUND_HALF_UP)
+        return {**reading, 'date': target_date.isoformat(),
+                'price': format(target_price, 'f'),
+                'precision': max(0, -target_price.as_tuple().exponent),
+                'week_change_pct': format(change, 'f'),
+                'week_direction': 'up' if change > 0 else 'down' if change < 0 else 'flat',
+                'source_status': 'public_history', 'week_change_source': 'visible_history',
+                'week_baseline_date': baseline_day.isoformat(),
+                'week_baseline_price': format(baseline, 'f')}
     except (InvalidOperation, UnicodeError, OverflowError, ValueError) as exc:
         if isinstance(exc, ValueError):
             raise
@@ -106,11 +154,14 @@ def _parse(raw: bytes, metric: str, url: str, today: date) -> dict:
 
 
 def fetch_visible(category: str, *, today: date | None = None,
+                  target_date: date | None = None,
                   client: httpx.Client | None = None) -> dict:
     """One robots read and one GET per relevant visible page; never retry."""
     if category not in PAGES:
         raise ValueError('仅AI算力CPI和AI景气度指标支持公开页面读取')
     today = today or datetime.now(timezone.utc).date()
+    if target_date is not None and (category != 'gpu_rental' or target_date > today):
+        raise ValueError('GPU目标数据日无效')
     owned_client = client is None
     if client is None:
         client = httpx.Client(timeout=15, follow_redirects=False,
@@ -126,7 +177,8 @@ def fetch_visible(category: str, *, today: date | None = None,
             url = f'{ORIGIN}/products/silicon-index/{slug}'
             if not parser.can_fetch(USER_AGENT, url):
                 raise ValueError('来源网站robots规则不允许读取该页面')
-            readings.append(_parse(_bounded(client, url, MAX_HTML), metric, url, today))
+            readings.append(_parse(_bounded(client, url, MAX_HTML), metric, url, today,
+                                   target_date=target_date))
         if category == 'gpu_rental' and len({row['date'] for row in readings}) != 1:
             raise ValueError('三张GPU公开卡片的数据日不一致，本次不生成稿件')
         return {'category': category, 'data_date': readings[0]['date'],

@@ -42,8 +42,12 @@ def capture_public_for_job(factory, job_id, out):
         if not public_read_requested(job):
             return None
         category, issue_day, team_id = job.category, job.issue_date, job.team_id
-    capture = fetch_visible(category, today=datetime.now(CHINA).date())
+    target_day = expected_date(category, issue_day) if category == 'gpu_rental' else None
+    capture = fetch_visible(category, today=datetime.now(CHINA).date(),
+                            target_date=target_day)
     source_day = date.fromisoformat(capture['data_date'])
+    if target_day is not None and source_day != target_day:
+        raise ValueError(f'GPU公开数据日{source_day}与目标数据日{target_day}不一致')
     if source_day > issue_day:
         raise ValueError('网页数据日晚于所选生产日，请选择当前生产日后再生成')
     if (datetime.now(CHINA).date() - source_day).days > 7:

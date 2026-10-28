@@ -40,6 +40,36 @@ def test_scope_is_only_editor_generate_for_two_compute_briefs():
     assert not wants('gpu_rental', user=None)
 
 
+def test_gpu_copy_distinguishes_visible_history_change_from_card_change(monkeypatch, tmp_path):
+    readings = [
+        {'metric': 'a100', 'date': '2026-10-27', 'price': '1.56',
+         'week_change_pct': '2.6', 'week_change_source': 'visible_history'},
+        {'metric': 'h100', 'date': '2026-10-27', 'price': '2.89',
+         'week_change_pct': '6.2', 'week_change_source': 'card'},
+        {'metric': 'b200', 'date': '2026-10-27', 'price': '6.47',
+         'week_change_pct': '11.9', 'week_change_source': 'card'},
+    ]
+    rows = [
+        {'date': '2026-10-20', 'a100': Decimal('1.52'), 'h100': Decimal('2.85'),
+         'b200': Decimal('6.14'), 'status': 'workbook', 'public_display': None},
+        {'date': '2026-10-27', 'a100': Decimal('1.56'), 'h100': Decimal('2.89'),
+         'b200': Decimal('6.47'), 'status': 'public_visible_summary',
+         'public_display': {'readings': readings}},
+    ]
+    monkeypatch.setattr(ai_compute, '_rows', lambda kind: rows)
+    monkeypatch.setenv('MANUAL_GENERATION', '1')
+    result = ai_compute.gpu_rental('2026-10-27', tmp_path, None)
+    assert 'A100依据官网历史价格计算的七日变化为上涨2.6%' in result['dynamic_body']
+    assert 'H100官网展示的七日变化为上涨6.2%' in result['dynamic_body']
+    assert result['facts']['weekly_source'] == 'public_visible_history_mixed'
+    assert any('历史价格' in warning for warning in result['warnings'])
+    assert [item['label'] for item in result['process_details']['sources']] == [
+        'A100 · 2026-10-27 · 网页历史价格表',
+        'H100 · 2026-10-27 · 公开卡片',
+        'B200 · 2026-10-27 · 公开卡片',
+    ]
+
+
 def test_click_capture_persists_visible_precision_and_generates_both_briefs(
         db_factory, seed, monkeypatch, tmp_path):
     monkeypatch.setattr(worker, 'datetime',
@@ -55,7 +85,7 @@ def test_click_capture_persists_visible_precision_and_generates_both_briefs(
         ids = {job.category: job.id for job in jobs}
     calls = []
     def mocked_fetch(category, **kwargs):
-        calls.append(category)
+        calls.append((category, kwargs.get('target_date')))
         return capture(category)
     monkeypatch.setattr('app.briefs.public_compute.fetch_visible', mocked_fetch)
     for category in ('token_cost', 'gpu_rental'):
@@ -63,7 +93,7 @@ def test_click_capture_persists_visible_precision_and_generates_both_briefs(
         path.mkdir()
         worker.capture_public_for_job(db_factory, ids[category], path)
         assert (path/'public-compute-read.json').is_file()
-    assert calls == ['token_cost', 'gpu_rental']
+    assert calls == [('token_cost', None), ('gpu_rental', date(2026, 10, 21))]
     with db_factory() as db:
         token = db.scalar(select(AIComputeObservation).where(
             AIComputeObservation.team_id == team_id, AIComputeObservation.kind == 'token')

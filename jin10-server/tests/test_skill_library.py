@@ -9,6 +9,7 @@ def test_standalone_skill_pages_are_routed(client):
     assert client.get("/skills/").status_code == 200
     assert "SKILL LIBRARY" in client.get("/skills/").text
     assert client.get("/skills/volume/").status_code == 200
+    assert client.get("/skills/editorial_quality/").status_code == 200
     assert client.get("/skills/news.event-extraction/").status_code == 404
     assert client.get("/skills/unknown/").status_code == 404
 
@@ -23,11 +24,15 @@ def test_every_member_sees_only_production_text_skills(client):
         assert all(item["instructions"] and item["bundled_instructions"] == item["instructions"] for item in skills[:5])
         assert skills[0]["skill_id"] == "news.fixed-volume"
         assert skills[0]["group"] == "A股温度计" and skills[3]["group"] == "流动性"
-        assert len(skills) == 7
+        assert len(skills) == 8
         assert all(item["editable"] is True for item in skills)
+        assert skills[-1]["category"] == "editorial_quality"
+        assert skills[-1]["group"] == "内容质量" and skills[-1]["samples"] == 0
     detail = client.get("/api/settings/skills/volume", headers=login(client, "viewer@plus.test"))
     assert detail.status_code == 200 and detail.json()["skill"]["category"] == "volume"
     assert len(detail.json()["skill"]["history_samples"]) == 20
+    quality = client.get("/api/settings/skills/editorial_quality", headers=login(client, "viewer@plus.test"))
+    assert quality.status_code == 200 and quality.json()["skill"]["history_samples"] == []
     research = client.get("/api/settings/skills/news.event-extraction", headers=login(client, "viewer@plus.test"))
     assert research.status_code == 404
     assert client.get("/api/settings/skills/unknown", headers=login(client, "viewer@plus.test")).status_code == 404
@@ -70,6 +75,18 @@ def test_admin_override_is_versioned_and_can_be_restored(client):
     skill = restored.json()["skill"]
     assert skill["customized"] is False and skill["instructions"] == skill["bundled_instructions"]
     assert skill["history"][-1]["customized"] is False
+
+
+def test_quality_skill_team_override_is_versioned(client):
+    admin = login(client, "admin@plus.test")
+    response = client.put("/api/settings/skills/editorial_quality", headers=admin, json={
+        "revision": 0, "enabled": True, "instructions": "# 团队文字规范\n保留原始来源。"})
+    assert response.status_code == 200, response.text
+    skill = response.json()["skill"]
+    assert skill["revision"] == 1 and skill["customized"] is True
+    assert skill["history"][0]["digest"] == skill["digest"]
+    detail = client.get("/api/settings/skills/editorial_quality", headers=admin)
+    assert detail.json()["skill"]["instructions"] == "# 团队文字规范\n保留原始来源。"
 
 
 def test_editor_cannot_write_and_other_team_does_not_see_override(client):

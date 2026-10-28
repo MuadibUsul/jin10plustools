@@ -17,6 +17,7 @@ import httpx
 from lxml import etree
 
 from app.services.team_settings import briefs_ai
+from .editorial_quality import prompt_for, review_text
 
 
 class AnnotationAIError(ValueError):
@@ -86,7 +87,7 @@ def analyze(team, flash: str, source_url: str = "") -> dict:
     }, ensure_ascii=False)
     payload = {
         "model": ai["model"], "stream": False, "max_tokens": 2200, "temperature": 0.2,
-        "messages": [{"role": "system", "content": SYSTEM},
+        "messages": [{"role": "system", "content": SYSTEM + prompt_for(team)},
                      {"role": "user", "content": context}],
     }
     if ai.get("provider") == "deepseek":
@@ -129,7 +130,10 @@ def analyze(team, flash: str, source_url: str = "") -> dict:
     title = "Plus注解｜" + re.sub(r"\s+", " ", flash).strip()[:50]
     if search:
         warnings.append(f"已参考 {len(search)} 条公开新闻检索摘要；仍需人工核对一手来源。")
+    quality = review_text(team, target="annotation", title=title, body=body)
+    warnings.extend(quality["issues"])
     return {"title": title, "body": body, "sections": sections,
             "sources": [item["link"] for item in search], "warnings": warnings,
+            "quality_review": quality,
             "char_count": total, "publication_allowed": False,
             "human_approval_required": True}

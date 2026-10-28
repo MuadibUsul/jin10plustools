@@ -50,6 +50,8 @@ def test_literal_evidence_keeps_single_ai_request(monkeypatch):
     result, calls = _run(monkeypatch, [_reply(_analysis(CLAIM))])
     assert result["claims"][0]["evidence"] == CLAIM
     assert len(calls) == 1
+    assert "团队文字质量规范" in calls[0]["messages"][0]["content"]
+    assert result["analysis"]["quality_review"]["status"] == "no_flags"
 
 
 def test_stored_evidence_uses_exact_source_whitespace():

@@ -1,14 +1,15 @@
-"""Team-managed overrides for fixed-brief text Skills.
+"""Team-managed overrides for production text Skills.
 
 The code always carries a bundled SKILL.md. A team may enable/disable a skill
-and replace its instructions; the effective text is used by the optional
-AI wording stage during production in `/briefs/`. Every write keeps
-a small immutable history in the team settings JSON.
+and replace its instructions. Fixed briefs use their text Skills during
+production; the two news workbenches use the editorial quality Skill. Every
+write keeps a small immutable history in the team settings JSON.
 """
 from __future__ import annotations
 
 import hashlib
 import re
+from pathlib import Path
 from typing import Any
 
 from app.db.models import utcnow
@@ -18,7 +19,8 @@ from .skill_ai import SKILL_NAMES, asset_dir, sample_label
 
 MAX_INSTRUCTIONS = 8000
 MAX_HISTORY = 20
-CATEGORY_ORDER = ("volume", "turnover", "valuation", "liquidity", "oil_etf", "token_cost", "gpu_rental")
+CATEGORY_ORDER = ("volume", "turnover", "valuation", "liquidity", "oil_etf", "token_cost", "gpu_rental", "editorial_quality")
+QUALITY_CATEGORY = "editorial_quality"
 SKILL_IDS = {
     "volume": "news.fixed-volume",
     "turnover": "news.fixed-turnover",
@@ -27,6 +29,7 @@ SKILL_IDS = {
     "oil_etf": "news.fixed-oil-etf",
     "token_cost": "news.fixed-token-cost",
     "gpu_rental": "news.fixed-gpu-rental",
+    QUALITY_CATEGORY: "news.editorial-quality",
 }
 CATEGORY_GROUPS = {
     "volume": "A股温度计",
@@ -36,6 +39,7 @@ CATEGORY_GROUPS = {
     "oil_etf": "原油ETF",
     "token_cost": "AI算力",
     "gpu_rental": "AI算力",
+    QUALITY_CATEGORY: "内容质量",
 }
 class SkillNotFound(ValueError):
     pass
@@ -46,6 +50,12 @@ class SkillConflict(ValueError):
 
 
 def _bundled(category: str) -> str:
+    if category == QUALITY_CATEGORY:
+        for base in (Path(__file__).resolve().parents[2], Path(__file__).resolve().parents[3]):
+            path = base / "skills" / "jin10-plus-editorial-quality" / "SKILL.md"
+            if path.is_file():
+                return path.read_text(encoding="utf-8")
+        raise ValueError("文字质量 Skill 规范文件未安装")
     return (asset_dir(category) / "SKILL.md").read_text(encoding="utf-8")
 
 
@@ -68,6 +78,8 @@ def _saved(team) -> dict[str, Any]:
 
 def history_samples(category: str) -> list[dict[str, str]]:
     """Parse dated examples from the bundled reference file."""
+    if category == QUALITY_CATEGORY:
+        return []
     text = (asset_dir(category) / "references" / "history.md").read_text(encoding="utf-8")
     samples = []
     current_date = None
@@ -115,7 +127,7 @@ def effective(team, category: str, *, include_history: bool = False) -> dict[str
     history = list(saved.get("history") or [])
     result = {
         "category": category,
-        "label": CATEGORIES[category],
+        "label": "文字质量检查" if category == QUALITY_CATEGORY else CATEGORIES[category],
         "group": CATEGORY_GROUPS[category],
         "skill_id": SKILL_IDS[category],
         "version": "0.1.0",
@@ -128,9 +140,8 @@ def effective(team, category: str, *, include_history: bool = False) -> dict[str
         "description": _description(instructions),
         "digest": _hash(instructions),
         "bundled_digest": _hash(bundled),
-        "samples": _count_samples(
-            (asset_dir(category) / "references" / "history.md").read_text(encoding="utf-8")
-        ),
+        "samples": 0 if category == QUALITY_CATEGORY else _count_samples(
+            (asset_dir(category) / "references" / "history.md").read_text(encoding="utf-8")),
         "revision": int(saved.get("revision") or 0),
         "updated_at": saved.get("updated_at"),
         "updated_by": saved.get("updated_by"),

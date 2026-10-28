@@ -104,7 +104,7 @@ class _WebFiles(StaticFiles):
 
 # Explicit workspace routes precede the legacy static-file mount.
 _WEB=Path(__file__).parent/'web'
-_SKILL_CATEGORIES=frozenset({'volume','turnover','valuation','liquidity','oil_etf','token_cost','gpu_rental'})
+_SKILL_CATEGORIES=frozenset({'volume','turnover','valuation','liquidity','oil_etf','token_cost','gpu_rental','editorial_quality'})
 
 
 @app.get('/',include_in_schema=False)

@@ -25,6 +25,12 @@ function textSection(host, title, values) {
   host.append(node('h3', title));
   for (const value of list) host.append(node('p', String(value), 'muted'));
 }
+function qualitySummary(host, review) {
+  if (!review) return;
+  const status = review.status === 'disabled' ? '团队已停用'
+    : review.status === 'review' ? '发现需编辑复核的表述' : '未发现预设措辞问题';
+  host.append(node('p', `文字质量检查：${status}。此项不代表事实已核实。`, 'muted'));
+}
 
 async function load() {
   const [eventData, draftData] = await Promise.all([
@@ -79,6 +85,7 @@ function showAnalysis(analysis, eventId) {
   textSection(host, '来源原话', analysis.source_quotes);
   textSection(host, '编辑判断（与信源原话分开）', analysis.judgment);
   textSection(host, '未核实 / 口径提醒', analysis.unverified);
+  qualitySummary(host, analysis.quality_review);
   textSection(host, '其他提醒', analysis.warnings);
   const research = analysis.external_research;
   if (research) {
@@ -161,6 +168,7 @@ function showAnnotationResult(result) {
   openDialog(result.title, '三段注解 · 先人工核对再保存送审');
   const host = $('#news-dialog-content');
   host.append(node('div', result.body, 'news-draft-body'));
+  qualitySummary(host, result.quality_review);
   if (result.warnings?.length) {
     host.append(node('h3', '核对提醒'));
     for (const warning of result.warnings) host.append(node('p', warning, 'warning'));
@@ -182,7 +190,8 @@ function showAnnotationResult(result) {
           title: result.title, body: result.body, target: 'annotation',
           payload: { flash: $('#annotation-text').value.trim(),
                      source_url: $('#annotation-source').value.trim() || null,
-                     sources: result.sources || [], warnings: result.warnings || [] },
+                     sources: result.sources || [], warnings: result.warnings || [],
+                     quality_review: result.quality_review || null },
         }});
         toast('注解草稿已保存，等待人工审核。');
         closeDialog(); await load();

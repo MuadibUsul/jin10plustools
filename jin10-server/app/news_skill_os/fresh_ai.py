@@ -14,6 +14,7 @@ from urllib.request import Request, urlopen
 
 from app.briefs.engines.liquidity.copy_tracks import parse_answer
 from app.services.team_settings import briefs_ai
+from .editorial_quality import prompt_for, review_text
 
 
 class FreshAIError(ValueError):
@@ -116,7 +117,7 @@ def analyze(team, article: dict, focus: str = "") -> dict:
         "\"source_quotes\":[\"...\"],\"judgment\":[\"...\"],\"unverified\":[\"...\"],"
         "\"warnings\":[\"...\"],\"dateline\":\"【城市】\",\"title\":\"...\","
         "\"body\":\"【城市】...\",\"notes\":\"字数：...；未经核实：...；...\"},\"sources\":[\"...\"]}"
-    )
+    ) + prompt_for(team)
     user = json.dumps({
         "link": source_link, "page_title": article.get("title", ""),
         "site": article.get("site", ""), "published_at": article.get("published_at", ""),
@@ -234,4 +235,8 @@ def analyze(team, article: dict, focus: str = "") -> dict:
         },
         "sources": _list(answer.get("sources"), 10) + [source_link],
     }
+    quality = review_text(team, target="fresh", title=title, body=body,
+                          notes=notes, unverified=result["analysis"]["unverified"])
+    result["analysis"]["quality_review"] = quality
+    result["analysis"]["warnings"].extend(quality["issues"])
     return result

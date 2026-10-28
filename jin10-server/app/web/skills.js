@@ -11,7 +11,8 @@ function badge(item) {
   return node('span', item.enabled ? '已启用' : '已停用', `badge ${item.enabled ? 'ready' : 'warning'}`);
 }
 function meta(item) {
-  return `${item.skill_id}@${item.version} · ${item.customized ? '团队规范' : '内置规范'} · ${item.samples} 条历史样本`;
+  const sampleInfo = item.category === 'editorial_quality' ? '适用于新鲜事与注解辅助' : `${item.samples} 条历史样本`;
+  return `${item.skill_id}@${item.version} · ${item.customized ? '团队规范' : '内置规范'} · ${sampleInfo}`;
 }
 
 async function renderList() {
@@ -108,7 +109,8 @@ async function renderDetail(category) {
     card.append(details);
   }
   host.append(card);
-  msg(canAdmin ? '修改会影响后续固定快讯任务的 Skill 文案产出。' : '只读账号可查看 Skill 规范，修改需管理员。');
+  const scope = item.category === 'editorial_quality' ? '后续新鲜事与注解辅助的文字质量检查' : '后续固定快讯任务的 Skill 文案产出';
+  msg(canAdmin ? `修改会影响${scope}。` : '只读账号可查看 Skill 规范，修改需管理员。');
 }
 
 const path = location.pathname.replace(/\/+$/, '');

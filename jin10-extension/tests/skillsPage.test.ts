@@ -22,6 +22,10 @@ const skills = [
     version: '0.1.0', enabled: true, customized: false, instructions: '# 内置', bundled_instructions: '# 内置',
     description: '', digest: 'abc', bundled_digest: 'abc', samples: 20, revision: 0,
     updated_at: null, updated_by: null, updated_by_name: null, history: [] },
+  { category: 'editorial_quality', label: '文字质量检查', group: '内容质量', skill_id: 'news.editorial-quality',
+    version: '0.1.0', enabled: true, customized: false, instructions: '# 清楚写作', bundled_instructions: '# 清楚写作',
+    description: '检查成稿质量', digest: 'def', bundled_digest: 'def', samples: 0, revision: 0,
+    updated_at: null, updated_by: null, updated_by_name: null, history: [] },
 ];
 let api: ReturnType<typeof vi.fn>;
 
@@ -60,10 +64,11 @@ beforeEach(() => {
 describe('standalone Skill library', () => {
   it('renders grouped small cards that link to detail pages', async () => {
     await page(listHtml, '/skills/');
-    await vi.waitFor(() => expect(document.querySelectorAll('.skill-card-link').length).toBe(3));
-    expect(document.querySelectorAll('.skill-group').length).toBe(2);
+    await vi.waitFor(() => expect(document.querySelectorAll('.skill-card-link').length).toBe(4));
+    expect(document.querySelectorAll('.skill-group').length).toBe(3);
     expect($('.skill-card-link').getAttribute('href')).toBe('/skills/volume/');
-    expect($('#skills-status').textContent).toContain('3 项');
+    expect($('#skills-status').textContent).toContain('4 项');
+    expect(document.querySelector('.skill-card-link[href="/skills/editorial_quality/"]')).not.toBeNull();
   });
 
   it('opens a Skill detail page and saves a team override', async () => {

@@ -31,6 +31,8 @@ docker build -f jin10-server/Dockerfile -t plus-api .
 
 根目录及 `deploy/` 中的 Compose 配置都使用这一构建方式。部署脚本为 `deploy/deploy.sh`；现有运行时的增量发布可使用 `deploy/Dockerfile.release`。API 与 brief-worker 必须使用同一发布镜像。升级使用 Alembic 增量迁移，保留生产数据库、存储卷和环境设置。
 
+GitHub Actions 的 **Deploy PLUS** 工作流只允许在 `main` 分支手动触发。首次使用须在仓库 Actions secrets 配置 `PLUS_DEPLOY_SSH_KEY`（具有 `/home/deploy/plus` 与 Docker 权限的 `deploy` 用户私钥）和 `PLUS_DEPLOY_KNOWN_HOSTS`（核对过的服务器 SSH host key 行）。工作流先检查现有 PLUS Compose 项目，构建带提交 SHA 的镜像并备份数据库，然后仅更新 `api` 和 `brief-worker`；不会重建 `db`、共享 Caddy 或其他站点，也不会覆盖服务器的 `.env`、Compose 文件与数据卷。健康检查失败时回退到先前镜像。
+
 ## 生产约束
 
 - 固定快讯由规则取数、计算、制图，再经 Skill 文案阶段。AI 只选择允许的表达，失败自动回退完整规则稿；稿件仍需人工确认。团队正文模板只支持命名占位值，不接受硬编码行情数值或执行代码。

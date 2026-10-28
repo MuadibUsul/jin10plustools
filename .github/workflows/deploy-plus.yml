@@ -1,0 +1,72 @@
+name: Deploy PLUS
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: plus-production-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check deploy credentials
+        env:
+          DEPLOY_KEY: ${{ secrets.PLUS_DEPLOY_SSH_KEY }}
+          DEPLOY_HOST_KEYS: ${{ secrets.PLUS_DEPLOY_KNOWN_HOSTS }}
+        run: |
+          if [ -z "$DEPLOY_KEY" ] || [ -z "$DEPLOY_HOST_KEYS" ]; then
+            echo 'Missing PLUS_DEPLOY_SSH_KEY or PLUS_DEPLOY_KNOWN_HOSTS repository secret.' >&2
+            exit 1
+          fi
+          umask 077
+          mkdir -p "$HOME/.ssh"
+          printf '%s\n' "$DEPLOY_KEY" > "$HOME/.ssh/plus_deploy"
+          printf '%s\n' "$DEPLOY_HOST_KEYS" > "$HOME/.ssh/known_hosts"
+
+      - name: Build browser extension package
+        run: |
+          cd jin10-extension
+          npm ci
+          npm run build
+          python3 - <<'PY'
+          from pathlib import Path
+          from zipfile import ZIP_DEFLATED, ZipFile
+
+          dist = Path('dist')
+          target = Path('../jin10-server/app/web/plus-research-extension.zip')
+          with ZipFile(target, 'w', ZIP_DEFLATED) as archive:
+              for source in sorted(dist.rglob('*')):
+                  if source.is_file():
+                      archive.write(source, source.relative_to(dist))
+          PY
+
+      - name: Package committed PLUS source
+        run: |
+          tar -czf "$RUNNER_TEMP/plus-release-${GITHUB_SHA}.tar.gz" \
+            jin10-server skills .dockerignore
+
+      - name: Deploy only the PLUS API and worker
+        env:
+          SSH_HOST: 104.207.82.85
+          SSH_USER: deploy
+        run: |
+          ssh_options=(-i "$HOME/.ssh/plus_deploy" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            -o ConnectTimeout=10)
+          remote_archive="/tmp/plus-release-${GITHUB_SHA}.tar.gz"
+          scp "${ssh_options[@]}" "$RUNNER_TEMP/plus-release-${GITHUB_SHA}.tar.gz" \
+            "$SSH_USER@$SSH_HOST:$remote_archive"
+          ssh "${ssh_options[@]}" "$SSH_USER@$SSH_HOST" \
+            bash -s -- "$GITHUB_SHA" "$remote_archive" < deploy/actions-release.sh
+
+      - name: Verify public health endpoint
+        run: curl --fail --silent --show-error --retry 5 --retry-delay 3 https://plus.tlines.tech/api/health

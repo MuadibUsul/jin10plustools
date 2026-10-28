@@ -5,6 +5,8 @@ import io
 import json
 from types import SimpleNamespace
 
+import pytest
+
 from app.news_skill_os import annotation_ai
 from app.news_skill_os.editorial_quality import prompt_for, review_text
 
@@ -26,7 +28,7 @@ def test_quality_skill_override_and_advisory_review():
     }
 
 
-def test_annotation_uses_quality_skill_without_an_extra_model_call(monkeypatch):
+def test_annotation_rewrites_vague_prose_before_delivery(monkeypatch):
     team = SimpleNamespace(settings={"skills": {"editorial_quality": {
         "enabled": True, "instructions": "# 团队规范\n只写可核对的条件。",
     }}})
@@ -35,18 +37,37 @@ def test_annotation_uses_quality_skill_without_an_extra_model_call(monkeypatch):
     })
     monkeypatch.setattr(annotation_ai, "_search_context", lambda _text: ([], []))
     calls = []
+    replies = iter([
+        "前因：\n\n总体来看，公司宣布融资。\n\n后果：\n\n资金拟用于扩产。\n\n补充说明：\n\n项目仍待审批。",
+        "前因：\n\n公司宣布融资。\n\n后果：\n\n资金拟用于扩产。\n\n补充说明：\n\n项目仍待审批。",
+    ])
 
     def fake_urlopen(request, timeout):
         calls.append(json.loads(request.data))
-        answer = "前因：\n\n总体来看，公司宣布融资。\n\n后果：\n\n资金拟用于扩产。\n\n补充说明：\n\n项目仍待审批。"
+        answer = next(replies)
         return io.BytesIO(json.dumps({"choices": [{"finish_reason": "stop", "message": {
             "content": answer,
         }}]}).encode())
 
     monkeypatch.setattr(annotation_ai, "urlopen", fake_urlopen)
     result = annotation_ai.analyze(team, "公司宣布融资。")
-    assert len(calls) == 1
+    assert len(calls) == 2
     assert "只写可核对的条件" in calls[0]["messages"][0]["content"]
-    assert result["quality_review"]["status"] == "review"
-    assert any("总体来看" in warning for warning in result["warnings"])
-    assert "总体来看" in result["body"]  # The checker reports; it never rewrites facts.
+    assert result["quality_review"]["status"] == "no_flags"
+    assert "总体来看" not in result["body"]
+    assert result["sections"]["后果"] == "资金拟用于扩产。"
+
+
+def test_annotation_does_not_deliver_a_still_vague_rewrite(monkeypatch):
+    team = SimpleNamespace(settings={})
+    monkeypatch.setattr(annotation_ai, "briefs_ai", lambda _team: {
+        "key": "test", "model": "test-model", "base_url": "https://ai.example.test",
+    })
+    monkeypatch.setattr(annotation_ai, "_search_context", lambda _text: ([], []))
+    answer = "前因：\n\n总体来看，公司宣布融资。\n\n后果：\n\n资金拟用于扩产。\n\n补充说明：\n\n项目仍待审批。"
+    monkeypatch.setattr(annotation_ai, "urlopen", lambda request, timeout: io.BytesIO(
+        json.dumps({"choices": [{"finish_reason": "stop", "message": {
+            "content": answer,
+        }}]}).encode()))
+    with pytest.raises(annotation_ai.AnnotationAIError, match="自动改写未通过"):
+        annotation_ai.analyze(team, "公司宣布融资。")

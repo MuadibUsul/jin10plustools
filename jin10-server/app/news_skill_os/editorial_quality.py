@@ -35,7 +35,8 @@ def review_text(team, *, target: str, title: str, body: str, notes: str = "",
               "status": "disabled" if not skill["enabled"] else "no_flags", "issues": []}
     if not skill["enabled"]:
         return result
-    text = title + "\n" + body
+    # Annotation titles repeat the submitted flash; only generated prose is graded.
+    text = (title + "\n" + body) if target == "fresh" else body
     for phrase in _FILLER:
         if phrase in text:
             result["issues"].append(f"文字质量提示：请确认“{phrase}”是否提供了具体信息。")

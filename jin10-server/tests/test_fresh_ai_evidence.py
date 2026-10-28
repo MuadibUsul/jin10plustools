@@ -54,6 +54,31 @@ def test_literal_evidence_keeps_single_ai_request(monkeypatch):
     assert result["analysis"]["quality_review"]["status"] == "no_flags"
 
 
+def test_vague_fresh_draft_is_rewritten_before_delivery(monkeypatch):
+    original = _analysis(CLAIM)
+    original["analysis"]["body"] = "【纽约】总体来看，Anthropic收购一家生物技术公司。"
+    result, calls = _run(monkeypatch, [
+        _reply(original),
+        _reply({"title": "Anthropic收购一家生物技术公司",
+                "body": "【纽约】Anthropic收购一家生物技术公司。"}),
+    ])
+    assert len(calls) == 2
+    assert "只改写标题和正文" in calls[1]["messages"][0]["content"]
+    assert "总体来看" not in result["analysis"]["body"]
+    assert result["analysis"]["quality_review"]["status"] == "no_flags"
+
+
+def test_fresh_rewrite_cannot_add_a_number(monkeypatch):
+    original = _analysis(CLAIM)
+    original["analysis"]["body"] = "【纽约】总体来看，Anthropic收购一家生物技术公司。"
+    with pytest.raises(fresh_ai.FreshAIError, match="自动改写未通过"):
+        _run(monkeypatch, [
+            _reply(original),
+            _reply({"title": "Anthropic收购一家生物技术公司",
+                    "body": "【纽约】Anthropic以1百万美元收购一家生物技术公司。"}),
+        ])
+
+
 def test_stored_evidence_uses_exact_source_whitespace():
     assert fresh_ai._source_span("First line\n  second line.", "First line second line.") == (
         "First line\n  second line."

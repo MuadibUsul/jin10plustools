@@ -93,6 +93,45 @@ def _repair_evidence(ai: dict, article_text: str, missing: list[dict]) -> dict[s
     return {str(key): _text(value, 500) for key, value in quotes.items()}
 
 
+def _rewrite_draft(ai: dict, article_text: str, title: str, body: str,
+                   dateline: str, issues: list[str]) -> tuple[str, str]:
+    """One bounded wording retry; the caller validates the returned draft."""
+    system = (
+        "你是财经快讯文字编辑。只改写标题和正文中的空泛措辞，使每句直接给出具体信息。"
+        "不得增删或改变事实、数字、单位、时间、对象、否定、限定条件和来源归属。"
+        f"正文仍须以{dateline}开头，保持一段且不超过400字。"
+        "只输出JSON对象，恰有title和body两个字符串字段；不要输出审查说明。"
+    )
+    user = json.dumps({"source": article_text[:60000], "title": title, "body": body,
+                       "issues": issues}, ensure_ascii=False)
+    payload = {"model": ai["model"], "stream": False, "max_tokens": 900,
+               "temperature": 0, "response_format": {"type": "json_object"},
+               "messages": [{"role": "system", "content": system},
+                            {"role": "user", "content": user}]}
+    if ai.get("provider") == "deepseek":
+        payload["thinking"] = {"type": "disabled"}
+    try:
+        request = Request(ai["base_url"].rstrip("/") + "/chat/completions",
+                          data=json.dumps(payload).encode("utf-8"),
+                          headers={"Authorization": "Bearer " + ai["key"],
+                                   "Content-Type": "application/json"}, method="POST")
+        with urlopen(request, timeout=45) as response:
+            raw = response.read(65537)
+        if len(raw) > 65536:
+            raise ValueError("改写结果过大")
+        choice = json.loads(raw)["choices"][0]
+        if choice.get("finish_reason") != "stop":
+            raise ValueError("改写未完成")
+        answer = parse_answer(choice.get("message", {}).get("content", ""))
+        if not isinstance(answer, dict) or set(answer) != {"title", "body"}:
+            raise ValueError("改写格式错误")
+        if not isinstance(answer["title"], str) or not isinstance(answer["body"], str):
+            raise ValueError("改写类型错误")
+        return answer["title"].strip(), answer["body"].strip()
+    except (HTTPError, URLError, TimeoutError, OSError, ValueError, KeyError, IndexError, TypeError) as exc:
+        raise FreshAIError("稿件有空泛表述，自动改写未完成，请重试") from exc
+
+
 def analyze(team, article: dict, focus: str = "") -> dict:
     ai = briefs_ai(team)
     if not ai.get("key") or not ai.get("model") or not ai.get("base_url"):
@@ -221,8 +260,26 @@ def analyze(team, article: dict, focus: str = "") -> dict:
         notes = f"字数：{body_chars}字；" + notes
     if not _numbers(title + body) <= _numbers(article_text):
         raise FreshAIError("AI 标题或正文包含原文没有的数字")
+    style = review_text(team, target="fresh", title=title, body=body)
+    rewritten = False
+    if style["status"] == "review":
+        revised_title, revised_body = _rewrite_draft(ai, article_text, title, body,
+                                                     dateline, style["issues"])
+        if (not revised_title or "\n" in revised_title or len(revised_title) > 300
+                or not revised_body.startswith(dateline) or "\n" in revised_body
+                or len(re.sub(r"\s", "", revised_body)) > 400
+                or _numbers(revised_title + revised_body) != _numbers(title + body)
+                or review_text(team, target="fresh", title=revised_title,
+                               body=revised_body)["status"] != "no_flags"):
+            raise FreshAIError("稿件有空泛表述，自动改写未通过数字、格式或文字质量校验")
+        title, body = revised_title, revised_body
+        rewritten = True
+        body_chars = len(re.sub(r"\s", "", body))
+        notes = re.sub(r"字数\s*[:：]\s*\d+\s*字", f"字数：{body_chars}字", notes, count=1)
+    if _list(analysis.get("unverified")) and not re.search(r"未核实|待核查|待核实", notes):
+        notes = notes.rstrip("；。 ") + "；未经核实项目见分析报告。"
     result = {
-        "event_title": _text(answer.get("event_title") or title, 300),
+        "event_title": title if rewritten else _text(answer.get("event_title") or title, 300),
         "claims": claims,
         "analysis": {
             "timeline": _list(analysis.get("timeline")),

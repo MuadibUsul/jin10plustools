@@ -28,14 +28,3 @@ it.each(['analysis', 'annotation'])('mounts usable source links in the %s inspec
   expect(link.rel).toBe('noopener noreferrer');
   expect(document.querySelector('#news-dialog-content')!.textContent).not.toContain('undefined');
 });
-
-it.each(['analysis', 'annotation'])('shows advisory quality status in the %s inspector', (kind) => {
-  const data = { title: '核查', body: '正文', quality_review: {
-    status: 'review', issues: ['文字质量提示：请确认空泛表述。'],
-  }, warnings: ['文字质量提示：请确认空泛表述。'] };
-  if (kind === 'analysis') view.showAnalysis(data, 'event');
-  else view.showAnnotationResult(data);
-  const text = document.querySelector('#news-dialog-content')!.textContent!;
-  expect(text).toContain('文字质量检查：发现需编辑复核的表述');
-  expect(text).toContain('不代表事实已核实');
-});

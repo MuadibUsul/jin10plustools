@@ -76,6 +76,38 @@ def _search_context(text: str) -> tuple[list[dict], list[str]]:
         return [], ["公开新闻检索暂不可用，注解仅基于原文；请人工核对最新事实。"]
 
 
+def _rewrite_annotation(ai: dict, flash: str, answer: str, issues: list[str]) -> str:
+    """Regenerate vague prose once, without adding background facts."""
+    system = (
+        "你是财经注解编辑。把下面已有的三段文字改写得具体、直接。"
+        "只删改空泛表达，不增删或改变事实、数字、单位、时间、对象、否定、条件及来源归属。"
+        "保持前因／后果／补充说明三段，合计不超过600字；只返回三段纯文本。"
+    )
+    payload = {"model": ai["model"], "stream": False, "max_tokens": 1300,
+               "temperature": 0,
+               "messages": [{"role": "system", "content": system},
+                            {"role": "user", "content": json.dumps({
+                                "flash": flash, "previous": answer, "issues": issues,
+                            }, ensure_ascii=False)}]}
+    if ai.get("provider") == "deepseek":
+        payload["thinking"] = {"type": "disabled"}
+    try:
+        request = Request(ai["base_url"].rstrip("/") + "/chat/completions",
+                          data=json.dumps(payload).encode("utf-8"),
+                          headers={"Authorization": "Bearer " + ai["key"],
+                                   "Content-Type": "application/json"}, method="POST")
+        with urlopen(request, timeout=45) as response:
+            raw = response.read(65537)
+        if len(raw) > 65536:
+            raise ValueError("改写结果过大")
+        choice = json.loads(raw)["choices"][0]
+        if choice.get("finish_reason") != "stop":
+            raise ValueError("改写未完成")
+        return str(choice["message"]["content"]).strip()
+    except (HTTPError, URLError, TimeoutError, OSError, ValueError, KeyError, IndexError, TypeError) as exc:
+        raise AnnotationAIError("注解有空泛表述，自动改写未完成，请重试") from exc
+
+
 def analyze(team, flash: str, source_url: str = "") -> dict:
     ai = briefs_ai(team)
     if not ai.get("key") or not ai.get("model") or not ai.get("base_url"):
@@ -128,10 +160,29 @@ def analyze(team, flash: str, source_url: str = "") -> dict:
         raise AnnotationAIError(f"AI 注解超过600字（当前{total}字）")
     body = "\n\n".join(f"{name}：\n\n{sections[name]}" for name in ("前因", "后果", "补充说明"))
     title = "Plus注解｜" + re.sub(r"\s+", " ", flash).strip()[:50]
+    quality = review_text(team, target="annotation", title=title, body=body)
+    if quality["status"] == "review":
+        original_numbers = set(re.findall(r"\d[\d,]*(?:\.\d+)?", body))
+        revised = re.sub(r"^```(?:text)?\s*|\s*```$", "",
+                         _rewrite_annotation(ai, flash, answer, quality["issues"])).strip()
+        revised_match = re.fullmatch(r"前因：\s*(.+?)\s*后果：\s*(.+?)\s*补充说明：\s*(.+)",
+                                    revised, re.S)
+        if not revised_match or any(not part.strip() for part in revised_match.groups()):
+            raise AnnotationAIError("注解自动改写未保持三段格式")
+        revised_sections = {name: part.strip() for name, part in zip(
+            ("前因", "后果", "补充说明"), revised_match.groups())}
+        revised_body = "\n\n".join(f"{name}：\n\n{revised_sections[name]}"
+                                  for name in ("前因", "后果", "补充说明"))
+        revised_total = len(re.sub(r"\s", "", "".join(revised_sections.values())))
+        if (revised_total > 600
+                or set(re.findall(r"\d[\d,]*(?:\.\d+)?", revised_body)) != original_numbers
+                or review_text(team, target="annotation", title=title,
+                               body=revised_body)["status"] != "no_flags"):
+            raise AnnotationAIError("注解自动改写未通过数字或文字质量校验")
+        sections, body, total = revised_sections, revised_body, revised_total
+        quality = review_text(team, target="annotation", title=title, body=body)
     if search:
         warnings.append(f"已参考 {len(search)} 条公开新闻检索摘要；仍需人工核对一手来源。")
-    quality = review_text(team, target="annotation", title=title, body=body)
-    warnings.extend(quality["issues"])
     return {"title": title, "body": body, "sections": sections,
             "sources": [item["link"] for item in search], "warnings": warnings,
             "quality_review": quality,

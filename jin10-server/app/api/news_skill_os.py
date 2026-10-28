@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import logging
 import uuid
 from contextlib import contextmanager
 from dataclasses import asdict
@@ -28,6 +29,7 @@ from app.news_skill_os.annotation_ai import analyze as analyze_annotation
 from app.news_skill_os.article_ai import extract as extract_article
 from app.news_skill_os.event_workflow import research_input
 from app.news_skill_os.fresh_ai import analyze as analyze_fresh_link
+from app.news_skill_os.fresh_research import research as research_fresh_link
 from app.news_skill_os.link_ingest import fetch_article
 from app.news_skill_os.models import (
     Analysis, Claim, ClaimEvidenceLink, ClaimStatus, Draft, Evidence, NumericFact, Source,
@@ -43,6 +45,7 @@ from app.news_skill_os.store import (
 from app.news_skill_os.workflow import Workflow, WorkflowEngine, WorkflowError
 
 router = APIRouter(prefix="/api/news-skill-os", tags=["news skill os"])
+logger = logging.getLogger(__name__)
 FIXTURES = frozenset({"official", "rumour", "wrong-number"})
 FIXED_BRIEFS = {"volume": "news.fixed-volume", "turnover": "news.fixed-turnover",
                 "valuation": "news.fixed-valuation", "liquidity": "news.fixed-liquidity",
@@ -345,6 +348,23 @@ def analyze_link(body: LinkAnalyze, db: DbSession, user: Editor):
         article = fetch_article(body.url)
         team = db.get(Team, user.team_id)
         result = analyze_fresh_link(team, article, body.focus)
+        try:
+            research = research_fresh_link(team, article, result["claims"])
+        except Exception:
+            logger.exception("Plus新鲜事外部检索失败")
+            research = {"status": "unavailable", "queries": [], "sources": [],
+                        "matches": [], "checks": [],
+                        "warnings": ["外部检索暂不可用；本次仅完成原文分析，请人工核查。"]}
+        result["analysis"]["external_research"] = {
+            "status": research["status"], "queries": research["queries"],
+            "sources": research["sources"], "matches": research["matches"],
+            "checks": research["checks"], "warnings": research["warnings"],
+        }
+        result["analysis"]["warnings"] = [*result["analysis"].get("warnings", []),
+                                           *research["warnings"]]
+        result["sources"] = list(dict.fromkeys([
+            *result["sources"], *(item["url"] for item in research["sources"]),
+        ]))
         result["analysis"]["sources"] = result["sources"]
         source = Source(id="s1", name=(article.get("site") or "新闻链接")[:200],
                         kind="named_media", url=article["url"], original_id=article["url"][:300])
@@ -358,6 +378,18 @@ def analyze_link(body: LinkAnalyze, db: DbSession, user: Editor):
             claims.append(Claim(id=item["id"], subject=item["subject"], predicate=item["predicate"],
                                 text=item["text"], status=ClaimStatus.UNVERIFIED))
             links.append(ClaimEvidenceLink(claim_id=item["id"], evidence_id=evidence_id, stance="supports"))
+        external_sources = {item["id"]: item for item in research["sources"]}
+        sources = [source] + [Source(id=item["id"], name=item["site"],
+                                     kind="named_media", url=item["url"],
+                                     original_id=item["host"][:300])
+                              for item in external_sources.values()]
+        for index, item in enumerate(research["matches"], start=len(evidence) + 1):
+            evidence_id = f"e{index}"
+            evidence.append(Evidence(id=evidence_id, source_id=item["source_id"],
+                                     excerpt=item["quote"], captured_at=stamp,
+                                     locator=external_sources[item["source_id"]]["url"]))
+            links.append(ClaimEvidenceLink(claim_id=item["claim_id"],
+                                           evidence_id=evidence_id, stance=item["stance"]))
         published = None
         if article.get("published_at"):
             try:
@@ -370,7 +402,7 @@ def analyze_link(body: LinkAnalyze, db: DbSession, user: Editor):
                                       "site": article.get("site", ""), "focus": body.focus,
                                       "ingest": "link"})
         revision = append_revision(
-            db, event=event, user=user, expected_previous=0, sources=[source],
+            db, event=event, user=user, expected_previous=0, sources=sources,
             evidence=evidence, claims=claims, links=links, analyses=[], draft=None,
             reason="AI 从新闻链接提取待核查断言",
         )

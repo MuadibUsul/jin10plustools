@@ -80,6 +80,30 @@ function showAnalysis(analysis, eventId) {
   textSection(host, '编辑判断（与信源原话分开）', analysis.judgment);
   textSection(host, '未核实 / 口径提醒', analysis.unverified);
   textSection(host, '其他提醒', analysis.warnings);
+  const research = analysis.external_research;
+  if (research) {
+    host.append(node('h3', '外部来源核查'));
+    host.append(node('p', research.status === 'completed'
+      ? '已实时检索并读取外部网页；以下是可回看的原文线索，断言仍需人工确认。'
+      : '本次未完成外部来源核查；请依据原始链接人工核对。', 'muted'));
+    const sources = new Map((research.sources || []).map((item) => [item.id, item]));
+    for (const check of research.checks || []) {
+      const label = check.status === 'possible_conflict' ? '可能冲突'
+        : check.status === 'external_match' ? '发现相符原文' : '尚无外部证据';
+      const block = node('div', undefined, 'news-claim');
+      block.append(node('strong', `${label} · ${check.claim}`));
+      for (const match of (research.matches || []).filter((item) => item.claim_id === check.claim_id)) {
+        block.append(node('p', `${match.stance === 'contradicts' ? '相反原文' : '相符原文'}：${match.quote}`, 'news-evidence'));
+        const source = sources.get(match.source_id);
+        if (source) {
+          const link = node('a', source.title || source.url);
+          link.href = source.url; link.target = '_blank'; link.rel = 'noopener noreferrer';
+          const paragraph = node('p'); paragraph.append(link); block.append(paragraph);
+        }
+      }
+      host.append(block);
+    }
+  }
   host.append(node('h3', '拟稿预览'));
   host.append(node('div', analysis.body, 'news-draft-body'));
   host.append(node('p', analysis.notes, 'muted'));
@@ -200,6 +224,7 @@ async function showDraft(item) {
 $('#news-form').onsubmit = (event) => {
   event.preventDefault();
   const button = $('#news-submit'); button.disabled = true;
+  message('正在抓取原文、联网检索并核对证据…');
   safe(async () => {
     const result = await api('/api/news-skill-os/from-link/analyze', {
       method: 'POST', json: { url: $('#news-link').value.trim(), focus: $('#news-focus').value.trim() },

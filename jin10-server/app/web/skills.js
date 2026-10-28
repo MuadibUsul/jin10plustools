@@ -35,7 +35,10 @@ async function renderList() {
       head.append(node('h3', item.label), badge(item));
       card.append(head, node('p', meta(item), 'skill-id'));
       if (item.description) card.append(node('p', item.description, 'skill-description'));
-      card.append(node('p', item.updated_at ? `最后修改 ${displayTime(item.updated_at)}${item.updated_by_name ? ` · ${item.updated_by_name}` : ''}` : '尚未创建团队版本，使用内置规范', 'skill-meta'));
+      const detail = item.editable === false ? '服务端内置研究步骤，可通过独立工作流接口运行'
+        : item.updated_at ? `最后修改 ${displayTime(item.updated_at)}${item.updated_by_name ? ` · ${item.updated_by_name}` : ''}`
+          : '尚未创建团队版本，使用内置规范';
+      card.append(node('p', detail, 'skill-meta'));
       grid.append(card);
     }
     section.append(grid);
@@ -75,7 +78,7 @@ async function renderDetail(category) {
     info.append(node('p', `权限：${permissions}`, 'muted'));
     info.append(node('p', `质量门槛：${(item.quality_gates || []).join('、') || '无'}`, 'muted'));
     info.append(node('p', `依赖：${(item.dependencies || []).join('、') || '无'}`, 'muted'));
-    card.append(info, node('p', '研究型 Skill 是服务端运行时定义，团队库当前只读；通用 News Skill OS 页面尚未部署。', 'skill-readonly-note'));
+    card.append(info, node('p', '研究型 Skill 是可执行的服务端步骤，目前可通过独立研究工作流接口运行，尚未接入 Plus新鲜事的“分析链接”按钮。此处只读。', 'skill-readonly-note'));
     host.append(card);
     msg('研究型 Skill 为只读。');
     return;

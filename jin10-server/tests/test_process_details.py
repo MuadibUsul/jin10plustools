@@ -56,6 +56,17 @@ def test_future_adapters_share_explanations_and_secrets_are_not_exposed():
     assert safe_value({'source':'https://name:password@example.org/private'})=={'source':None}
 
 
+def test_gpu_mixed_public_history_process_explains_actual_weekly_sources():
+    report = describe('gpu_rental', {'facts': {
+        'source': 'Silicon Data A100/H100/B200 NeoCloud',
+        'weekly_source': 'public_visible_history_mixed',
+        'a100': '1.56', 'h100': '2.89', 'b200': '6.47',
+    }})
+    assert any('官网可见历史表' in line for line in report['calculations'])
+    assert any('公开卡片展示' in line for line in report['calculations'])
+    assert not any('基准缺失' in line for line in report['calculations'])
+
+
 def test_turnover_uses_counts_to_reproduce_nine_day_mean(tmp_path):
     job=SimpleNamespace(id='one',category='turnover',action='produce')
     folder=tmp_path/'runs/one'

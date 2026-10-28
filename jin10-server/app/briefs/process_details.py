@@ -171,6 +171,10 @@ def describe(category, payload):
             value('B200租赁价格', facts.get('b200'), '美元/GPU/小时')
             calculations = (['本期三卡价格由编辑人工录入，七日变化按录入值或历史基准核对。']
                             if facts.get('source') == '编辑人工录入' else
+                            ['三卡价格按同一目标数据日对齐；已更新到更晚日期的指标从官网可见历史表取目标日和七日前价格，计算七日变化并保留一位小数。',
+                             '未更新到更晚日期的指标使用目标日公开卡片展示的七日变化；历史价格计算值是展示精度下的近似值。',
+                             '历史峰值只比较已收录数据。']
+                            if facts.get('weekly_source') == 'public_visible_history_mixed' else
                             ['三卡价格及七日变化取官网公开卡片的显示值，保留页面精度。',
                              '历史峰值只比较已收录数据。']
                             if facts.get('weekly_source') == 'public_visible_summary' else

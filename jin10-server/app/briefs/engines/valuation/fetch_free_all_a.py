@@ -25,6 +25,7 @@ PAGE_SIZE = 10000
 MAX_PAGES = 5
 MAX_BYTES = 4 * 1024 * 1024
 SOURCE = 'eastmoney_public_all_a_company_total_capitalization'
+BSE_FIRST_SESSION='2021-11-15'  # https://www.bse.cn/company/introduce.html
 
 
 class FetchAllAError(RuntimeError):
@@ -127,7 +128,7 @@ def normalize_all_a(raw_pages, expected_date, previous_date, reference_yi=None):
         exchange = (secucode.rsplit('.', 1)[-1] if isinstance(secucode, str) else '')
         valid = ((exchange == 'SH' and code.startswith('6')) or
                  (exchange == 'SZ' and code.startswith(('0', '3'))) or
-                 (exchange == 'BJ' and code.startswith(('4', '8', '920'))))
+                 (exchange == 'BJ' and day>=BSE_FIRST_SESSION and code.startswith(('4', '8', '920'))))
         if not valid or secucode != code + '.' + exchange:
             raise FetchAllAError('unexpected_security', 'Valuation response includes a non-A-share or an unknown code/exchange.')
         if code in values[day]:
@@ -142,7 +143,8 @@ def normalize_all_a(raw_pages, expected_date, previous_date, reference_yi=None):
     rows = []
     comparison = []
     for day in (previous_date, expected_date):
-        if any(exchanges[day][exchange] == 0 for exchange in ('SH', 'SZ', 'BJ')):
+        required=('SH','SZ','BJ') if day>=BSE_FIRST_SESSION else ('SH','SZ')
+        if any(exchanges[day][exchange] == 0 for exchange in required):
             raise FetchAllAError('incomplete_data', 'One or more exchanges are absent from a required session.')
         total = sum(values[day].values(), Decimal(0))
         rows.append({'date': day, 'market_cap_cny': str(total), 'market_cap_yi': str(total / Decimal('100000000')),

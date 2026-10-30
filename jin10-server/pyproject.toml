@@ -40,7 +40,7 @@ dev = ["pytest>=8"]
 include = ["app*"]
 
 [tool.setuptools.package-data]
-"app.briefs" = ["seed/*.json", "assets/*", "engines/*/assets/*", "samples/*/*"]
+"app.briefs" = ["seed/*.json", "assets/*", "engines/*/assets/*", "samples/*/*", "editorial_packs/*.json", "calendars/*"]
 "app.news_skill_os" = ["*.json", "manifests/*.yaml"]
 
 [tool.pytest.ini_options]

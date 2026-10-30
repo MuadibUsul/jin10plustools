@@ -88,7 +88,7 @@ def _normalize_close(raw, wanted_dates):
     return [result[d] for d in sorted(wanted_dates)]
 
 
-def fetch_close(expected_date, previous_date, output_dir):
+def fetch_close(expected_date, previous_date, output_dir,*,all_between=False):
     wanted = {_day(expected_date), _day(previous_date)}
     params = {'indexCode': '000300', 'startDate': min(wanted).replace('-', ''),
               'endDate': max(wanted).replace('-', '')}
@@ -107,6 +107,9 @@ def fetch_close(expected_date, previous_date, output_dir):
     stamp = datetime.now(CHINA).strftime('%Y%m%dT%H%M%S%f')
     path = output / f'csindex-close-{stamp}.json'
     path.write_bytes(raw)
+    if all_between:
+        from app.briefs.trading_calendar import sessions
+        wanted=set(sessions('xshg',min(wanted),max(wanted)))
     return {'source': 'CSI_official_index_performance', 'rows': _normalize_close(raw, wanted),
             'raw_evidence': {'url': url, 'path': str(path.resolve()),
                              'sha256': hashlib.sha256(raw).hexdigest()},
@@ -317,7 +320,10 @@ def run_erp(workbook, out_dir, *, mode, expected_date, bond_history=None, force_
         raise ERPWorkflowError('insufficient_history', 'At least two uploaded sessions since 2015 are required.')
     by_date = {r['date']: r for r in seed}
     seed_by_date = dict(by_date)
-    previous = max(d for d in by_date if d < expected)
+    if mode=='workbook-replay':previous=max(d for d in by_date if d<expected)
+    else:
+        from app.briefs.trading_calendar import previous_session
+        previous=previous_session('xshg',expected).isoformat()
     metadata = {'mode': mode, 'release_ready': False,
                 'artifact_kind': 'workbook_replay' if mode == 'workbook-replay' else 'official_free_source_run' if mode == 'free-official' else 'free_source_candidate',
                 'expected_date': expected, 'previous_session': previous,

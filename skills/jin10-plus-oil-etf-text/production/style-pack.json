@@ -1,0 +1,239 @@
+{
+  "schema_version": 1,
+  "pack_id": "oil-etf-editorial",
+  "version": "0.1.0",
+  "category": "oil_etf",
+  "status": "draft_pending_editor_review",
+  "review": {
+    "approved_by": null,
+    "reviewed_at": null
+  },
+  "sources": [
+    {
+      "path": "skills/jin10-plus-oil-etf-text/references/history.md",
+      "sha256": "3468686d81d8086e955ce342cd0b6c0cb0c285effbb88d601ddd360afe701f5d",
+      "kind": "user_provided_historical_style_archive"
+    }
+  ],
+  "scenarios": [
+    {
+      "id": "both_up",
+      "description": "原油ETF：按已校验事实确定both_up场景，不从旧稿复制当日结论。"
+    },
+    {
+      "id": "both_down",
+      "description": "原油ETF：按已校验事实确定both_down场景，不从旧稿复制当日结论。"
+    },
+    {
+      "id": "both_flat",
+      "description": "原油ETF：按已校验事实确定both_flat场景，不从旧稿复制当日结论。"
+    },
+    {
+      "id": "mixed",
+      "description": "原油ETF：按已校验事实确定mixed场景，不从旧稿复制当日结论。"
+    },
+    {
+      "id": "missing_change",
+      "description": "原油ETF：按已校验事实确定missing_change场景，不从旧稿复制当日结论。"
+    }
+  ],
+  "slot_roles": {
+    "lead": [
+      "date",
+      "main_fact"
+    ],
+    "comparison": [
+      "comparison_fact"
+    ]
+  },
+  "modules": {
+    "headlines": [
+      {
+        "id": "both_up_1",
+        "text": "【原油ETF】美布两油ETF期货持仓均增加",
+        "scenarios": [
+          "both_up"
+        ],
+        "editorial_reason": "从用户历史文段提炼主旨组织方式，并按当前事实条件派生；尚待编辑审核。"
+      },
+      {
+        "id": "both_up_2",
+        "text": "【原油ETF】USO与BNO期货持仓同步增加",
+        "scenarios": [
+          "both_up"
+        ],
+        "editorial_reason": "从用户历史文段提炼主旨组织方式，并按当前事实条件派生；尚待编辑审核。"
+      },
+      {
+        "id": "both_down_1",
+        "text": "【原油ETF】美布两油ETF期货持仓均减少",
+        "scenarios": [
+          "both_down"
+        ],
+        "editorial_reason": "从用户历史文段提炼主旨组织方式，并按当前事实条件派生；尚待编辑审核。"
+      },
+      {
+        "id": "both_down_2",
+        "text": "【原油ETF】USO与BNO期货持仓同步减少",
+        "scenarios": [
+          "both_down"
+        ],
+        "editorial_reason": "从用户历史文段提炼主旨组织方式，并按当前事实条件派生；尚待编辑审核。"
+      },
+      {
+        "id": "both_flat_1",
+        "text": "【原油ETF】美布两油ETF期货持仓均持平",
+        "scenarios": [
+          "both_flat"
+        ],
+        "editorial_reason": "从用户历史文段提炼主旨组织方式，并按当前事实条件派生；尚待编辑审核。"
+      },
+      {
+        "id": "both_flat_2",
+        "text": "【原油ETF】USO与BNO期货持仓暂无变化",
+        "scenarios": [
+          "both_flat"
+        ],
+        "editorial_reason": "从用户历史文段提炼主旨组织方式，并按当前事实条件派生；尚待编辑审核。"
+      },
+      {
+        "id": "mixed_1",
+        "text": "【原油ETF】美布两油ETF期货持仓变化分化",
+        "scenarios": [
+          "mixed"
+        ],
+        "editorial_reason": "从用户历史文段提炼主旨组织方式，并按当前事实条件派生；尚待编辑审核。"
+      },
+      {
+        "id": "mixed_2",
+        "text": "【原油ETF】USO与BNO期货持仓变化不同步",
+        "scenarios": [
+          "mixed"
+        ],
+        "editorial_reason": "从用户历史文段提炼主旨组织方式，并按当前事实条件派生；尚待编辑审核。"
+      },
+      {
+        "id": "missing_change_1",
+        "text": "【原油ETF】美布两油ETF持仓数据更新",
+        "scenarios": [
+          "missing_change"
+        ],
+        "editorial_reason": "从用户历史文段提炼主旨组织方式，并按当前事实条件派生；尚待编辑审核。"
+      },
+      {
+        "id": "missing_change_2",
+        "text": "【原油ETF】WTI名义敞口估算与Brent期货持仓更新",
+        "scenarios": [
+          "missing_change"
+        ],
+        "editorial_reason": "从用户历史文段提炼主旨组织方式，并按当前事实条件派生；尚待编辑审核。"
+      }
+    ],
+    "leads": [
+      {
+        "id": "dated",
+        "template": "{date}，{main_fact}",
+        "editorial_reason": "先明确数据日期，再给完整主要事实。"
+      },
+      {
+        "id": "as_of",
+        "template": "截至{date}，{main_fact}",
+        "editorial_reason": "按数据截止日表述，不改变比较基准。"
+      }
+    ],
+    "comparisons": [
+      {
+        "id": "direct",
+        "template": "{comparison_fact}",
+        "editorial_reason": "保持对照指标及日期、单位和数值的原子绑定。"
+      },
+      {
+        "id": "introduced",
+        "template": "同期，{comparison_fact}",
+        "editorial_reason": "只增加段间衔接，不改变完整事实片段。"
+      }
+    ],
+    "closings": [
+      {
+        "id": "none",
+        "text": "",
+        "scenarios": [
+          "both_up",
+          "both_down",
+          "both_flat",
+          "mixed",
+          "missing_change"
+        ],
+        "editorial_reason": "事实和比较已完整时直接收尾，不另加空泛总结。"
+      }
+    ]
+  },
+  "examples": [
+    {
+      "id": "oil_etf-structure-1",
+      "scenario": "both_up",
+      "source_sample_id": "2026-10-20",
+      "body_structure": [
+        "数据日",
+        "主要指标及变化",
+        "相关比较或参考线"
+      ],
+      "editorial_reason": "仅参考用户原稿的日期、主事实、对照顺序；当前情形由事实规则派生，不把样本日期、数字或因果判断当作当期事实。"
+    },
+    {
+      "id": "oil_etf-structure-2",
+      "scenario": "both_down",
+      "source_sample_id": "2026-10-19",
+      "body_structure": [
+        "数据日",
+        "主要指标及变化",
+        "相关比较或参考线"
+      ],
+      "editorial_reason": "仅参考用户原稿的日期、主事实、对照顺序；当前情形由事实规则派生，不把样本日期、数字或因果判断当作当期事实。"
+    },
+    {
+      "id": "oil_etf-structure-3",
+      "scenario": "both_flat",
+      "source_sample_id": "2026-10-16",
+      "body_structure": [
+        "数据日",
+        "主要指标及变化",
+        "相关比较或参考线"
+      ],
+      "editorial_reason": "仅参考用户原稿的日期、主事实、对照顺序；当前情形由事实规则派生，不把样本日期、数字或因果判断当作当期事实。"
+    },
+    {
+      "id": "oil_etf-structure-4",
+      "scenario": "mixed",
+      "source_sample_id": "2026-10-15",
+      "body_structure": [
+        "数据日",
+        "主要指标及变化",
+        "相关比较或参考线"
+      ],
+      "editorial_reason": "仅参考用户原稿的日期、主事实、对照顺序；当前情形由事实规则派生，不把样本日期、数字或因果判断当作当期事实。"
+    },
+    {
+      "id": "oil_etf-structure-5",
+      "scenario": "missing_change",
+      "source_sample_id": "2026-10-14",
+      "body_structure": [
+        "数据日",
+        "主要指标及变化",
+        "相关比较或参考线"
+      ],
+      "editorial_reason": "仅参考用户原稿的日期、主事实、对照顺序；当前情形由事实规则派生，不把样本日期、数字或因果判断当作当期事实。"
+    }
+  ],
+  "rejected_patterns": [
+    {
+      "text": "未来收益确定",
+      "reason": "指标比较不能保证未来回报。"
+    },
+    {
+      "text": "旧稿中的当日数据与结论",
+      "reason": "历史资料只供表达结构参考。"
+    }
+  ],
+  "source_policy": "USO总量是名义敞口估算，BNO总量是期货持仓；日变化只比较有同口径基准的期货合约，固定收尾沿既有交付层内联追加。"
+}

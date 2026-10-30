@@ -16,9 +16,12 @@ def day_index(rows, day):
 
 
 def change(rows, day):
+    from app.briefs.trading_calendar import previous_session
     index = day_index(rows, day)
     if index is None or index == 0:
         raise ValueError('目标日期的指数数据缺失')
+    if rows[index-1]['date'] != previous_session('xnys',day).isoformat():
+        raise ValueError('指数缺少前一交易日，不能将跨日变化当作单日涨跌')
     return (Decimal(str(rows[index]['close'])) / Decimal(str(rows[index - 1]['close'])) - 1) * 100
 
 
@@ -47,6 +50,9 @@ def structure(day, data):
         raise ValueError('等权指数目标日期尚未更新或历史不足')
     year = target - timedelta(days=365)
     window = [row for row in gap if row['date'] >= year.isoformat()]
+    from app.briefs.trading_calendar import sessions
+    missing=set(sessions('xnys',window[0]['date'],day))-{row['date'] for row in window}
+    if missing: raise ValueError('市场宽度区间缺少交易日：'+','.join(sorted(missing)))
     low = min(window, key=lambda row: row['value'])
     high = max(window, key=lambda row: row['value'])
     current = gap[index]
@@ -112,5 +118,12 @@ def structure(day, data):
             'gap': str(current['value']), 'gap_percentile': f'{percentile:.3f}',
             'gap_low': str(low['value']), 'gap_low_date': low['date'],
             'rut_drawdown': str(q2(drawdown)), 'verdict': verdict,
+            # Additive editorial provenance; the existing calculations and copy
+            # above remain unchanged. New copy need not infer paths from prose.
+            'gap_previous': str(previous['value']), 'gap_change': str(q2(gap_change)),
+            'rut_low_since_date': lower[-1]['date'] if lower else '',
+            'rut_low_since_month': int(lower[-1]['date'][5:7]) if lower else None,
+            'rut_peak_close': str(peak),
+            'rut_drawdown_rounded_pct': f'{abs(drawdown):.0f}',
         },
     }

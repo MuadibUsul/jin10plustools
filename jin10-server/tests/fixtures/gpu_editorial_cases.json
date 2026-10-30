@@ -1,0 +1,1316 @@
+{
+  "schema_version": 1,
+  "provenance": "synthetic_not_market_data",
+  "description": "独立工程场景，用于事实与边界回归；不是实际行情、人工签发稿或已通过的风格金标准。holdout不进入生产范文包。",
+  "cases": [
+    {
+      "id": "opposite_generations",
+      "split": "development",
+      "payload": {
+        "title": "既有规则标题",
+        "dynamic_body": "既有规则正文；仅作为保留基线。",
+        "data_date": "2026-10-29",
+        "facts": {
+          "a100": "1.47",
+          "h100": "2.61",
+          "b200": "5.73",
+          "previous_date": "2026-10-22",
+          "a100_change_pct": "-0.80",
+          "h100_change_pct": "+0.40",
+          "b200_change_pct": "+2.30",
+          "b200_peak": "5.99",
+          "b200_peak_date": "2026-09-30",
+          "b200_peak_relation": "below",
+          "b200_gap_pct": "4.34",
+          "source": "Silicon Data A100/H100/B200 NeoCloud",
+          "weekly_source": "calculated_from_seven_day_baseline",
+          "source_note": ""
+        },
+        "images": [
+          "existing-gpu.png"
+        ],
+        "fixed_notes": "原有图下注释，影子流程不得改写。",
+        "chart_notes": "原有图下注释，影子流程不得改写。",
+        "warnings": [],
+        "valid": true
+      },
+      "expect": {
+        "status": "ok",
+        "title_patterns": [
+          "分化"
+        ]
+      }
+    },
+    {
+      "id": "b200_up_older_down",
+      "split": "development",
+      "payload": {
+        "title": "既有规则标题",
+        "dynamic_body": "既有规则正文；仅作为保留基线。",
+        "data_date": "2026-10-29",
+        "facts": {
+          "a100": "1.47",
+          "h100": "2.61",
+          "b200": "5.73",
+          "previous_date": "2026-10-22",
+          "a100_change_pct": "-0.80",
+          "h100_change_pct": "-0.10",
+          "b200_change_pct": "+2.30",
+          "b200_peak": "5.99",
+          "b200_peak_date": "2026-09-30",
+          "b200_peak_relation": "below",
+          "b200_gap_pct": "4.34",
+          "source": "Silicon Data A100/H100/B200 NeoCloud",
+          "weekly_source": "calculated_from_seven_day_baseline",
+          "source_note": ""
+        },
+        "images": [
+          "existing-gpu.png"
+        ],
+        "fixed_notes": "原有图下注释，影子流程不得改写。",
+        "chart_notes": "原有图下注释，影子流程不得改写。",
+        "warnings": [],
+        "valid": true
+      },
+      "expect": {
+        "status": "ok",
+        "body_patterns": [
+          "B200",
+          "H100",
+          "A100"
+        ],
+        "title_patterns": [
+          "分化|未跟随"
+        ]
+      }
+    },
+    {
+      "id": "b200_up_older_flat",
+      "split": "development",
+      "payload": {
+        "title": "既有规则标题",
+        "dynamic_body": "既有规则正文；仅作为保留基线。",
+        "data_date": "2026-10-29",
+        "facts": {
+          "a100": "1.47",
+          "h100": "2.61",
+          "b200": "5.51",
+          "previous_date": "2026-10-22",
+          "a100_change_pct": "0.00",
+          "h100_change_pct": "0.00",
+          "b200_change_pct": "+2.30",
+          "b200_peak": "5.99",
+          "b200_peak_date": "2026-09-30",
+          "b200_peak_relation": "below",
+          "b200_gap_pct": "8.00",
+          "source": "Silicon Data A100/H100/B200 NeoCloud",
+          "weekly_source": "calculated_from_seven_day_baseline",
+          "source_note": ""
+        },
+        "images": [
+          "existing-gpu.png"
+        ],
+        "fixed_notes": "原有图下注释，影子流程不得改写。",
+        "chart_notes": "原有图下注释，影子流程不得改写。",
+        "warnings": [],
+        "valid": true
+      },
+      "expect": {
+        "status": "ok",
+        "title_patterns": [
+          "未跟随|回升|走高"
+        ]
+      }
+    },
+    {
+      "id": "all_up",
+      "split": "development",
+      "payload": {
+        "title": "既有规则标题",
+        "dynamic_body": "既有规则正文；仅作为保留基线。",
+        "data_date": "2026-10-29",
+        "facts": {
+          "a100": "1.47",
+          "h100": "2.61",
+          "b200": "5.40",
+          "previous_date": "2026-10-22",
+          "a100_change_pct": "+0.90",
+          "h100_change_pct": "+1.20",
+          "b200_change_pct": "+2.30",
+          "b200_peak": "5.99",
+          "b200_peak_date": "2026-09-30",
+          "b200_peak_relation": "below",
+          "b200_gap_pct": "9.85",
+          "source": "Silicon Data A100/H100/B200 NeoCloud",
+          "weekly_source": "calculated_from_seven_day_baseline",
+          "source_note": ""
+        },
+        "images": [
+          "existing-gpu.png"
+        ],
+        "fixed_notes": "原有图下注释，影子流程不得改写。",
+        "chart_notes": "原有图下注释，影子流程不得改写。",
+        "warnings": [],
+        "valid": true
+      },
+      "expect": {
+        "status": "ok",
+        "body_patterns": [
+          "上涨|微涨"
+        ]
+      }
+    },
+    {
+      "id": "all_down",
+      "split": "development",
+      "payload": {
+        "title": "既有规则标题",
+        "dynamic_body": "既有规则正文；仅作为保留基线。",
+        "data_date": "2026-10-29",
+        "facts": {
+          "a100": "1.47",
+          "h100": "2.61",
+          "b200": "5.40",
+          "previous_date": "2026-10-22",
+          "a100_change_pct": "-1.30",
+          "h100_change_pct": "-1.20",
+          "b200_change_pct": "-1.40",
+          "b200_peak": "5.99",
+          "b200_peak_date": "2026-09-30",
+          "b200_peak_relation": "below",
+          "b200_gap_pct": "9.85",
+          "source": "Silicon Data A100/H100/B200 NeoCloud",
+          "weekly_source": "calculated_from_seven_day_baseline",
+          "source_note": ""
+        },
+        "images": [
+          "existing-gpu.png"
+        ],
+        "fixed_notes": "原有图下注释，影子流程不得改写。",
+        "chart_notes": "原有图下注释，影子流程不得改写。",
+        "warnings": [],
+        "valid": true
+      },
+      "expect": {
+        "status": "ok",
+        "title_patterns": [
+          "回落|下跌"
+        ]
+      }
+    },
+    {
+      "id": "all_flat",
+      "split": "development",
+      "payload": {
+        "title": "既有规则标题",
+        "dynamic_body": "既有规则正文；仅作为保留基线。",
+        "data_date": "2026-10-29",
+        "facts": {
+          "a100": "1.47",
+          "h100": "2.61",
+          "b200": "5.40",
+          "previous_date": "2026-10-22",
+          "a100_change_pct": "0.00",
+          "h100_change_pct": "0.00",
+          "b200_change_pct": "0.00",
+          "b200_peak": "5.99",
+          "b200_peak_date": "2026-09-30",
+          "b200_peak_relation": "below",
+          "b200_gap_pct": "9.85",
+          "source": "Silicon Data A100/H100/B200 NeoCloud",
+          "weekly_source": "calculated_from_seven_day_baseline",
+          "source_note": ""
+        },
+        "images": [
+          "existing-gpu.png"
+        ],
+        "fixed_notes": "原有图下注释，影子流程不得改写。",
+        "chart_notes": "原有图下注释，影子流程不得改写。",
+        "warnings": [],
+        "valid": true
+      },
+      "expect": {
+        "status": "ok",
+        "title_patterns": [
+          "持平"
+        ]
+      }
+    },
+    {
+      "id": "older_up_b200_down",
+      "split": "development",
+      "payload": {
+        "title": "既有规则标题",
+        "dynamic_body": "既有规则正文；仅作为保留基线。",
+        "data_date": "2026-10-29",
+        "facts": {
+          "a100": "1.47",
+          "h100": "2.61",
+          "b200": "5.40",
+          "previous_date": "2026-10-22",
+          "a100_change_pct": "+0.50",
+          "h100_change_pct": "+0.70",
+          "b200_change_pct": "-0.40",
+          "b200_peak": "5.99",
+          "b200_peak_date": "2026-09-30",
+          "b200_peak_relation": "below",
+          "b200_gap_pct": "9.85",
+          "source": "Silicon Data A100/H100/B200 NeoCloud",
+          "weekly_source": "calculated_from_seven_day_baseline",
+          "source_note": ""
+        },
+        "images": [
+          "existing-gpu.png"
+        ],
+        "fixed_notes": "原有图下注释，影子流程不得改写。",
+        "chart_notes": "原有图下注释，影子流程不得改写。",
+        "warnings": [],
+        "valid": true
+      },
+      "expect": {
+        "status": "ok",
+        "title_patterns": [
+          "分化|走势相反|走弱"
+        ]
+      }
+    },
+    {
+      "id": "b200_flat_mixed_older",
+      "split": "development",
+      "payload": {
+        "title": "既有规则标题",
+        "dynamic_body": "既有规则正文；仅作为保留基线。",
+        "data_date": "2026-10-29",
+        "facts": {
+          "a100": "1.47",
+          "h100": "2.61",
+          "b200": "5.40",
+          "previous_date": "2026-10-22",
+          "a100_change_pct": "-0.30",
+          "h100_change_pct": "+0.70",
+          "b200_change_pct": "0.00",
+          "b200_peak": "5.99",
+          "b200_peak_date": "2026-09-30",
+          "b200_peak_relation": "below",
+          "b200_gap_pct": "9.85",
+          "source": "Silicon Data A100/H100/B200 NeoCloud",
+          "weekly_source": "calculated_from_seven_day_baseline",
+          "source_note": ""
+        },
+        "images": [
+          "existing-gpu.png"
+        ],
+        "fixed_notes": "原有图下注释，影子流程不得改写。",
+        "chart_notes": "原有图下注释，影子流程不得改写。",
+        "warnings": [],
+        "valid": true
+      },
+      "expect": {
+        "status": "ok",
+        "title_forbidden": [
+          "K型"
+        ],
+        "body_patterns": [
+          "持平"
+        ]
+      }
+    },
+    {
+      "id": "tied_peak",
+      "split": "development",
+      "payload": {
+        "title": "既有规则标题",
+        "dynamic_body": "既有规则正文；仅作为保留基线。",
+        "data_date": "2026-10-29",
+        "facts": {
+          "a100": "1.47",
+          "h100": "2.61",
+          "b200": "5.99",
+          "previous_date": "2026-10-22",
+          "a100_change_pct": "-0.80",
+          "h100_change_pct": "+0.40",
+          "b200_change_pct": "+2.30",
+          "b200_peak": "5.99",
+          "b200_peak_date": "2026-09-30",
+          "b200_peak_relation": "tie",
+          "b200_gap_pct": "",
+          "source": "Silicon Data A100/H100/B200 NeoCloud",
+          "weekly_source": "calculated_from_seven_day_baseline",
+          "source_note": ""
+        },
+        "images": [
+          "existing-gpu.png"
+        ],
+        "fixed_notes": "原有图下注释，影子流程不得改写。",
+        "chart_notes": "原有图下注释，影子流程不得改写。",
+        "warnings": [],
+        "valid": true
+      },
+      "expect": {
+        "status": "ok",
+        "title_patterns": [
+          "并列|持平"
+        ],
+        "title_forbidden": [
+          "新高",
+          "高于"
+        ]
+      }
+    },
+    {
+      "id": "above_recorded_peak",
+      "split": "holdout",
+      "payload": {
+        "title": "既有规则标题",
+        "dynamic_body": "既有规则正文；仅作为保留基线。",
+        "data_date": "2026-10-29",
+        "facts": {
+          "a100": "1.47",
+          "h100": "2.61",
+          "b200": "6.07",
+          "previous_date": "2026-10-22",
+          "a100_change_pct": "-0.80",
+          "h100_change_pct": "+0.40",
+          "b200_change_pct": "+2.30",
+          "b200_peak": "5.99",
+          "b200_peak_date": "2026-09-30",
+          "b200_peak_relation": "above",
+          "b200_gap_pct": "",
+          "source": "Silicon Data A100/H100/B200 NeoCloud",
+          "weekly_source": "calculated_from_seven_day_baseline",
+          "source_note": ""
+        },
+        "images": [
+          "existing-gpu.png"
+        ],
+        "fixed_notes": "原有图下注释，影子流程不得改写。",
+        "chart_notes": "原有图下注释，影子流程不得改写。",
+        "warnings": [],
+        "valid": true
+      },
+      "expect": {
+        "status": "ok",
+        "title_patterns": [
+          "高于|超过"
+        ],
+        "title_forbidden": [
+          "半年",
+          "历史新高",
+          "并列"
+        ]
+      }
+    },
+    {
+      "id": "near_peak_boundary_inclusive",
+      "split": "development",
+      "payload": {
+        "title": "既有规则标题",
+        "dynamic_body": "既有规则正文；仅作为保留基线。",
+        "data_date": "2026-10-29",
+        "facts": {
+          "a100": "1.47",
+          "h100": "2.61",
+          "b200": "5.69",
+          "previous_date": "2026-10-22",
+          "a100_change_pct": "-0.10",
+          "h100_change_pct": "-0.20",
+          "b200_change_pct": "-0.10",
+          "b200_peak": "5.99",
+          "b200_peak_date": "2026-09-30",
+          "b200_peak_relation": "below",
+          "b200_gap_pct": "5.00",
+          "source": "Silicon Data A100/H100/B200 NeoCloud",
+          "weekly_source": "calculated_from_seven_day_baseline",
+          "source_note": ""
+        },
+        "images": [
+          "existing-gpu.png"
+        ],
+        "fixed_notes": "原有图下注释，影子流程不得改写。",
+        "chart_notes": "原有图下注释，影子流程不得改写。",
+        "warnings": [],
+        "valid": true
+      },
+      "expect": {
+        "status": "ok",
+        "title_patterns": [
+          "接近"
+        ]
+      }
+    },
+    {
+      "id": "outside_near_peak_boundary",
+      "split": "holdout",
+      "payload": {
+        "title": "既有规则标题",
+        "dynamic_body": "既有规则正文；仅作为保留基线。",
+        "data_date": "2026-10-29",
+        "facts": {
+          "a100": "1.47",
+          "h100": "2.61",
+          "b200": "5.69",
+          "previous_date": "2026-10-22",
+          "a100_change_pct": "-0.10",
+          "h100_change_pct": "-0.20",
+          "b200_change_pct": "-0.10",
+          "b200_peak": "5.99",
+          "b200_peak_date": "2026-09-30",
+          "b200_peak_relation": "below",
+          "b200_gap_pct": "5.01",
+          "source": "Silicon Data A100/H100/B200 NeoCloud",
+          "weekly_source": "calculated_from_seven_day_baseline",
+          "source_note": ""
+        },
+        "images": [
+          "existing-gpu.png"
+        ],
+        "fixed_notes": "原有图下注释，影子流程不得改写。",
+        "chart_notes": "原有图下注释，影子流程不得改写。",
+        "warnings": [],
+        "valid": true
+      },
+      "expect": {
+        "status": "ok",
+        "title_forbidden": [
+          "接近"
+        ]
+      }
+    },
+    {
+      "id": "one_weekly_baseline_missing",
+      "split": "development",
+      "payload": {
+        "title": "既有规则标题",
+        "dynamic_body": "既有规则正文；仅作为保留基线。",
+        "data_date": "2026-10-29",
+        "facts": {
+          "a100": "1.47",
+          "h100": "2.61",
+          "b200": "5.73",
+          "previous_date": "2026-10-22",
+          "a100_change_pct": "",
+          "h100_change_pct": "+0.40",
+          "b200_change_pct": "+2.30",
+          "b200_peak": "5.99",
+          "b200_peak_date": "2026-09-30",
+          "b200_peak_relation": "below",
+          "b200_gap_pct": "4.34",
+          "source": "Silicon Data A100/H100/B200 NeoCloud",
+          "weekly_source": "calculated_from_seven_day_baseline",
+          "source_note": ""
+        },
+        "images": [
+          "existing-gpu.png"
+        ],
+        "fixed_notes": "原有图下注释，影子流程不得改写。",
+        "chart_notes": "原有图下注释，影子流程不得改写。",
+        "warnings": [],
+        "valid": true
+      },
+      "expect": {
+        "status": "ok",
+        "partial_weekly": true,
+        "title_forbidden": [
+          "K型",
+          "分化"
+        ],
+        "body_patterns": [
+          "基准.*缺失|缺.*基准|不报告|不计算"
+        ]
+      }
+    },
+    {
+      "id": "all_weekly_baselines_missing",
+      "split": "holdout",
+      "payload": {
+        "title": "既有规则标题",
+        "dynamic_body": "既有规则正文；仅作为保留基线。",
+        "data_date": "2026-10-29",
+        "facts": {
+          "a100": "1.47",
+          "h100": "2.61",
+          "b200": "5.73",
+          "previous_date": "",
+          "a100_change_pct": "",
+          "h100_change_pct": "",
+          "b200_change_pct": "",
+          "b200_peak": "5.99",
+          "b200_peak_date": "2026-09-30",
+          "b200_peak_relation": "below",
+          "b200_gap_pct": "4.34",
+          "source": "Silicon Data A100/H100/B200 NeoCloud",
+          "weekly_source": "calculated_from_seven_day_baseline",
+          "source_note": ""
+        },
+        "images": [
+          "existing-gpu.png"
+        ],
+        "fixed_notes": "原有图下注释，影子流程不得改写。",
+        "chart_notes": "原有图下注释，影子流程不得改写。",
+        "warnings": [],
+        "valid": true
+      },
+      "expect": {
+        "status": "ok",
+        "partial_weekly": true,
+        "title_forbidden": [
+          "K型",
+          "分化",
+          "回升",
+          "回落"
+        ],
+        "body_patterns": [
+          "基准.*缺失|缺.*基准|不报告|不计算"
+        ]
+      }
+    },
+    {
+      "id": "public_card_precision",
+      "split": "development",
+      "payload": {
+        "title": "既有规则标题",
+        "dynamic_body": "既有规则正文；仅作为保留基线。",
+        "data_date": "2026-10-29",
+        "facts": {
+          "a100": "1.47",
+          "h100": "2.61",
+          "b200": "5.73",
+          "previous_date": "",
+          "a100_change_pct": "0.6",
+          "h100_change_pct": "4.8",
+          "b200_change_pct": "8.7",
+          "b200_peak": "5.99",
+          "b200_peak_date": "2026-09-30",
+          "b200_peak_relation": "below",
+          "b200_gap_pct": "4.34",
+          "source": "Silicon Data A100/H100/B200 NeoCloud",
+          "weekly_source": "public_visible_summary",
+          "source_note": ""
+        },
+        "images": [
+          "existing-gpu.png"
+        ],
+        "fixed_notes": "原有图下注释，影子流程不得改写。",
+        "chart_notes": "原有图下注释，影子流程不得改写。",
+        "warnings": [],
+        "valid": true
+      },
+      "expect": {
+        "status": "ok",
+        "body_patterns": [
+          "官网|公开"
+        ],
+        "forbidden": [
+          "精确计算"
+        ]
+      }
+    },
+    {
+      "id": "mixed_sources_explicit_mapping",
+      "split": "holdout",
+      "payload": {
+        "title": "既有规则标题",
+        "dynamic_body": "既有规则正文；仅作为保留基线。",
+        "data_date": "2026-10-29",
+        "facts": {
+          "a100": "1.47",
+          "h100": "2.61",
+          "b200": "5.73",
+          "previous_date": "",
+          "a100_change_pct": "2.6",
+          "h100_change_pct": "4.8",
+          "b200_change_pct": "8.7",
+          "b200_peak": "5.99",
+          "b200_peak_date": "2026-09-30",
+          "b200_peak_relation": "below",
+          "b200_gap_pct": "4.34",
+          "source": "Silicon Data A100/H100/B200 NeoCloud",
+          "weekly_source": "public_visible_history_mixed",
+          "source_note": "",
+          "week_change_sources": {
+            "a100": "visible_history",
+            "h100": "card",
+            "b200": "card"
+          }
+        },
+        "images": [
+          "existing-gpu.png"
+        ],
+        "fixed_notes": "原有图下注释，影子流程不得改写。",
+        "chart_notes": "原有图下注释，影子流程不得改写。",
+        "warnings": [],
+        "valid": true
+      },
+      "expect": {
+        "status": "ok",
+        "body_patterns": [
+          "历史价格",
+          "约",
+          "官网|公开"
+        ],
+        "forbidden": [
+          "精确涨跌幅"
+        ]
+      }
+    },
+    {
+      "id": "mixed_sources_existing_labels",
+      "split": "holdout",
+      "payload": {
+        "title": "既有规则标题",
+        "dynamic_body": "既有规则正文；仅作为保留基线。",
+        "data_date": "2026-10-29",
+        "facts": {
+          "a100": "1.47",
+          "h100": "2.61",
+          "b200": "5.73",
+          "previous_date": "",
+          "a100_change_pct": "2.6",
+          "h100_change_pct": "4.8",
+          "b200_change_pct": "8.7",
+          "b200_peak": "5.99",
+          "b200_peak_date": "2026-09-30",
+          "b200_peak_relation": "below",
+          "b200_gap_pct": "4.34",
+          "source": "Silicon Data A100/H100/B200 NeoCloud",
+          "weekly_source": "public_visible_history_mixed",
+          "source_note": ""
+        },
+        "images": [
+          "existing-gpu.png"
+        ],
+        "fixed_notes": "原有图下注释，影子流程不得改写。",
+        "chart_notes": "原有图下注释，影子流程不得改写。",
+        "warnings": [],
+        "valid": true,
+        "process_details": {
+          "sources": [
+            {
+              "label": "A100 · 2026-10-29 · 网页历史价格表",
+              "url": "https://example.test/a100"
+            },
+            {
+              "label": "H100 · 2026-10-29 · 公开卡片",
+              "url": "https://example.test/h100"
+            },
+            {
+              "label": "B200 · 2026-10-29 · 公开卡片",
+              "url": "https://example.test/b200"
+            }
+          ]
+        }
+      },
+      "expect": {
+        "status": "ok",
+        "body_patterns": [
+          "历史价格",
+          "约"
+        ]
+      }
+    },
+    {
+      "id": "manual_precision",
+      "split": "development",
+      "payload": {
+        "title": "既有规则标题",
+        "dynamic_body": "既有规则正文；仅作为保留基线。",
+        "data_date": "2026-10-29",
+        "facts": {
+          "a100": "1.470",
+          "h100": "2.6100",
+          "b200": "5.730",
+          "previous_date": "",
+          "a100_change_pct": "-0.800",
+          "h100_change_pct": "+0.400",
+          "b200_change_pct": "+2.300",
+          "b200_peak": "5.99",
+          "b200_peak_date": "2026-09-30",
+          "b200_peak_relation": "below",
+          "b200_gap_pct": "4.34",
+          "source": "Silicon Data A100/H100/B200 NeoCloud",
+          "weekly_source": "manual_entry",
+          "source_note": "编辑提供的核对值"
+        },
+        "images": [
+          "existing-gpu.png"
+        ],
+        "fixed_notes": "原有图下注释，影子流程不得改写。",
+        "chart_notes": "原有图下注释，影子流程不得改写。",
+        "warnings": [],
+        "valid": true
+      },
+      "expect": {
+        "status": "ok",
+        "body_patterns": [
+          "人工|编辑",
+          "1\\.470",
+          "2\\.6100",
+          "5\\.730"
+        ]
+      }
+    },
+    {
+      "id": "revised_same_day_observation",
+      "split": "holdout",
+      "payload": {
+        "title": "既有规则标题",
+        "dynamic_body": "既有规则正文；仅作为保留基线。",
+        "data_date": "2026-10-29",
+        "facts": {
+          "a100": "1.49",
+          "h100": "2.63",
+          "b200": "5.77",
+          "previous_date": "2026-10-22",
+          "a100_change_pct": "-0.80",
+          "h100_change_pct": "+0.40",
+          "b200_change_pct": "+2.30",
+          "b200_peak": "5.99",
+          "b200_peak_date": "2026-09-30",
+          "b200_peak_relation": "below",
+          "b200_gap_pct": "3.67",
+          "source": "Silicon Data A100/H100/B200 NeoCloud",
+          "weekly_source": "calculated_from_seven_day_baseline",
+          "source_note": "",
+          "observation_revision": 2
+        },
+        "images": [
+          "existing-gpu.png"
+        ],
+        "fixed_notes": "原有图下注释，影子流程不得改写。",
+        "chart_notes": "原有图下注释，影子流程不得改写。",
+        "warnings": [],
+        "valid": true
+      },
+      "expect": {
+        "status": "ok",
+        "body_patterns": [
+          "1\\.49",
+          "2\\.63",
+          "5\\.77"
+        ]
+      }
+    },
+    {
+      "id": "cross_year_seven_calendar_days",
+      "split": "development",
+      "payload": {
+        "title": "既有规则标题",
+        "dynamic_body": "既有规则正文；仅作为保留基线。",
+        "data_date": "2027-01-03",
+        "facts": {
+          "a100": "1.47",
+          "h100": "2.61",
+          "b200": "5.73",
+          "previous_date": "2026-12-27",
+          "a100_change_pct": "-0.80",
+          "h100_change_pct": "+0.40",
+          "b200_change_pct": "+2.30",
+          "b200_peak": "5.99",
+          "b200_peak_date": "2026-11-30",
+          "b200_peak_relation": "below",
+          "b200_gap_pct": "4.34",
+          "source": "Silicon Data A100/H100/B200 NeoCloud",
+          "weekly_source": "calculated_from_seven_day_baseline",
+          "source_note": ""
+        },
+        "images": [
+          "existing-gpu.png"
+        ],
+        "fixed_notes": "原有图下注释，影子流程不得改写。",
+        "chart_notes": "原有图下注释，影子流程不得改写。",
+        "warnings": [],
+        "valid": true
+      },
+      "expect": {
+        "status": "ok",
+        "body_patterns": [
+          "1月3日",
+          "12月27日"
+        ]
+      }
+    },
+    {
+      "id": "signed_zero_is_flat",
+      "split": "holdout",
+      "payload": {
+        "title": "既有规则标题",
+        "dynamic_body": "既有规则正文；仅作为保留基线。",
+        "data_date": "2026-10-29",
+        "facts": {
+          "a100": "1.47",
+          "h100": "2.61",
+          "b200": "5.40",
+          "previous_date": "2026-10-22",
+          "a100_change_pct": "-0.00",
+          "h100_change_pct": "+0.00",
+          "b200_change_pct": "0.000",
+          "b200_peak": "5.99",
+          "b200_peak_date": "2026-09-30",
+          "b200_peak_relation": "below",
+          "b200_gap_pct": "9.85",
+          "source": "Silicon Data A100/H100/B200 NeoCloud",
+          "weekly_source": "calculated_from_seven_day_baseline",
+          "source_note": ""
+        },
+        "images": [
+          "existing-gpu.png"
+        ],
+        "fixed_notes": "原有图下注释，影子流程不得改写。",
+        "chart_notes": "原有图下注释，影子流程不得改写。",
+        "warnings": [],
+        "valid": true
+      },
+      "expect": {
+        "status": "ok",
+        "title_patterns": [
+          "持平"
+        ],
+        "forbidden": [
+          "下跌0.00%",
+          "上涨0.00%"
+        ]
+      }
+    },
+    {
+      "id": "fractional_positive_change",
+      "split": "development",
+      "payload": {
+        "title": "既有规则标题",
+        "dynamic_body": "既有规则正文；仅作为保留基线。",
+        "data_date": "2026-10-29",
+        "facts": {
+          "a100": "1.47",
+          "h100": "2.61",
+          "b200": "5.40",
+          "previous_date": "2026-10-22",
+          "a100_change_pct": "+0.09",
+          "h100_change_pct": "+0.01",
+          "b200_change_pct": "+0.03",
+          "b200_peak": "5.99",
+          "b200_peak_date": "2026-09-30",
+          "b200_peak_relation": "below",
+          "b200_gap_pct": "9.85",
+          "source": "Silicon Data A100/H100/B200 NeoCloud",
+          "weekly_source": "calculated_from_seven_day_baseline",
+          "source_note": ""
+        },
+        "images": [
+          "existing-gpu.png"
+        ],
+        "fixed_notes": "原有图下注释，影子流程不得改写。",
+        "chart_notes": "原有图下注释，影子流程不得改写。",
+        "warnings": [],
+        "valid": true
+      },
+      "expect": {
+        "status": "ok",
+        "body_patterns": [
+          "0\\.09%",
+          "0\\.01%",
+          "0\\.03%"
+        ]
+      }
+    },
+    {
+      "id": "invalid_calendar_date",
+      "split": "holdout",
+      "payload": {
+        "title": "既有规则标题",
+        "dynamic_body": "既有规则正文；仅作为保留基线。",
+        "data_date": "2026-02-30",
+        "facts": {
+          "a100": "1.47",
+          "h100": "2.61",
+          "b200": "5.73",
+          "previous_date": "2026-10-22",
+          "a100_change_pct": "-0.80",
+          "h100_change_pct": "+0.40",
+          "b200_change_pct": "+2.30",
+          "b200_peak": "5.99",
+          "b200_peak_date": "2026-09-30",
+          "b200_peak_relation": "below",
+          "b200_gap_pct": "4.34",
+          "source": "Silicon Data A100/H100/B200 NeoCloud",
+          "weekly_source": "calculated_from_seven_day_baseline",
+          "source_note": ""
+        },
+        "images": [
+          "existing-gpu.png"
+        ],
+        "fixed_notes": "原有图下注释，影子流程不得改写。",
+        "chart_notes": "原有图下注释，影子流程不得改写。",
+        "warnings": [],
+        "valid": true
+      },
+      "expect": {
+        "status": "rejected",
+        "reason": "invalid_date"
+      }
+    },
+    {
+      "id": "negative_price",
+      "split": "development",
+      "payload": {
+        "title": "既有规则标题",
+        "dynamic_body": "既有规则正文；仅作为保留基线。",
+        "data_date": "2026-10-29",
+        "facts": {
+          "a100": "-1.47",
+          "h100": "2.61",
+          "b200": "5.73",
+          "previous_date": "2026-10-22",
+          "a100_change_pct": "-0.80",
+          "h100_change_pct": "+0.40",
+          "b200_change_pct": "+2.30",
+          "b200_peak": "5.99",
+          "b200_peak_date": "2026-09-30",
+          "b200_peak_relation": "below",
+          "b200_gap_pct": "4.34",
+          "source": "Silicon Data A100/H100/B200 NeoCloud",
+          "weekly_source": "calculated_from_seven_day_baseline",
+          "source_note": ""
+        },
+        "images": [
+          "existing-gpu.png"
+        ],
+        "fixed_notes": "原有图下注释，影子流程不得改写。",
+        "chart_notes": "原有图下注释，影子流程不得改写。",
+        "warnings": [],
+        "valid": true
+      },
+      "expect": {
+        "status": "rejected",
+        "reason": "invalid_price"
+      }
+    },
+    {
+      "id": "nan_price",
+      "split": "holdout",
+      "payload": {
+        "title": "既有规则标题",
+        "dynamic_body": "既有规则正文；仅作为保留基线。",
+        "data_date": "2026-10-29",
+        "facts": {
+          "a100": "1.47",
+          "h100": "2.61",
+          "b200": "NaN",
+          "previous_date": "2026-10-22",
+          "a100_change_pct": "-0.80",
+          "h100_change_pct": "+0.40",
+          "b200_change_pct": "+2.30",
+          "b200_peak": "5.99",
+          "b200_peak_date": "2026-09-30",
+          "b200_peak_relation": "below",
+          "b200_gap_pct": "4.34",
+          "source": "Silicon Data A100/H100/B200 NeoCloud",
+          "weekly_source": "calculated_from_seven_day_baseline",
+          "source_note": ""
+        },
+        "images": [
+          "existing-gpu.png"
+        ],
+        "fixed_notes": "原有图下注释，影子流程不得改写。",
+        "chart_notes": "原有图下注释，影子流程不得改写。",
+        "warnings": [],
+        "valid": true
+      },
+      "expect": {
+        "status": "rejected",
+        "reason": "invalid_price"
+      }
+    },
+    {
+      "id": "infinite_weekly_change",
+      "split": "development",
+      "payload": {
+        "title": "既有规则标题",
+        "dynamic_body": "既有规则正文；仅作为保留基线。",
+        "data_date": "2026-10-29",
+        "facts": {
+          "a100": "1.47",
+          "h100": "2.61",
+          "b200": "5.73",
+          "previous_date": "2026-10-22",
+          "a100_change_pct": "-0.80",
+          "h100_change_pct": "+0.40",
+          "b200_change_pct": "Infinity",
+          "b200_peak": "5.99",
+          "b200_peak_date": "2026-09-30",
+          "b200_peak_relation": "below",
+          "b200_gap_pct": "4.34",
+          "source": "Silicon Data A100/H100/B200 NeoCloud",
+          "weekly_source": "calculated_from_seven_day_baseline",
+          "source_note": ""
+        },
+        "images": [
+          "existing-gpu.png"
+        ],
+        "fixed_notes": "原有图下注释，影子流程不得改写。",
+        "chart_notes": "原有图下注释，影子流程不得改写。",
+        "warnings": [],
+        "valid": true
+      },
+      "expect": {
+        "status": "rejected",
+        "reason": "invalid_change"
+      }
+    },
+    {
+      "id": "six_day_baseline_is_not_weekly",
+      "split": "holdout",
+      "payload": {
+        "title": "既有规则标题",
+        "dynamic_body": "既有规则正文；仅作为保留基线。",
+        "data_date": "2026-10-29",
+        "facts": {
+          "a100": "1.47",
+          "h100": "2.61",
+          "b200": "5.73",
+          "previous_date": "2026-10-23",
+          "a100_change_pct": "-0.80",
+          "h100_change_pct": "+0.40",
+          "b200_change_pct": "+2.30",
+          "b200_peak": "5.99",
+          "b200_peak_date": "2026-09-30",
+          "b200_peak_relation": "below",
+          "b200_gap_pct": "4.34",
+          "source": "Silicon Data A100/H100/B200 NeoCloud",
+          "weekly_source": "calculated_from_seven_day_baseline",
+          "source_note": ""
+        },
+        "images": [
+          "existing-gpu.png"
+        ],
+        "fixed_notes": "原有图下注释，影子流程不得改写。",
+        "chart_notes": "原有图下注释，影子流程不得改写。",
+        "warnings": [],
+        "valid": true
+      },
+      "expect": {
+        "status": "rejected",
+        "reason": "invalid_baseline"
+      }
+    },
+    {
+      "id": "peak_relation_disagrees_with_price",
+      "split": "holdout",
+      "payload": {
+        "title": "既有规则标题",
+        "dynamic_body": "既有规则正文；仅作为保留基线。",
+        "data_date": "2026-10-29",
+        "facts": {
+          "a100": "1.47",
+          "h100": "2.61",
+          "b200": "5.73",
+          "previous_date": "2026-10-22",
+          "a100_change_pct": "-0.80",
+          "h100_change_pct": "+0.40",
+          "b200_change_pct": "+2.30",
+          "b200_peak": "5.99",
+          "b200_peak_date": "2026-09-30",
+          "b200_peak_relation": "tie",
+          "b200_gap_pct": "",
+          "source": "Silicon Data A100/H100/B200 NeoCloud",
+          "weekly_source": "calculated_from_seven_day_baseline",
+          "source_note": ""
+        },
+        "images": [
+          "existing-gpu.png"
+        ],
+        "fixed_notes": "原有图下注释，影子流程不得改写。",
+        "chart_notes": "原有图下注释，影子流程不得改写。",
+        "warnings": [],
+        "valid": true
+      },
+      "expect": {
+        "status": "rejected",
+        "reason": "peak_mismatch"
+      }
+    },
+    {
+      "id": "future_peak_date",
+      "split": "development",
+      "payload": {
+        "title": "既有规则标题",
+        "dynamic_body": "既有规则正文；仅作为保留基线。",
+        "data_date": "2026-10-29",
+        "facts": {
+          "a100": "1.47",
+          "h100": "2.61",
+          "b200": "5.73",
+          "previous_date": "2026-10-22",
+          "a100_change_pct": "-0.80",
+          "h100_change_pct": "+0.40",
+          "b200_change_pct": "+2.30",
+          "b200_peak": "5.99",
+          "b200_peak_date": "2026-10-30",
+          "b200_peak_relation": "below",
+          "b200_gap_pct": "4.34",
+          "source": "Silicon Data A100/H100/B200 NeoCloud",
+          "weekly_source": "calculated_from_seven_day_baseline",
+          "source_note": ""
+        },
+        "images": [
+          "existing-gpu.png"
+        ],
+        "fixed_notes": "原有图下注释，影子流程不得改写。",
+        "chart_notes": "原有图下注释，影子流程不得改写。",
+        "warnings": [],
+        "valid": true
+      },
+      "expect": {
+        "status": "rejected",
+        "reason": "peak_mismatch"
+      }
+    },
+    {
+      "id": "mixed_source_without_metric_provenance",
+      "split": "holdout",
+      "payload": {
+        "title": "既有规则标题",
+        "dynamic_body": "既有规则正文；仅作为保留基线。",
+        "data_date": "2026-10-29",
+        "facts": {
+          "a100": "1.47",
+          "h100": "2.61",
+          "b200": "5.73",
+          "previous_date": "",
+          "a100_change_pct": "-0.80",
+          "h100_change_pct": "+0.40",
+          "b200_change_pct": "+2.30",
+          "b200_peak": "5.99",
+          "b200_peak_date": "2026-09-30",
+          "b200_peak_relation": "below",
+          "b200_gap_pct": "4.34",
+          "source": "Silicon Data A100/H100/B200 NeoCloud",
+          "weekly_source": "public_visible_history_mixed",
+          "source_note": ""
+        },
+        "images": [
+          "existing-gpu.png"
+        ],
+        "fixed_notes": "原有图下注释，影子流程不得改写。",
+        "chart_notes": "原有图下注释，影子流程不得改写。",
+        "warnings": [],
+        "valid": true
+      },
+      "expect": {
+        "status": "rejected",
+        "reason": "source_provenance_missing"
+      }
+    },
+    {
+      "id": "zero_price",
+      "split": "holdout",
+      "payload": {
+        "title": "既有规则标题",
+        "dynamic_body": "既有规则正文；仅作为保留基线。",
+        "data_date": "2026-10-29",
+        "facts": {
+          "a100": "1.47",
+          "h100": "0",
+          "b200": "5.73",
+          "previous_date": "2026-10-22",
+          "a100_change_pct": "-0.80",
+          "h100_change_pct": "+0.40",
+          "b200_change_pct": "+2.30",
+          "b200_peak": "5.99",
+          "b200_peak_date": "2026-09-30",
+          "b200_peak_relation": "below",
+          "b200_gap_pct": "4.34",
+          "source": "Silicon Data A100/H100/B200 NeoCloud",
+          "weekly_source": "calculated_from_seven_day_baseline",
+          "source_note": ""
+        },
+        "images": [
+          "existing-gpu.png"
+        ],
+        "fixed_notes": "原有图下注释，影子流程不得改写。",
+        "chart_notes": "原有图下注释，影子流程不得改写。",
+        "warnings": [],
+        "valid": true
+      },
+      "expect": {
+        "status": "rejected",
+        "reason": "invalid_price"
+      }
+    },
+    {
+      "id": "missing_b200_price",
+      "split": "holdout",
+      "payload": {
+        "title": "既有规则标题",
+        "dynamic_body": "既有规则正文；仅作为保留基线。",
+        "data_date": "2026-10-29",
+        "facts": {
+          "a100": "1.47",
+          "h100": "2.61",
+          "b200": "",
+          "previous_date": "2026-10-22",
+          "a100_change_pct": "-0.80",
+          "h100_change_pct": "+0.40",
+          "b200_change_pct": "+2.30",
+          "b200_peak": "5.99",
+          "b200_peak_date": "2026-09-30",
+          "b200_peak_relation": "below",
+          "b200_gap_pct": "4.34",
+          "source": "Silicon Data A100/H100/B200 NeoCloud",
+          "weekly_source": "calculated_from_seven_day_baseline",
+          "source_note": ""
+        },
+        "images": [
+          "existing-gpu.png"
+        ],
+        "fixed_notes": "原有图下注释，影子流程不得改写。",
+        "chart_notes": "原有图下注释，影子流程不得改写。",
+        "warnings": [],
+        "valid": true
+      },
+      "expect": {
+        "status": "rejected",
+        "reason": "invalid_price"
+      }
+    },
+    {
+      "id": "near_peak_opposite_direction_priority",
+      "split": "development",
+      "payload": {
+        "title": "既有规则标题",
+        "dynamic_body": "既有规则正文；仅作为保留基线。",
+        "data_date": "2026-10-29",
+        "facts": {
+          "a100": "1.47",
+          "h100": "2.61",
+          "b200": "5.69",
+          "previous_date": "2026-10-22",
+          "a100_change_pct": "+0.10",
+          "h100_change_pct": "+0.20",
+          "b200_change_pct": "-0.10",
+          "b200_peak": "5.99",
+          "b200_peak_date": "2026-09-30",
+          "b200_peak_relation": "below",
+          "b200_gap_pct": "5.00",
+          "source": "Silicon Data A100/H100/B200 NeoCloud",
+          "weekly_source": "calculated_from_seven_day_baseline",
+          "source_note": ""
+        },
+        "images": [
+          "existing-gpu.png"
+        ],
+        "fixed_notes": "原有图下注释，影子流程不得改写。",
+        "chart_notes": "原有图下注释，影子流程不得改写。",
+        "warnings": [],
+        "valid": true
+      },
+      "expect": {
+        "status": "ok",
+        "title_patterns": [
+          "分化"
+        ],
+        "title_forbidden": [
+          "接近"
+        ]
+      }
+    }
+  ]
+}

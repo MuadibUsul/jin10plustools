@@ -20,11 +20,11 @@ def window(rows, day, years=10):
     return [row for row in rows if start.isoformat() <= row['date'] <= end.isoformat()]
 
 
-def fetch(day, out):
+def fetch(day, out,*,allow_gap_repair=False,on_series=None):
     record(out, 2, '正在获取三大指数、罗素2000 与标普500等权指数')
-    data = fetch_data.fetch()
+    data = fetch_data.fetch(on_series=on_series) if on_series else fetch_data.fetch()
     for name, rows in data.items():
-        if not any(row['date'] == day for row in rows):
+        if not allow_gap_repair and not any(row['date'] == day for row in rows):
             raise ValueError(f'{"标普500等权指数" if name == "spxew" else name.upper()} 目标日期尚未更新')
     return {'target': day, 'data': {name: window(rows, day) for name, rows in data.items()},
             'sources': {'yahoo': 'https://query1.finance.yahoo.com/v8/finance/chart/'}}

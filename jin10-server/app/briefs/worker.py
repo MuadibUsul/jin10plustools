@@ -9,10 +9,10 @@ import sys
 import time
 from datetime import date,datetime,timedelta,time as clock
 
-from sqlalchemy import case,select,text,update
+from sqlalchemy import case,select,text,update,func
 
 from app.config import get_settings
-from app.db.models import BriefConfig,BriefIssue,BriefJob,BriefVersion,BriefSourceSnapshot,Team,utcnow
+from app.db.models import BriefConfig,BriefIssue,BriefJob,BriefVersion,BriefSourceSnapshot,BriefDataCheck,Team,utcnow
 from app.services.team_settings import briefs_ai
 from .delivery import default_notes
 from app.db.session import get_session_factory,get_engine
@@ -34,27 +34,48 @@ def public_read_requested(job) -> bool:
 
 def capture_public_for_job(factory, job_id, out):
     from .public_compute import fetch_visible
-    from .public_compute_store import store_visible
+    from .public_compute_store import store_visible,store_visible_history,restore_workbook_history
     from .sources import save
 
     with factory() as db:
         job = db.get(BriefJob, job_id)
-        if not public_read_requested(job):
+        background=job.action=='reconcile' and job.category in PUBLIC_COMPUTE_CATEGORIES
+        if not public_read_requested(job) and not background:
             return None
         category, issue_day, team_id = job.category, job.issue_date, job.team_id
     target_day = expected_date(category, issue_day) if category == 'gpu_rental' else None
+    partial={'category':category,'readings':[],'history':{},'captured_at':utcnow().isoformat()}
+    def page_captured(metric,reading,history):
+        partial['readings'].append(reading);partial['history'][metric]=history
+        partial['data_date']=max(row['date'] for row in partial['readings'])
+        save(out/'public-compute-read.json',partial)
     capture = fetch_visible(category, today=datetime.now(CHINA).date(),
-                            target_date=target_day)
+                            target_date=target_day,on_page=page_captured,
+                            allow_missing_week=True)
+    save(out/'public-compute-read.json',capture)
     source_day = date.fromisoformat(capture['data_date'])
-    if target_day is not None and source_day != target_day:
+    if target_day is not None and source_day != target_day and not background:
         raise ValueError(f'GPU公开数据日{source_day}与目标数据日{target_day}不一致')
-    if source_day > issue_day:
+    if source_day > issue_day and not background:
         raise ValueError('网页数据日晚于所选生产日，请选择当前生产日后再生成')
-    if (datetime.now(CHINA).date() - source_day).days > 7:
+    if (datetime.now(CHINA).date() - source_day).days > 7 and not background:
         raise ValueError(f'公开网页仍停留在{source_day}，超过七日；为避免旧稿，本次停止生成')
     with factory() as db:
-        result = store_visible(db, team_id, capture)
+        restored_workbook=restore_workbook_history(db,team_id,before=capture['data_date'])
+        historical=store_visible_history(db,team_id,capture)
+        result = (store_visible(db, team_id, capture,allow_historical=background) if capture.get('readings')
+                  else {'status':'historical_prices_only'})
+        result['historical']=historical
+        result['workbook_dates_restored']=restored_workbook
         db.commit()
+        if not background:
+            from app.db.models import AIComputeObservation
+            observed=db.scalar(select(AIComputeObservation).where(AIComputeObservation.team_id==team_id,
+                AIComputeObservation.kind==('gpu' if category=='gpu_rental' else 'token'),
+                AIComputeObservation.date==source_day))
+            fields=('a100','h100','b200') if category=='gpu_rental' else ('token_price',)
+            if observed is None or any(getattr(observed,key) is None for key in fields):
+                raise ValueError('目标日价格尚未齐全；可取得的真实历史已入库，不以较早日期冒充')
     save(out/'public-compute-read.json', {**capture, 'storage_result': result})
     return capture
 
@@ -84,8 +105,16 @@ def schedule(factory,now=None):
         for config in db.scalars(select(BriefConfig).where(BriefConfig.enabled.is_(True))):
             for category in AUTO_CATEGORIES:
                 if local.time().replace(tzinfo=None)<first_run(category):continue
+                from .trading_calendar import CalendarUnavailable
+                try:target=expected_date(category,local.date())
+                except CalendarUnavailable:continue
                 issue=find_issue(db,config.team_id,local.date(),category)
                 if issue and issue.version:continue
+                delivered=db.scalar(select(BriefVersion.id).join(BriefIssue,BriefVersion.issue_id==BriefIssue.id).where(
+                    BriefIssue.team_id==config.team_id,BriefIssue.category==category,
+                    BriefVersion.number==BriefIssue.version,
+                    BriefVersion.payload['data_date'].as_string()==target.isoformat()).limit(1))
+                if delivered:continue
                 enqueue(db,config.team_id,local.date(),category);count+=1
         db.commit()
     return count
@@ -103,10 +132,47 @@ def claim(factory,now=None):
                 BriefJob.next_attempt_at,BriefJob.created_at)
             .with_for_update(skip_locked=True).limit(1)).first()
         if not row:db.commit();return None
-        if row.created_by is None and not row.preview and (row.issue_date!=now.astimezone(CHINA).date() or not production_window(now)):
+        if row.action!='reconcile' and row.created_by is None and not row.preview and (row.issue_date!=now.astimezone(CHINA).date() or not production_window(now)):
             row.status='skipped';row.active_key=None;row.error='已超过工作日上午生产窗口';row.updated_at=now;db.commit();return None
         row.status='running';row.attempts+=1;row.lease_until=now+timedelta(minutes=7);row.updated_at=now
         db.commit();return row.id
+
+
+def schedule_reconciliation(factory,now=None):
+    """One queued repair per team; bounded cycles, no AI and no draft overwrite."""
+    from .trading_calendar import CalendarUnavailable
+    now=now or datetime.now(CHINA);local=now.astimezone(CHINA)
+    if local.hour<10:return 0  # Morning production keeps queue priority.
+    cycle=local.strftime('%Y%m%d')+'-'+str(local.hour//6)
+    count=0
+    with factory() as db:
+        for config in db.scalars(select(BriefConfig).where(BriefConfig.data_enabled.is_(True))):
+            attempts=db.scalar(select(func.count()).select_from(BriefJob).where(BriefJob.team_id==config.team_id,
+                BriefJob.action=='reconcile',BriefJob.dedupe_key.endswith(':'+cycle)))
+            if attempts>=18:continue
+            if db.scalar(select(BriefJob.id).where(BriefJob.team_id==config.team_id,
+                BriefJob.status.in_(['queued','waiting','running'])).limit(1)):continue
+            # Current sources are rechecked after success. Older missing/failed
+            # editions receive bounded catch-up attempts across subsequent days.
+            queued=False;seen=set()
+            for offset in range(8):
+                issue_day=local.date()-timedelta(days=offset)
+                for category in CATEGORIES:
+                    try:target=expected_date(category,issue_day)
+                    except CalendarUnavailable:continue
+                    if (category,target) in seen:continue
+                    seen.add((category,target))
+                    latest=db.scalar(select(BriefDataCheck).where(BriefDataCheck.team_id==config.team_id,
+                        BriefDataCheck.category==category,BriefDataCheck.data_date==target).order_by(
+                        BriefDataCheck.created_at.desc()).limit(1))
+                    if offset and latest and latest.report.get('current_data_valid'):continue
+                    key=f'{config.team_id}:{issue_day}:{category}:reconcile:production:{cycle}'
+                    if db.scalar(select(BriefJob.id).where(BriefJob.dedupe_key==key)):continue
+                    enqueue(db,config.team_id,issue_day,category,action='reconcile',cycle=cycle)
+                    count+=1;queued=True;break
+                if queued:break
+        db.commit()
+    return count
 
 
 def execute(factory,id):
@@ -128,7 +194,63 @@ def execute(factory,id):
         if category in PUBLIC_COMPUTE_CATEGORIES | {'liquidity'} and not str(category_notes or '').strip():
             category_notes=default_notes(category)
     root=root_for(team_id);out=root/'runs'/str(id);out.mkdir(parents=True,exist_ok=True)
-    record(out,1,f'任务开始：生产日 {day}，目标数据日 {expected_date(category,day)}')
+    try:target_day=expected_date(category,day)
+    except ValueError as exc:
+        with factory() as db:
+            failed=db.get(BriefJob,id);failed.status='failed';failed.error=str(exc)
+            failed.active_key=None;failed.lease_until=None;db.commit()
+        record(out,1,str(exc));return
+    record(out,1,f'任务开始：生产日 {day}，目标数据日 {target_day}')
+    restored=0
+    try:
+        with factory() as db:
+            from .repair import recover_snapshots,restore_working_history
+            recover_snapshots(db,team_id,category,out/'recovered-evidence')
+            restored=restore_working_history(db,team_id,category,root/'history'/category)
+            db.commit()
+    except (ValueError,OSError) as exc:
+        from .sources import save
+        save(out/'history-restore-error.json',{'error':str(exc),'fresh_acquisition_continues':True})
+    if restored:record(out,1,f'已从数据库恢复{restored}条真实历史记录')
+    if action=='reconcile' and category in PUBLIC_COMPUTE_CATEGORIES:
+        # Collect and backfill observations automatically; generating or adopting
+        # text/images for these two categories remains an editor-only action.
+        try:
+            capture=capture_public_for_job(factory,id,out)
+            from .data_reliability import record_run
+            from .sources import save
+            from app.db.models import AIComputeObservation
+            with factory() as db:
+                observed=list(db.scalars(select(AIComputeObservation).where(
+                    AIComputeObservation.team_id==team_id,
+                    AIComputeObservation.kind=='gpu' if category=='gpu_rental' else AIComputeObservation.kind=='token').order_by(
+                    AIComputeObservation.date)))
+                rows=[{'date':row.date.isoformat(),'token_price':row.token_price,'a100':row.a100,
+                    'h100':row.h100,'b200':row.b200,'status':row.source_status} for row in observed]
+                save(out/'ai-compute-source.json',rows)
+                fields=('a100','h100','b200') if category=='gpu_rental' else ('token_price',)
+                matched=next((row for row in rows if row['date']==target_day.isoformat()),None)
+                complete=bool(matched and all(matched[key] is not None for key in fields))
+                payload={'data_date':target_day.isoformat(),'valid':complete,'source_latest_date':capture['data_date']}
+                current_job=db.get(BriefJob,id)
+                report=record_run(db,current_job,out,payload,
+                    None if complete else '目标日尚未发布；本次已补回来源能提供的真实历史')
+                archive_run(db,current_job,out,data_date=target_day.isoformat())
+                from .data_reliability import link_sources
+                link_sources(db,current_job)
+                current_job.status='succeeded' if complete else 'failed'
+                current_job.error=None if complete else report['error']
+                current_job.active_key=None;current_job.lease_until=None;db.commit()
+            record(out,6 if complete else 2,'历史数据已补存；未自动生成或发布稿件' if complete else report['error'])
+        except Exception as exc:
+            with factory() as db:
+                failed=db.get(BriefJob,id);failed.status='failed';failed.error=str(exc)[:500]
+                from .data_reliability import record_run
+                record_run(db,failed,out,None,str(exc))
+                archive_run(db,failed,out,data_date=target_day.isoformat())
+                failed.active_key=None;failed.lease_until=None;db.commit()
+            record(out,2,'公开历史补抓未完成：'+str(exc)[:300])
+        return
     capture = None
     if requested_public_read or requested_manual_read:
         try:
@@ -144,6 +266,10 @@ def execute(factory,id):
                 failed = db.get(BriefJob,id)
                 failed.status='failed';failed.active_key=None;failed.lease_until=None
                 failed.error=message[:500];failed.updated_at=utcnow()
+                from .data_reliability import record_run,link_sources
+                record_run(db,failed,out,None,message)
+                archive_run(db,failed,out,data_date=target_day.isoformat())
+                link_sources(db,failed)
                 db.commit()
             record(out,2,'公开网页读取未完成：'+message[:500])
             return
@@ -163,8 +289,11 @@ def execute(factory,id):
     env['MANUAL_GENERATION']='1' if job.created_by is not None else '0'
     # The runner keeps the fixed rule payload; Skill copy runs after it returns.
     env['SKILL_PRODUCTION']='1'
+    old_result=out/'result.json'
+    if job.attempts>1 and old_result.exists():
+        old_result.replace(out/f'prior-result-{job.attempts}-{time.time_ns()}.json')
     command=[sys.executable,'-m','app.briefs.runner','--category',category,'--date',expected_date(category,day).isoformat(),
-             '--root',str(root),'--run-id',str(id),'--action',action]
+             '--root',str(root),'--run-id',str(id),'--action','refresh' if action=='reconcile' or automatic and action=='produce' else action]
     process=subprocess.Popen(command,env=env,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,start_new_session=os.name!='nt')
     cutoff=time.monotonic()+360
     error=None
@@ -179,7 +308,7 @@ def execute(factory,id):
     payload=json.loads(result.read_text(encoding='utf-8')) if result.exists() else None
     if not payload and (out/'error.json').exists():
         report=json.loads((out/'error.json').read_text(encoding='utf-8'));error=report['message']
-    if payload and ai.get('provider')=='chat2api':
+    if action!='reconcile' and payload and ai.get('provider')=='chat2api':
         if ai.get('requested_model') and ai['requested_model']!=ai['model']:
             payload.setdefault('warnings',[]).append(
                 f"AI 模型 {ai['requested_model']} 不受 chat2api 节点支持，本次实际使用 {ai['model']}")
@@ -193,7 +322,7 @@ def execute(factory,id):
                 payload.setdefault('warnings',[]).append('chat2api 号池为空，本次 AI 可能使用匿名降级模型')
         except Exception:
             pass
-    if payload and payload.get('valid') and action!='render':
+    if payload and payload.get('valid') and action not in ('render','reconcile'):
         from .body_templates import apply as apply_body_template
         from .skill_production import apply_skill_copy
         apply_body_template(payload,category,team_settings)
@@ -233,6 +362,11 @@ def execute(factory,id):
         stopped_step=read(out).get('step',1)
         record(out,5 if payload and payload.get('valid') else stopped_step,'正在归档原始数据、图片快照与本次运行结果')
         try:
+            from .data_reliability import record_run
+            data_report=record_run(db,job,out,payload,error)
+            if payload and payload.get('valid'):
+                from .sources import save
+                save(out/'result.json',payload)
             source_dir=None
             if payload and payload.get('artifact_dir'):
                 source_dir=(root/payload['artifact_dir']).resolve()
@@ -241,6 +375,8 @@ def execute(factory,id):
             source_archive=archive_run(db,job,out,history_dir=root/'history'/category,
                                        source_dir=source_dir,
                                        data_date=payload.get('data_date') if payload else None)
+            from .data_reliability import link_sources
+            link_sources(db,job)
             if payload and payload.get('valid') and category == 'valuation':
                 from .valuation_observations import save_history
                 save_history(db, team_id, id, out/'erp-plot-data.json')
@@ -252,6 +388,12 @@ def execute(factory,id):
             job.updated_at=utcnow();db.commit()
             record(out,5,'来源归档失败，任务已停止')
             log.exception('Brief source archive failed for job %s',id)
+            return
+        if action=='reconcile':
+            job.status='succeeded' if payload and payload.get('valid') else 'failed'
+            job.error=None if job.status=='succeeded' else (error or '数据补查未完成，保留缺口等待后续周期')
+            job.active_key=None;db.commit()
+            record(out,6,'数据补查完成；未覆盖已编辑或已确认稿件' if job.status=='succeeded' else job.error)
             return
         if payload and payload.get('valid'):
             if automatic and not production_window(datetime.now(CHINA)):
@@ -288,7 +430,7 @@ def main():
                 raise SystemExit('Another brief worker is active')
         while True:
             try:
-                schedule(factory);id=claim(factory)
+                schedule(factory);schedule_reconciliation(factory);id=claim(factory)
                 if id:execute(factory,id);continue
             except Exception:log.exception('Brief worker iteration failed')
             time.sleep(30)

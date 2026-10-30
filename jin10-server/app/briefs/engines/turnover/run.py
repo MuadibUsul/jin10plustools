@@ -174,7 +174,8 @@ def run_job(args, config, root):
         except FetchError as exc:
             raise JobError('source_' + exc.code, str(exc)) from exc
         source_path = Path(metadata['path'])
-    rows = load_and_calculate(source_path)
+    session_dates=json.loads(Path(calendar_path).read_text(encoding='utf-8'))['sessions'] if calendar_path else None
+    rows = load_and_calculate(source_path,session_dates=session_dates)
     current, previous = select_current(rows, expected)
     key = revision_key(source_path, config, expected)
     out = root/('replays' if mode == 'replay' else 'outputs')/f'{expected}-{key}'
@@ -201,7 +202,7 @@ def run_job(args, config, root):
     shutil.copyfile(source_path, snapshot)
     write_json(out/'source_metadata.json', metadata)
     reference = args.reference.resolve() if args.reference else None
-    result = build_outputs(snapshot, out, reference=reference, start=config['start'], as_of=expected)
+    result = build_outputs(snapshot, out, reference=reference, start=config['start'], as_of=expected,session_dates=session_dates)
     facts = build_facts(current, previous)
     rule = generate_rule_copy(facts)
     write_json(out/'facts.json', facts)

@@ -72,6 +72,7 @@ async function load() {
     $('#template-fields').append(group);
   }
   $('#schedule-enabled').checked = data.schedule_enabled; $('#schedule-enabled').disabled = !data.can_admin;
+  $('#data-collection-enabled').checked = data.data_collection_enabled; $('#data-collection-enabled').disabled = !data.can_admin;
   $('#ai-fields').replaceChildren();
   $('#ai-provider').value = data.ai_provider || 'deepseek';
   $('#ai-provider').disabled = !data.can_edit;
@@ -416,6 +417,7 @@ $('#settings-form').onsubmit = async (event) => {
       if (Object.keys(changes).length) body.ai = changes;
     }
     if (data.can_admin) body.schedule_enabled = $('#schedule-enabled').checked;
+    if (data.can_admin) body.data_collection_enabled = $('#data-collection-enabled').checked;
     await api('/api/settings', { method: 'PUT', json: body });
     for (const name of Object.keys(providers)) if ($(`#key-${name}`)) $(`#key-${name}`).value = '';
     dirty = false; await load(); message('设置已保存。后续任务将使用新配置。'); toast('设置已保存。');

@@ -41,8 +41,9 @@ def ensure_issue(db,team_id,day,category):
     return find_issue(db,team_id,day,category)
 
 
-def enqueue(db,team_id,day,category,*,action='produce',preview=False,user_id=None,unique=False,manual_capture=None):
+def enqueue(db,team_id,day,category,*,action='produce',preview=False,user_id=None,unique=False,manual_capture=None,cycle=None):
     key=f'{team_id}:{day}:{category}:{action}:{"preview" if preview else "production"}'
+    if cycle is not None:key+=':'+str(cycle)
     active_key=f'{team_id}:{day}:{category}'
     # A failed explicit retry is a new attempt; active duplicate clicks reuse a job.
     active=db.scalars(select(BriefJob).where(BriefJob.team_id==team_id,BriefJob.issue_date==day,
@@ -170,6 +171,7 @@ def version_out(issue,version):
         'dynamic_body':body if image_notes else copy_dates(version.dynamic_body),'body':body,
         'fixed_notes':notes,'notes_placement':'image' if image_notes else 'body','created_at':version.created_at,
         'data_date':data.get('data_date'),'warnings':data.get('warnings',[]),
+        'data_reliability':data.get('data_reliability'),
         'facts':data.get('facts',{}),'deepseek':ai,
         'images':[{'name':x,'url':f'/api/briefs/issues/{issue.id}/files/{version.number}/{x}'} for x in data.get('images',[])],
         'preview':data.get('preview',True),'valid':data.get('valid',False)}

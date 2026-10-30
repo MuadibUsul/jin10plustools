@@ -82,6 +82,8 @@ def store_manual(db, team_id, capture: dict) -> dict:
         if (same_values and row.source_status == 'manual_entry' and
                 old.get('readings') == readings and old.get('source_note') == capture['source_note']):
             return {'status': 'unchanged', 'revision': row.revision}
+        from .public_compute_store import preserve_revision
+        preserve_revision(db,row)
         row.revision += 1
         result = 'updated_same_day'
     for metric, value in values.items():

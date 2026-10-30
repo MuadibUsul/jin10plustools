@@ -9,7 +9,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 
-from app.db.models import BriefAudit, BriefConfig, BriefIssue, BriefJob, BriefVersion, Role, Team, utcnow
+from app.db.models import BriefAudit, BriefConfig, BriefIssue, BriefJob, BriefVersion, BriefDataCheck, Role, Team, utcnow
 from app.services.team_settings import update_notes
 from app.deps import CurrentUser, DbSession, Editor
 from app.briefs.policy import CATEGORIES, CHINA
@@ -57,6 +57,7 @@ class ConfirmRequest(BaseModel):
 
 class ConfigRequest(BaseModel):
     enabled: bool
+    data_enabled:bool|None=None
 
 
 def get_issue(db,user,id,lock=False):
@@ -76,9 +77,40 @@ def visible(db,user,item):
 def categories(db:DbSession,user:CurrentUser):
     config=db.get(BriefConfig,user.team_id)
     return {'categories':[{'id':key,'label':label,'image_required':key!='oil_etf'} for key,label in CATEGORIES.items()],
-            'schedule_enabled':bool(config and config.enabled),'window':'工作日 08:00—10:00（北京时间）',
-            'date_policy':'周一取周五，其余取前一工作日；流动性在 08:00 后优先读取前一交易日 17:00 收盘行情；不维护节假日日历',
+            'schedule_enabled':bool(config and config.enabled),'window':'每日 08:00—10:00（北京时间）；后台分周期补数',
+            'data_collection_enabled':bool(config and config.data_enabled),
+            'date_policy':'A股、银行间及美股分别按市场日历取前一交易日；AI指标按自然日且保持手动生成。休市不重复生成同一数据日。',
             'can_edit':user.role in (Role.ADMIN,Role.EDITOR),'can_configure':user.role==Role.ADMIN}
+
+
+@router.get('/data-status')
+def data_status(db:DbSession,user:CurrentUser,date:date|None=None):
+    from app.briefs.policy import expected_date
+    from app.briefs.data_reliability import coverage
+    day=date or datetime.now(CHINA).date();items=[]
+    for category,label in CATEGORIES.items():
+        try:target=expected_date(category,day)
+        except ValueError as exc:
+            items.append({'category':category,'label':label,'status':'blocked','error':str(exc)});continue
+        latest=db.scalar(select(BriefDataCheck).where(BriefDataCheck.team_id==user.team_id,
+            BriefDataCheck.category==category,BriefDataCheck.data_date==target).order_by(
+            BriefDataCheck.created_at.desc()).limit(1))
+        items.append({'category':category,'label':label,'target_date':target.isoformat(),
+            'status':latest.status if latest else 'not_collected',
+            'checked_at':latest.created_at.isoformat() if latest else None,
+            'report':latest.report if latest else {'target_date':target.isoformat(),'metrics':{},'limitations':[]},
+            'manual_only':category in ('token_cost','gpu_rental')})
+    return {'items':items}
+
+
+@router.get('/data-series')
+def data_series(db:DbSession,user:CurrentUser,category:Literal[*CATEGORIES],
+                series:Annotated[str,Query(min_length=1,max_length=80)],start:date,end:date,
+                as_of:datetime|None=None,limit:Annotated[int,Query(ge=1,le=5000)]=5000):
+    if start>end:raise HTTPException(422,'开始日期不能晚于结束日期')
+    if as_of is not None and as_of.tzinfo is None:raise HTTPException(422,'回溯时间必须包含时区')
+    from app.briefs.data_reliability import read_series
+    return read_series(db,user.team_id,category,series,start,end,as_of=as_of,limit=limit)
 
 
 @router.put('/config')
@@ -87,10 +119,11 @@ def config(body:ConfigRequest,db:DbSession,user:Editor):
     item=db.get(BriefConfig,user.team_id)
     if not item:item=BriefConfig(team_id=user.team_id);db.add(item)
     item.enabled=body.enabled;item.updated_at=utcnow()
+    if body.data_enabled is not None:item.data_enabled=body.data_enabled
     from app.services.business_history import record
     record(db,db.get(Team,user.team_id),user.id)
     db.commit()
-    return {'enabled':item.enabled}
+    return {'enabled':item.enabled,'data_enabled':item.data_enabled}
 
 
 @router.get('/issues')
@@ -223,6 +256,15 @@ def confirm(id:uuid.UUID,body:ConfirmRequest,db:DbSession,user:Editor):
     if issue.version!=body.version:raise HTTPException(409,'只能确认当前版本，请刷新核对')
     version=db.scalars(select(BriefVersion).where(BriefVersion.issue_id==id,BriefVersion.number==body.version)).first()
     if not version or not version.payload.get('valid'):raise HTTPException(409,'数据或图片未通过基础校验')
+    reliability=version.payload.get('data_reliability') or {}
+    if reliability.get('publication_digest'):
+        source_day=date.fromisoformat(version.payload['data_date'])
+        latest=db.scalar(select(BriefDataCheck).where(BriefDataCheck.team_id==user.team_id,
+            BriefDataCheck.category==issue.category,BriefDataCheck.data_date==source_day).order_by(
+            BriefDataCheck.created_at.desc()).limit(1))
+        if (latest and latest.report.get('current_data_valid') and latest.report.get('publication_digest')
+                and latest.report['publication_digest']!=reliability['publication_digest']):
+            raise HTTPException(409,'来源数据已有修订，请重新生成并核对后确认')
     for name in version.payload.get('images',[]):
         try:artifact_path(issue,version,name)
         except ValueError as e:raise HTTPException(409,str(e)) from None

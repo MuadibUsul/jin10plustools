@@ -34,6 +34,14 @@ def pipeline_signature():
             continue
         digest.update(path.relative_to(HERE).as_posix().encode())
         digest.update(path.read_bytes())
+    # Wording packs outside HERE also participate in cache provenance.
+    from .editorial_suite import SUPPORTED_CATEGORIES, pack_path
+    for category in sorted(SUPPORTED_CATEGORIES):
+        digest.update(('editorial-pack/' + category).encode())
+        try:
+            digest.update(pack_path(category).read_bytes())
+        except (OSError, ValueError):
+            digest.update(b'editorial-pack-unavailable')
     return digest.hexdigest()[:16]
 
 

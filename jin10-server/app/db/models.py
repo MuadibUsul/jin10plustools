@@ -219,6 +219,7 @@ class BriefConfig(Base):
     __tablename__ = 'brief_configs'
     team_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('teams.id', ondelete='CASCADE'), primary_key=True)
     enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    data_enabled: Mapped[bool] = mapped_column(Boolean,default=lambda ctx:bool(ctx.get_current_parameters().get('enabled')),server_default='false')
     notes: Mapped[dict] = mapped_column(JSON, default=dict, server_default='{}')
     updated_at: Mapped[dt.datetime] = mapped_column(default=utcnow)
 
@@ -674,3 +675,43 @@ class TeamBusinessRevision(Base):
     digest: Mapped[str] = mapped_column(String(64))
     created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey('users.id', ondelete='SET NULL'))
     created_at: Mapped[dt.datetime] = mapped_column(default=utcnow, index=True)
+
+
+class BriefDataPoint(Base):
+    """Append-only normalized source revisions; shorter fetches never erase rows."""
+    __tablename__ = 'brief_data_points'
+    __table_args__ = (
+        Index('uq_brief_data_point_revision','team_id','category','series','method','data_date','revision',unique=True),
+        Index('ix_brief_data_points_team_date','team_id','data_date'),
+    )
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True,default=uuid.uuid4)
+    team_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('teams.id',ondelete='CASCADE'))
+    category: Mapped[str] = mapped_column(String(30))
+    series: Mapped[str] = mapped_column(String(80))
+    method: Mapped[str] = mapped_column(String(200))
+    data_date: Mapped[dt.date] = mapped_column(Date)
+    revision: Mapped[int] = mapped_column(Integer,default=1)
+    values: Mapped[dict[str,Any]] = mapped_column(JsonType)
+    units: Mapped[dict[str,Any]] = mapped_column(JsonType,default=dict)
+    sha256: Mapped[str] = mapped_column(String(64))
+    job_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey('brief_jobs.id',ondelete='SET NULL'))
+    source_snapshot_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey('brief_source_snapshots.id',ondelete='SET NULL'))
+    collected_at: Mapped[dt.datetime] = mapped_column(default=utcnow)
+    created_at: Mapped[dt.datetime] = mapped_column(default=utcnow)
+
+
+class BriefDataCheck(Base):
+    __tablename__ = 'brief_data_checks'
+    __table_args__ = (
+        Index('uq_brief_data_check_attempt','job_id','attempt',unique=True),
+        Index('ix_brief_data_checks_team_date','team_id','data_date'),
+    )
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True,default=uuid.uuid4)
+    team_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('teams.id',ondelete='CASCADE'))
+    category: Mapped[str] = mapped_column(String(30))
+    data_date: Mapped[dt.date] = mapped_column(Date)
+    job_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey('brief_jobs.id',ondelete='SET NULL'))
+    attempt: Mapped[int] = mapped_column(Integer,default=0)
+    status: Mapped[str] = mapped_column(String(30))
+    report: Mapped[dict[str,Any]] = mapped_column(JsonType)
+    created_at: Mapped[dt.datetime] = mapped_column(default=utcnow)

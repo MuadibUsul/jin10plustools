@@ -1,0 +1,174 @@
+{
+  "schema_version": 1,
+  "pack_id": "volume-editorial",
+  "version": "0.1.0",
+  "category": "volume",
+  "status": "draft_pending_editor_review",
+  "review": {
+    "approved_by": null,
+    "reviewed_at": null
+  },
+  "sources": [
+    {
+      "path": "skills/jin10-plus-volume-text/references/history.md",
+      "sha256": "91cbc112162452434eb354027085957dd33a8d0aae92d014a015b2d117be50a4",
+      "kind": "user_provided_historical_style_archive"
+    }
+  ],
+  "scenarios": [
+    {
+      "id": "up",
+      "description": "成交额：按已校验事实确定up场景，不从旧稿复制当日结论。"
+    },
+    {
+      "id": "down",
+      "description": "成交额：按已校验事实确定down场景，不从旧稿复制当日结论。"
+    },
+    {
+      "id": "flat",
+      "description": "成交额：按已校验事实确定flat场景，不从旧稿复制当日结论。"
+    }
+  ],
+  "slot_roles": {
+    "lead": [
+      "date",
+      "main_fact"
+    ],
+    "comparison": [
+      "comparison_fact"
+    ]
+  },
+  "modules": {
+    "headlines": [
+      {
+        "id": "up_1",
+        "text": "【A股温度计】两市成交额回升",
+        "scenarios": [
+          "up"
+        ],
+        "editorial_reason": "从用户历史文段提炼主旨组织方式，并按当前事实条件派生；尚待编辑审核。"
+      },
+      {
+        "id": "up_2",
+        "text": "【A股温度计】成交额增加，两市交易活跃度回升",
+        "scenarios": [
+          "up"
+        ],
+        "editorial_reason": "从用户历史文段提炼主旨组织方式，并按当前事实条件派生；尚待编辑审核。"
+      },
+      {
+        "id": "down_1",
+        "text": "【A股温度计】两市成交额回落",
+        "scenarios": [
+          "down"
+        ],
+        "editorial_reason": "从用户历史文段提炼主旨组织方式，并按当前事实条件派生；尚待编辑审核。"
+      },
+      {
+        "id": "down_2",
+        "text": "【A股温度计】成交额减少，两市交易活跃度回落",
+        "scenarios": [
+          "down"
+        ],
+        "editorial_reason": "从用户历史文段提炼主旨组织方式，并按当前事实条件派生；尚待编辑审核。"
+      },
+      {
+        "id": "flat_1",
+        "text": "【A股温度计】两市成交额较前一交易日持平",
+        "scenarios": [
+          "flat"
+        ],
+        "editorial_reason": "从用户历史文段提炼主旨组织方式，并按当前事实条件派生；尚待编辑审核。"
+      },
+      {
+        "id": "flat_2",
+        "text": "【A股温度计】两市成交额暂无变化",
+        "scenarios": [
+          "flat"
+        ],
+        "editorial_reason": "从用户历史文段提炼主旨组织方式，并按当前事实条件派生；尚待编辑审核。"
+      }
+    ],
+    "leads": [
+      {
+        "id": "dated",
+        "template": "{date}，{main_fact}",
+        "editorial_reason": "先明确数据日期，再给完整主要事实。"
+      },
+      {
+        "id": "as_of",
+        "template": "截至{date}，{main_fact}",
+        "editorial_reason": "按数据截止日表述，不改变比较基准。"
+      }
+    ],
+    "comparisons": [
+      {
+        "id": "direct",
+        "template": "{comparison_fact}",
+        "editorial_reason": "保持对照指标及日期、单位和数值的原子绑定。"
+      },
+      {
+        "id": "introduced",
+        "template": "从均线位置看，{comparison_fact}",
+        "editorial_reason": "只增加段间衔接，不改变完整事实片段。"
+      }
+    ],
+    "closings": [
+      {
+        "id": "none",
+        "text": "",
+        "scenarios": [
+          "up",
+          "down",
+          "flat"
+        ],
+        "editorial_reason": "事实和比较已完整时直接收尾，不另加空泛总结。"
+      }
+    ]
+  },
+  "examples": [
+    {
+      "id": "volume-structure-1",
+      "scenario": "up",
+      "source_sample_id": "2026-10-20",
+      "body_structure": [
+        "数据日",
+        "主要指标及变化",
+        "相关比较或参考线"
+      ],
+      "editorial_reason": "仅参考用户原稿的日期、主事实、对照顺序；当前情形由事实规则派生，不把样本日期、数字或因果判断当作当期事实。"
+    },
+    {
+      "id": "volume-structure-2",
+      "scenario": "down",
+      "source_sample_id": "2026-10-19",
+      "body_structure": [
+        "数据日",
+        "主要指标及变化",
+        "相关比较或参考线"
+      ],
+      "editorial_reason": "仅参考用户原稿的日期、主事实、对照顺序；当前情形由事实规则派生，不把样本日期、数字或因果判断当作当期事实。"
+    },
+    {
+      "id": "volume-structure-3",
+      "scenario": "flat",
+      "source_sample_id": "2026-10-16",
+      "body_structure": [
+        "数据日",
+        "主要指标及变化",
+        "相关比较或参考线"
+      ],
+      "editorial_reason": "仅参考用户原稿的日期、主事实、对照顺序；当前情形由事实规则派生，不把样本日期、数字或因果判断当作当期事实。"
+    }
+  ],
+  "rejected_patterns": [
+    {
+      "text": "未来收益确定",
+      "reason": "指标比较不能保证未来回报。"
+    },
+    {
+      "text": "旧稿中的当日数据与结论",
+      "reason": "历史资料只供表达结构参考。"
+    }
+  ]
+}

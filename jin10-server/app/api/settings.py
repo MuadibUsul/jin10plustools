@@ -36,6 +36,7 @@ class Update(BaseModel):
     revision: int = Field(ge=0)
     notes: dict[Literal[*CATEGORIES], str] | None = None
     schedule_enabled: bool | None = None
+    data_collection_enabled: bool | None = None
     ai: dict[Literal['jev', 'deepseek', 'chat2api', 'openai'], AIConfig] | None = None
     ai_provider: Literal['deepseek', 'chat2api', 'openai'] | None = None
     brief_templates: dict[Literal[*CATEGORIES], TemplateConfig] | None = None
@@ -70,6 +71,7 @@ def output(db, team, user):
           for name in ('jev', 'deepseek', 'chat2api', 'openai')}
     return {'revision': saved.get('settings_revision', 0), 'can_edit': user.role != Role.VIEWER,
             'can_admin': user.role == Role.ADMIN, 'schedule_enabled': bool(config and config.enabled),
+            'data_collection_enabled':bool(config and config.data_enabled),
             'categories': [{'id': key, 'label': label, 'notes': (config.notes or {}).get(key, default_notes(key)) if config else default_notes(key)}
                            for key, label in CATEGORIES.items()],
             'note_revisions': saved.get('brief_note_revisions', []), 'ai': ai,
@@ -87,7 +89,7 @@ def read(db: DbSession, user: CurrentUser):
 @router.put('')
 def update(body: Update, db: DbSession, user: Editor):
     if user.role != Role.ADMIN:
-        if body.schedule_enabled is not None:
+        if body.schedule_enabled is not None or body.data_collection_enabled is not None:
             raise HTTPException(403, '仅管理员可修改排期')
         for change in (body.ai or {}).values():
             if change.key is not None or change.use_server_key or change.enabled is not None:
@@ -99,12 +101,13 @@ def update(body: Update, db: DbSession, user: Editor):
         raise HTTPException(409, '设置已由其他成员更新，请刷新后重试')
     if body.notes is not None:
         update_notes(db, team, body.notes, user.id)
-    if body.schedule_enabled is not None:
+    if body.schedule_enabled is not None or body.data_collection_enabled is not None:
         config = db.get(BriefConfig, team.id)
         if config is None:
             config = BriefConfig(team_id=team.id, notes={})
             db.add(config)
-        config.enabled = body.schedule_enabled
+        if body.schedule_enabled is not None:config.enabled = body.schedule_enabled
+        if body.data_collection_enabled is not None:config.data_enabled=body.data_collection_enabled
         config.updated_at = utcnow()
     saved = dict(team.settings or {})
     if body.brief_templates is not None:

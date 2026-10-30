@@ -71,7 +71,7 @@ def parse_quotes(raw,expected_date):
     return {'updated_at':stamp,'quote_date':expected_date,'rows':rows}
 
 
-def parse_history(raw,quote_date):
+def parse_history(raw,quote_date,*,clip_after=False):
     try:text=raw.decode('utf-8-sig')
     except UnicodeError:raise SourceError('invalid_history','History is not UTF-8 CSV') from None
     result=[]
@@ -80,7 +80,9 @@ def parse_history(raw,quote_date):
         if len(record)<9:raise SourceError('source_changed','History CSV no longer has its documented DR columns')
         try:day=date.fromisoformat(record[0]).isoformat()
         except ValueError:raise SourceError('invalid_history','History has an invalid date') from None
-        if day>quote_date:raise SourceError('date_mismatch','History contains a date after the quotation day')
+        if day>quote_date:
+            if clip_after:continue
+            raise SourceError('date_mismatch','History contains a date after the quotation day')
         result.append({'date':day,**{k:numeric(record[v],k) for k,v in HISTORY_COLUMNS.items()}})
     days=[r['date'] for r in result]
     if len(result)<2 or days!=sorted(set(days),reverse=True):
@@ -111,10 +113,30 @@ def fetch_snapshot(output_dir,expected_date,*,timeout=25,opener=urlopen):
     out=Path(output_dir);out.mkdir(parents=True,exist_ok=True)
     quotes_raw,quotes_meta=read_source('prr-md.json','GET',timeout=timeout,opener=opener)
     (out/'prr-md.json').write_bytes(quotes_raw)
-    quote=parse_quotes(quotes_raw,expected_date)
+    quote=None;quote_error=None
+    try:quote=parse_quotes(quotes_raw,expected_date)
+    except SourceError as exc:
+        if exc.code!='pending_close':raise
+        quote_error=exc
     history_raw,history_meta=read_source('prr-chrt.csv','POST',timeout=timeout,opener=opener)
     (out/'prr-chrt.csv').write_bytes(history_raw)
-    history=parse_history(history_raw,expected_date)
+    if quote is None:
+        payload=json.loads(quotes_raw.decode('utf-8-sig'))
+        actual_stamp=payload['data']['showDateCN']
+        if actual_stamp[:10]<=expected_date:raise quote_error
+        history=parse_history(history_raw,expected_date,clip_after=True)
+        (out/'partial-history.json').write_text(json.dumps(history,ensure_ascii=False),encoding='utf-8')
+        matched=next((row for row in history['rows'] if row['date']==expected_date),None)
+        if not matched or any(matched.get(key) is None or Decimal(str(matched[key]))<=0 for key in ('DR001','DR007')):
+            raise quote_error
+        # The CSV is an actual historical daily weighted-rate series. The
+        # 17:00 label denotes its session boundary, not an invented fetch time.
+        stamp=expected_date+' 17:00'
+        quote={'updated_at':stamp,'quote_date':expected_date,'source_actual_updated_at':actual_stamp,
+            'timestamp_kind':'daily_session_close_boundary','provenance':'official_published_daily_history',
+            'rows':[{'product':code,'weighted_rate':matched[code],'latest_rate':None,
+                     'average_term_days':None,'updated_at':stamp} for code in ('DR001','DR007')]}
+    else:history=parse_history(history_raw,expected_date)
     result={'source':PAGE,'fetched_at':datetime.now(CHINA).isoformat(),'quotes':quote,'history':history,
             'source_requests':[quotes_meta,history_meta],'policy_rate':None,
             'history_is_separate_from_intraday_quotes':True}

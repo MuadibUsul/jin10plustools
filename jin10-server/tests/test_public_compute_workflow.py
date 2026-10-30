@@ -128,7 +128,9 @@ def test_click_capture_persists_visible_precision_and_generates_both_briefs(
     assert '1.55' in gpu['dynamic_body'] and '2.86' in gpu['dynamic_body'] and '6.14' in gpu['dynamic_body']
     assert 'A100官网展示的七日变化为下跌0.6%' in gpu['dynamic_body']
     assert 'B200官网展示的七日变化为上涨6.6%' in gpu['dynamic_body']
-    assert '已收录数据新高' in gpu['dynamic_body']
+    # Recovered Oct 20 history exceeds this synthetic Oct 21 observation.
+    assert '已收录数据新高' not in gpu['dynamic_body']
+    assert '6.26' in gpu['dynamic_body']
     assert (tmp_path/'token_cost'/token['images'][0]).is_file()
     assert (tmp_path/'gpu_rental'/gpu['images'][0]).is_file()
 

@@ -1,0 +1,266 @@
+{
+  "schema_version": 1,
+  "category": "token_cost",
+  "pack_id": "token-cost-editorial",
+  "version": "0.1.0",
+  "status": "draft_pending_editor_review",
+  "review": {
+    "approved_by": null,
+    "reviewed_at": null
+  },
+  "sources": [
+    {
+      "path": "skills/jin10-plus-token-cost-text/references/history.md",
+      "sha256": "457927bdcf018c2663177188754e726e15c5c5c3e177df8c1acfa0b66a2c4e1e",
+      "kind": "user_provided_historical_style_archive"
+    },
+    {
+      "path": "skills/jin10-plus-token-cost-text/SKILL.md",
+      "sha256": "d0a2aed61194b5be50e8e8f908c0002d5a137f204b167e10f0cde7e66ca0009a",
+      "kind": "current_editorial_constraints"
+    }
+  ],
+  "scenarios": [
+    {
+      "id": "peak_tie",
+      "description": "当期价格等于此前已收录高点，只写并列。"
+    },
+    {
+      "id": "peak_above",
+      "description": "当期价格严格高于此前已收录高点，不扩大为完整历史极值。"
+    },
+    {
+      "id": "missing_week",
+      "description": "当期缺少七日变化；不使用最近可得价格或行号代替基准。"
+    },
+    {
+      "id": "halved_rebound",
+      "description": "周涨且较此前已收录高点累计回落不少于50%，只描述本期回升。"
+    },
+    {
+      "id": "low_rebound",
+      "description": "周涨且相对此前已收录高点回撤不少于40%。"
+    },
+    {
+      "id": "rebound",
+      "description": "周涨，不足以单独确认长期趋势扭转。"
+    },
+    {
+      "id": "low_flat",
+      "description": "周变化为零且相对此前高点回撤不少于40%。"
+    },
+    {
+      "id": "flat",
+      "description": "周变化严格为零；不把小幅非零变化改成持平。"
+    },
+    {
+      "id": "low_decline",
+      "description": "周跌且相对此前已收录高点回撤不少于40%。"
+    },
+    {
+      "id": "decline",
+      "description": "周跌，仅给出当期事实与有依据比较。"
+    },
+    {
+      "id": "narrow_low",
+      "description": "事实包已校验前后五日波幅收窄，并符合不少于40%的回撤条件。"
+    },
+    {
+      "id": "narrow_normal",
+      "description": "事实包已校验前后五日波幅收窄，不额外标为低位。"
+    }
+  ],
+  "slot_roles": {
+    "lead": [
+      "data_day",
+      "primary"
+    ],
+    "comparison": [
+      "range",
+      "peak"
+    ]
+  },
+  "modules": {
+    "headlines": [
+      {
+        "id": "peak_tie_direct",
+        "text": "【AI算力CPI】Token价格与此前已收录高点并列",
+        "scenarios": [
+          "peak_tie"
+        ],
+        "editorial_reason": "从对应栏目素材和现行事实规则提炼；当期数值仅来自事实片段，待编辑审核。"
+      },
+      {
+        "id": "peak_above_direct",
+        "text": "【AI算力CPI】Token价格高于此前已收录高点",
+        "scenarios": [
+          "peak_above"
+        ],
+        "editorial_reason": "从对应栏目素材和现行事实规则提炼；当期数值仅来自事实片段，待编辑审核。"
+      },
+      {
+        "id": "missing_week_direct",
+        "text": "【AI算力CPI】Token支出价格更新，七日比较基准缺失",
+        "scenarios": [
+          "missing_week"
+        ],
+        "editorial_reason": "从对应栏目素材和现行事实规则提炼；当期数值仅来自事实片段，待编辑审核。"
+      },
+      {
+        "id": "halved_rebound_direct",
+        "text": "【AI算力CPI】Token价格腰斩后一周回升",
+        "scenarios": [
+          "halved_rebound"
+        ],
+        "editorial_reason": "从对应栏目素材和现行事实规则提炼；当期数值仅来自事实片段，待编辑审核。"
+      },
+      {
+        "id": "low_rebound_direct",
+        "text": "【AI算力CPI】Token价格一周回升，较此前高点仍明显回落",
+        "scenarios": [
+          "low_rebound"
+        ],
+        "editorial_reason": "从对应栏目素材和现行事实规则提炼；当期数值仅来自事实片段，待编辑审核。"
+      },
+      {
+        "id": "rebound_direct",
+        "text": "【AI算力CPI】Token价格一周回升",
+        "scenarios": [
+          "rebound"
+        ],
+        "editorial_reason": "从对应栏目素材和现行事实规则提炼；当期数值仅来自事实片段，待编辑审核。"
+      },
+      {
+        "id": "low_flat_direct",
+        "text": "【AI算力CPI】Token价格一周持平，较此前高点仍明显回落",
+        "scenarios": [
+          "low_flat"
+        ],
+        "editorial_reason": "从对应栏目素材和现行事实规则提炼；当期数值仅来自事实片段，待编辑审核。"
+      },
+      {
+        "id": "flat_direct",
+        "text": "【AI算力CPI】Token价格一周持平",
+        "scenarios": [
+          "flat"
+        ],
+        "editorial_reason": "从对应栏目素材和现行事实规则提炼；当期数值仅来自事实片段，待编辑审核。"
+      },
+      {
+        "id": "low_decline_direct",
+        "text": "【AI算力CPI】Token价格一周下跌，较此前高点明显回落",
+        "scenarios": [
+          "low_decline"
+        ],
+        "editorial_reason": "从对应栏目素材和现行事实规则提炼；当期数值仅来自事实片段，待编辑审核。"
+      },
+      {
+        "id": "decline_direct",
+        "text": "【AI算力CPI】Token价格一周下跌",
+        "scenarios": [
+          "decline"
+        ],
+        "editorial_reason": "从对应栏目素材和现行事实规则提炼；当期数值仅来自事实片段，待编辑审核。"
+      },
+      {
+        "id": "narrow_low_direct",
+        "text": "【AI算力CPI】Token价格短期波幅收窄，较此前高点仍明显回落",
+        "scenarios": [
+          "narrow_low"
+        ],
+        "editorial_reason": "从对应栏目素材和现行事实规则提炼；当期数值仅来自事实片段，待编辑审核。"
+      },
+      {
+        "id": "narrow_normal_direct",
+        "text": "【AI算力CPI】Token价格短期波幅收窄",
+        "scenarios": [
+          "narrow_normal"
+        ],
+        "editorial_reason": "从对应栏目素材和现行事实规则提炼；当期数值仅来自事实片段，待编辑审核。"
+      }
+    ],
+    "leads": [
+      {
+        "id": "lead_1",
+        "template": "截至{data_day}，{primary}",
+        "editorial_reason": "保留栏目主指标优先的信息顺序；指标和数值由不可拆事实片段填入。"
+      },
+      {
+        "id": "lead_2",
+        "template": "{data_day}，{primary}",
+        "editorial_reason": "保留栏目主指标优先的信息顺序；指标和数值由不可拆事实片段填入。"
+      }
+    ],
+    "comparisons": [
+      {
+        "id": "comparison_1",
+        "template": "{range}{peak}",
+        "editorial_reason": "比较及范围仅在当期事实包支持时出现；不添加原因或趋势结论。"
+      },
+      {
+        "id": "comparison_2",
+        "template": "{peak}{range}",
+        "editorial_reason": "比较及范围仅在当期事实包支持时出现；不添加原因或趋势结论。"
+      }
+    ],
+    "closings": [
+      {
+        "id": "none",
+        "text": "",
+        "scenarios": [
+          "peak_tie",
+          "peak_above",
+          "missing_week",
+          "halved_rebound",
+          "low_rebound",
+          "rebound",
+          "low_flat",
+          "flat",
+          "low_decline",
+          "decline",
+          "narrow_low",
+          "narrow_normal"
+        ],
+        "editorial_reason": "事实交代完整即可收尾，不强制添加笼统总结。"
+      }
+    ]
+  },
+  "examples": [
+    {
+      "id": "token_sample_02_structure",
+      "scenario": "narrow_low",
+      "source_sample_id": "02",
+      "body_structure": [
+        "价格和周变化",
+        "已校验短期区间",
+        "较此前高点的回撤"
+      ],
+      "editorial_reason": "只提炼用户样本的先价格、再区间顺序；不复用旧日期、旧数值或趋势结论。"
+    },
+    {
+      "id": "token_sample_05_structure",
+      "scenario": "halved_rebound",
+      "source_sample_id": "05",
+      "body_structure": [
+        "当期价格",
+        "七日回升",
+        "仍低于此前高点及其距离"
+      ],
+      "editorial_reason": "保留短期与长期位置对照，删除烧钱速度、需求迁移与企业定价权推断。"
+    }
+  ],
+  "rejected_patterns": [
+    {
+      "text": "企业烧钱速度放缓",
+      "reason": "单一价格指数不能证明企业支出总额变化。"
+    },
+    {
+      "text": "趋势已经扭转",
+      "reason": "一周回升不能确认更长时间趋势。"
+    },
+    {
+      "text": "历史新高",
+      "reason": "已收录高点不代表完整历史。"
+    }
+  ]
+}

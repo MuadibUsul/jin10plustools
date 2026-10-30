@@ -14,6 +14,7 @@ def record(db, team, user_id=None):
               for key in ('skills','brief_templates','brief_note_revisions','retired_issue_notes')}
     snapshot['notes']=dict(config.notes or {}) if config else {}
     snapshot['schedule_enabled']=bool(config and config.enabled)
+    snapshot['data_collection_enabled']=bool(config and config.data_enabled)
     snapshot['ai_provider']=saved.get('ai_provider','deepseek')
     snapshot['models']={name:entry.get('model') for name,entry in saved.get('ai',{}).items()}
     digest=hashlib.sha256(json.dumps(snapshot,sort_keys=True,ensure_ascii=False).encode()).hexdigest()

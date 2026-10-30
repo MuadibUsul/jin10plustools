@@ -23,7 +23,7 @@ from sqlalchemy.orm import Session
 
 from app.briefs.policy import CHINA
 from app.db.models import (
-    AIComputeObservation, AIComputeRevision, TeamBusinessRevision, Asset, Board, BriefAudit, BriefIssue, BriefJob, BriefSourceSnapshot, BriefVersion,
+    AIComputeObservation, AIComputeRevision, TeamBusinessRevision, Asset, Board, BriefAudit, BriefIssue, BriefJob, BriefSourceSnapshot, BriefVersion, BriefDataPoint, BriefDataCheck,
     Feedback, Issue, Material, NewsAuditEvent, NewsDraft, NewsDraftRevision, NewsEvent,
     NewsEventAnalysis, NewsEventClaim, NewsEventClaimEvidence, NewsEventEvidence,
     NewsEventRevision, NewsSkillVersion, NewsWorkflowNode, NewsWorkflowRun,
@@ -541,6 +541,21 @@ BUSINESS_REVISIONS = build_dataset(
     columns=_columns(('id','修订ID','text'),('snapshot','业务设置','json'),('digest','校验值','text'),
         ('created_by','修改人','user'),('created_at','修改时间','datetime')))
 
+BRIEF_DATA_POINTS = build_dataset(
+    key='brief_data_points',label='快讯数据历史与修订',date_label='数据日期',
+    description='追加保存各来源和方法的结构化观测；保留缺失、精度与历史修订。',
+    model=BriefDataPoint,team_column=BriefDataPoint.team_id,date_column=BriefDataPoint.data_date,day=True,
+    columns=_columns(('id','记录ID','text'),('category','栏目','text'),('series','序列','text'),
+        ('method','来源方法','text'),('data_date','数据日期','date'),('revision','修订号','int'),
+        ('values','观测值','json'),('units','单位口径','json'),('sha256','内容哈希','text'),
+        ('source_snapshot_id','来源证据ID','text'),('collected_at','采集记录时间','datetime'),('created_at','入库时间','datetime')))
+BRIEF_DATA_CHECKS = build_dataset(
+    key='brief_data_checks',label='快讯数据覆盖检查',date_label='数据日期',
+    description='每次抓取的覆盖区间、缺失日期、失败与数据限制。',
+    model=BriefDataCheck,team_column=BriefDataCheck.team_id,date_column=BriefDataCheck.data_date,day=True,
+    columns=_columns(('id','检查ID','text'),('category','栏目','text'),('data_date','目标日期','date'),
+        ('status','状态','text'),('report','覆盖报告','json'),('created_at','检查时间','datetime')))
+
 DATASETS: dict[str, Dataset] = {dataset.key: dataset for dataset in (
     MATERIALS, ASSETS, ISSUES, BOARDS, PARSE_REPORTS,
     BRIEF_ISSUES, BRIEF_VERSIONS, BRIEF_JOBS, BRIEF_SNAPSHOTS, VALUATION_OBSERVATIONS,
@@ -549,6 +564,7 @@ DATASETS: dict[str, Dataset] = {dataset.key: dataset for dataset in (
     NEWS_EVENT_LINKS, NEWS_EVENT_ANALYSES, NEWS_DRAFTS, NEWS_DRAFT_REVISIONS,
     NEWS_SKILL_VERSIONS, NEWS_WORKFLOW_RUNS, NEWS_WORKFLOW_NODES, NEWS_AUDIT,
     AI_COMPUTE_REVISIONS, BUSINESS_REVISIONS, AI_COMPUTE, TOKEN_COST, GPU_RENTAL,
+    BRIEF_DATA_POINTS, BRIEF_DATA_CHECKS,
 )}
 
 

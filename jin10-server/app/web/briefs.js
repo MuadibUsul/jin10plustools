@@ -2,7 +2,8 @@ import { $, node, api, login, download, copy, copyDate, displayTime, toast } fro
 import '/pull-cord.js';
 import { computerShell } from '/retro-computer.js';
 const labels = { queued: '等待执行', running: '生成中', waiting: '等待数据更新', succeeded: '已生成', failed: '生成失败', skipped: '已跳过' };
-let me, config, items = [], selected = null, current = null, dirty = false;
+let me, config, items = [], dataStates = [], selected = null, current = null, dirty = false;
+let dataStatusDay = null, dataStatusAt = 0;
 const blobs = new Set();
 let imageKey = null, pendingImageKey = null, imageRequest = 0;
 const pendingCategories = new Set();
@@ -40,7 +41,12 @@ function displayed() { return chosen(); }
 async function refresh() {
   const day = $('#day').value;
   const data = await api(`/api/briefs/issues?date=${day}`);
+  let status = null;
+  if (dataStatusDay !== day || Date.now() - dataStatusAt > 60000 || JSON.stringify(data.items) !== JSON.stringify(items)) {
+    status = await api(`/api/briefs/data-status?date=${day}`);
+  }
   if (day !== $('#day').value) return;
+  if (status) { dataStates = status.items || []; dataStatusDay = day; dataStatusAt = Date.now(); }
   items = data.items; renderCards();
   if (selected && !dirty) {
     const fresh = items.find((x) => x.id === selected.id);
@@ -74,7 +80,8 @@ function renderCards() {
     if (indicator.className !== indicatorClass) indicator.className = indicatorClass;
     card.querySelector('.process-button').setAttribute('aria-label', `${category.label}生成过程：${busy ? '正在执行或等待' : labels[job?.status] || '暂无任务'}`);
     const body = card.querySelector('.brief-card-body');
-    const signature = JSON.stringify([item, pendingCategories.has(category.id)]);
+    const dataState = dataStates.find((x) => x.category === category.id);
+    const signature = JSON.stringify([item, dataState, pendingCategories.has(category.id)]);
     if (body.dataset.signature === signature) continue;
     body.dataset.signature = signature; body.replaceChildren();
     const state = item?.confirmed_version
@@ -87,6 +94,20 @@ function renderCards() {
     body.append(node('p', version ? `数据日 ${copyDate(version.data_date)}` : '尚无有效数据', 'muted'));
     if (job) body.append(node('p', `${job.status === 'failed' && version ? '最近一次任务失败；已有预览图可查看' : labels[job.status] || job.status}${job.error ? '：' + job.error : ''}`, job.status === 'failed' ? 'error' : 'muted'));
     if (version?.warnings.length) body.append(node('p', '有来源或口径说明，请核对', 'warning'));
+    if (version?.data_date === dataState?.target_date && version?.data_reliability?.publication_digest && dataState?.report?.publication_digest &&
+        version.data_reliability.publication_digest !== dataState.report.publication_digest) {
+      body.append(node('p', '来源数据已修订，请重新生成并核对稿件', 'error'));
+    }
+    if (dataState) {
+      const missing = Object.values(dataState.report?.metrics || {}).reduce((sum, x) => sum + (x.missing_dates?.length || 0), 0);
+      const text = dataState.status === 'complete' ? '历史数据已覆盖' : missing ? `历史仍缺 ${missing} 项` : dataState.error || dataState.report?.error || '历史数据正在恢复或待更新';
+      const details = node('details'); details.append(node('summary', text, dataState.status === 'complete' ? 'muted' : 'warning'));
+      for (const [name, metric] of Object.entries(dataState.report?.metrics || {})) {
+        details.append(node('p', `${name}：${metric.first_date || '无'} 至 ${metric.last_date || '无'}；缺失 ${metric.missing_dates?.length || 0} 天`, 'muted'));
+        if (metric.missing_dates?.length) details.append(node('p', metric.missing_dates.join('、'), 'muted'));
+      }
+      body.append(details);
+    }
     const controls = node('div', undefined, 'toolbar');
     if (item?.versions.length) { const view = node('button', '查看与取稿'); view.onclick = () => safe(() => open(item)); controls.append(view); }
     if (canEdit()) { const run = node('button', busy ? '任务执行中' : '生成稿件'); run.disabled = busy; run.title = computeCategories.has(category.id) ? '读取公开网页展示值并生成稿件' : '自动刷新来源，并处理最接近当前的可用数据'; run.onclick = () => safe(() => runJob(category.id, 'produce')); controls.append(run); }

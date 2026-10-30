@@ -1,0 +1,145 @@
+{
+  "schema_version": 1,
+  "category": "us_barometer",
+  "pack_id": "us-barometer-editorial",
+  "version": "0.1.0",
+  "status": "draft_pending_editor_review",
+  "review": {
+    "approved_by": null,
+    "reviewed_at": null
+  },
+  "sources": [
+    {
+      "path": "jin10-server/app/briefs/engines/us_barometer/calculate.py",
+      "sha256": "4f1bea61de3e6825fba18fe38f6a349a031fc1de74d1996cbcfdba6157eeb149",
+      "kind": "existing_production_rule_pending_review"
+    },
+    {
+      "path": "docs/美股晴雨表栏目-20261017.md",
+      "sha256": "b2dd89ae0fd68a303749f0e31c37a6b0e3dead31dcc6bf435c99e1914ba7093e",
+      "kind": "documented_user_reference_and_production_requirements"
+    }
+  ],
+  "scenarios": [
+    {
+      "id": "high",
+      "description": "高：由巴菲特指数与ERP的现行分级规则共同给出。"
+    },
+    {
+      "id": "relatively_high",
+      "description": "较高：由巴菲特指数与ERP的现行分级规则共同给出。"
+    },
+    {
+      "id": "neutral",
+      "description": "中性：由巴菲特指数与ERP的现行分级规则共同给出。"
+    },
+    {
+      "id": "relatively_low",
+      "description": "较低：由巴菲特指数与ERP的现行分级规则共同给出。"
+    },
+    {
+      "id": "low",
+      "description": "低：由巴菲特指数与ERP的现行分级规则共同给出。"
+    }
+  ],
+  "slot_roles": {
+    "lead": [
+      "data_day",
+      "buffett"
+    ],
+    "comparison": [
+      "erp",
+      "verdict"
+    ]
+  },
+  "modules": {
+    "headlines": [
+      {
+        "id": "high_direct",
+        "text": "【美股晴雨表】美股投资性价比分级：高",
+        "scenarios": [
+          "high"
+        ],
+        "editorial_reason": "从对应栏目素材和现行事实规则提炼；当期数值仅来自事实片段，待编辑审核。"
+      },
+      {
+        "id": "relatively_high_direct",
+        "text": "【美股晴雨表】美股投资性价比分级：较高",
+        "scenarios": [
+          "relatively_high"
+        ],
+        "editorial_reason": "从对应栏目素材和现行事实规则提炼；当期数值仅来自事实片段，待编辑审核。"
+      },
+      {
+        "id": "neutral_direct",
+        "text": "【美股晴雨表】美股投资性价比分级：中性",
+        "scenarios": [
+          "neutral"
+        ],
+        "editorial_reason": "从对应栏目素材和现行事实规则提炼；当期数值仅来自事实片段，待编辑审核。"
+      },
+      {
+        "id": "relatively_low_direct",
+        "text": "【美股晴雨表】美股投资性价比分级：较低",
+        "scenarios": [
+          "relatively_low"
+        ],
+        "editorial_reason": "从对应栏目素材和现行事实规则提炼；当期数值仅来自事实片段，待编辑审核。"
+      },
+      {
+        "id": "low_direct",
+        "text": "【美股晴雨表】美股投资性价比分级：低",
+        "scenarios": [
+          "low"
+        ],
+        "editorial_reason": "从对应栏目素材和现行事实规则提炼；当期数值仅来自事实片段，待编辑审核。"
+      }
+    ],
+    "leads": [
+      {
+        "id": "lead_1",
+        "template": "截至{data_day}，{buffett}",
+        "editorial_reason": "保留栏目主指标优先的信息顺序；指标和数值由不可拆事实片段填入。"
+      },
+      {
+        "id": "lead_2",
+        "template": "{data_day}，{buffett}",
+        "editorial_reason": "保留栏目主指标优先的信息顺序；指标和数值由不可拆事实片段填入。"
+      }
+    ],
+    "comparisons": [
+      {
+        "id": "comparison_1",
+        "template": "{erp}{verdict}",
+        "editorial_reason": "比较及范围仅在当期事实包支持时出现；不添加原因或趋势结论。"
+      },
+      {
+        "id": "comparison_2",
+        "template": "同期，{erp}{verdict}",
+        "editorial_reason": "比较及范围仅在当期事实包支持时出现；不添加原因或趋势结论。"
+      }
+    ],
+    "closings": [
+      {
+        "id": "none",
+        "text": "",
+        "scenarios": [
+          "high",
+          "relatively_high",
+          "neutral",
+          "relatively_low",
+          "low"
+        ],
+        "editorial_reason": "事实交代完整即可收尾，不强制添加笼统总结。"
+      }
+    ]
+  },
+  "examples": [],
+  "material_status": "No independent historical prose archive was found; expressions are derived from documented production rules and require editorial review.",
+  "rejected_patterns": [
+    {
+      "text": "买入机会",
+      "reason": "本试点只交代规则分级，不新增交易指引。"
+    }
+  ]
+}

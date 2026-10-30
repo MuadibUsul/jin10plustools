@@ -1,0 +1,206 @@
+{
+  "schema_version": 1,
+  "pack_id": "turnover-editorial",
+  "version": "0.1.0",
+  "category": "turnover",
+  "status": "draft_pending_editor_review",
+  "review": {
+    "approved_by": null,
+    "reviewed_at": null
+  },
+  "sources": [
+    {
+      "path": "skills/jin10-plus-turnover-text/references/history.md",
+      "sha256": "3f61a347eacb63220b3e8a8e0e4f0bacc8bfcd8838a0237ef67543adcae35765",
+      "kind": "user_provided_historical_style_archive"
+    }
+  ],
+  "scenarios": [
+    {
+      "id": "cooling",
+      "description": "换手率：按已校验事实确定cooling场景，不从旧稿复制当日结论。"
+    },
+    {
+      "id": "warming",
+      "description": "换手率：按已校验事实确定warming场景，不从旧稿复制当日结论。"
+    },
+    {
+      "id": "unchanged",
+      "description": "换手率：按已校验事实确定unchanged场景，不从旧稿复制当日结论。"
+    },
+    {
+      "id": "mixed",
+      "description": "换手率：按已校验事实确定mixed场景，不从旧稿复制当日结论。"
+    }
+  ],
+  "slot_roles": {
+    "lead": [
+      "date",
+      "main_fact"
+    ],
+    "comparison": [
+      "comparison_fact"
+    ]
+  },
+  "modules": {
+    "headlines": [
+      {
+        "id": "cooling_1",
+        "text": "【A股温度计】低换手占比不降、高换手占比不升",
+        "scenarios": [
+          "cooling"
+        ],
+        "editorial_reason": "从用户历史文段提炼主旨组织方式，并按当前事实条件派生；尚待编辑审核。"
+      },
+      {
+        "id": "cooling_2",
+        "text": "【A股温度计】两项换手率占比均线呈降温组合",
+        "scenarios": [
+          "cooling"
+        ],
+        "editorial_reason": "从用户历史文段提炼主旨组织方式，并按当前事实条件派生；尚待编辑审核。"
+      },
+      {
+        "id": "warming_1",
+        "text": "【A股温度计】低换手占比不升、高换手占比不降",
+        "scenarios": [
+          "warming"
+        ],
+        "editorial_reason": "从用户历史文段提炼主旨组织方式，并按当前事实条件派生；尚待编辑审核。"
+      },
+      {
+        "id": "warming_2",
+        "text": "【A股温度计】两项换手率占比均线呈升温组合",
+        "scenarios": [
+          "warming"
+        ],
+        "editorial_reason": "从用户历史文段提炼主旨组织方式，并按当前事实条件派生；尚待编辑审核。"
+      },
+      {
+        "id": "unchanged_1",
+        "text": "【A股温度计】两项换手率占比均线持平",
+        "scenarios": [
+          "unchanged"
+        ],
+        "editorial_reason": "从用户历史文段提炼主旨组织方式，并按当前事实条件派生；尚待编辑审核。"
+      },
+      {
+        "id": "unchanged_2",
+        "text": "【A股温度计】换手率占比均线暂无变化",
+        "scenarios": [
+          "unchanged"
+        ],
+        "editorial_reason": "从用户历史文段提炼主旨组织方式，并按当前事实条件派生；尚待编辑审核。"
+      },
+      {
+        "id": "mixed_1",
+        "text": "【A股温度计】两项换手率占比均线同向变动",
+        "scenarios": [
+          "mixed"
+        ],
+        "editorial_reason": "从用户历史文段提炼主旨组织方式，并按当前事实条件派生；尚待编辑审核。"
+      },
+      {
+        "id": "mixed_2",
+        "text": "【A股温度计】低、高换手占比均线同时变化",
+        "scenarios": [
+          "mixed"
+        ],
+        "editorial_reason": "从用户历史文段提炼主旨组织方式，并按当前事实条件派生；尚待编辑审核。"
+      }
+    ],
+    "leads": [
+      {
+        "id": "dated",
+        "template": "{date}，{main_fact}",
+        "editorial_reason": "先明确数据日期，再给完整主要事实。"
+      },
+      {
+        "id": "as_of",
+        "template": "截至{date}，{main_fact}",
+        "editorial_reason": "按数据截止日表述，不改变比较基准。"
+      }
+    ],
+    "comparisons": [
+      {
+        "id": "direct",
+        "template": "{comparison_fact}",
+        "editorial_reason": "保持对照指标及日期、单位和数值的原子绑定。"
+      },
+      {
+        "id": "introduced",
+        "template": "与参考线相比，{comparison_fact}",
+        "editorial_reason": "只增加段间衔接，不改变完整事实片段。"
+      }
+    ],
+    "closings": [
+      {
+        "id": "none",
+        "text": "",
+        "scenarios": [
+          "cooling",
+          "warming",
+          "unchanged",
+          "mixed"
+        ],
+        "editorial_reason": "事实和比较已完整时直接收尾，不另加空泛总结。"
+      }
+    ]
+  },
+  "examples": [
+    {
+      "id": "turnover-structure-1",
+      "scenario": "cooling",
+      "source_sample_id": "2026-10-20",
+      "body_structure": [
+        "数据日",
+        "主要指标及变化",
+        "相关比较或参考线"
+      ],
+      "editorial_reason": "仅参考用户原稿的日期、主事实、对照顺序；当前情形由事实规则派生，不把样本日期、数字或因果判断当作当期事实。"
+    },
+    {
+      "id": "turnover-structure-2",
+      "scenario": "warming",
+      "source_sample_id": "2026-10-19",
+      "body_structure": [
+        "数据日",
+        "主要指标及变化",
+        "相关比较或参考线"
+      ],
+      "editorial_reason": "仅参考用户原稿的日期、主事实、对照顺序；当前情形由事实规则派生，不把样本日期、数字或因果判断当作当期事实。"
+    },
+    {
+      "id": "turnover-structure-3",
+      "scenario": "unchanged",
+      "source_sample_id": "2026-10-16",
+      "body_structure": [
+        "数据日",
+        "主要指标及变化",
+        "相关比较或参考线"
+      ],
+      "editorial_reason": "仅参考用户原稿的日期、主事实、对照顺序；当前情形由事实规则派生，不把样本日期、数字或因果判断当作当期事实。"
+    },
+    {
+      "id": "turnover-structure-4",
+      "scenario": "mixed",
+      "source_sample_id": "2026-10-15",
+      "body_structure": [
+        "数据日",
+        "主要指标及变化",
+        "相关比较或参考线"
+      ],
+      "editorial_reason": "仅参考用户原稿的日期、主事实、对照顺序；当前情形由事实规则派生，不把样本日期、数字或因果判断当作当期事实。"
+    }
+  ],
+  "rejected_patterns": [
+    {
+      "text": "未来收益确定",
+      "reason": "指标比较不能保证未来回报。"
+    },
+    {
+      "text": "旧稿中的当日数据与结论",
+      "reason": "历史资料只供表达结构参考。"
+    }
+  ]
+}

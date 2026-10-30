@@ -232,6 +232,36 @@ def fetch_pe(expected_date, previous_date, output_dir, *, verify_detail=False, u
                          'sha256': hashlib.sha256(raw).hexdigest(), 'bytes': len(raw)})
         bodies.append(raw)
     detail = bodies[1] if verify_detail else None
+    daily_root=output.parents[2] if len(output.parents)>2 and output.name=='pe' and output.parent.name=='raw' else output
+    daily_file=daily_root/'pe-published-history.json'
+    if daily_file.is_file():
+        daily=json.loads(daily_file.read_text(encoding='utf-8'))
+        live=_parse_json(bodies[0])['index_eva_pe_growths']
+        live_dates={_timestamp_day(row['ts']) for row in live}
+        recovered=[]
+        for row in daily:
+            day=_day(row['date'])
+            if day in (expected_date,previous_date) and day not in live_dates:
+                value=_number(row['pe_ttm_mcw_raw'])
+                evidence_path=Path(row.get('source_file',''))
+                if not evidence_path.is_file():continue
+                original=evidence_path.read_bytes()
+                if hashlib.sha256(original).hexdigest()!=row.get('source_sha256'):continue
+                original_data=_parse_json(original)
+                records=original_data.get('index_eva_pe_growths',[])
+                if original_data.get('index_code')=='SH000300':records=[original_data]
+                if not any(_timestamp_day(item['ts'])==day and _number(item['pe'])==value for item in records):continue
+                timestamp=int(datetime.fromisoformat(day).replace(tzinfo=CHINA).timestamp()*1000)
+                recovered.append({'ts':timestamp,'pe':str(value)})
+                evidence.append({'url':'durable_source:snowball_fund_danjuan_public','file':str(evidence_path.resolve()),
+                    'sha256':row['source_sha256'],'bytes':len(original)})
+        if recovered:
+            cache_raw=json.dumps({'result_code':0,'data':{'index_eva_pe_growths':recovered}}).encode()
+            path=output/f'pe-{stamp}-durable-daily.json';path.write_bytes(cache_raw)
+            evidence.append({'url':'durable_observation:snowball_fund_danjuan_public',
+                'file':str(path.resolve()),'sha256':hashlib.sha256(cache_raw).hexdigest(),
+                'bytes':len(cache_raw),'evidence_kind':'exact_normalized_daily_source_capture'})
+            bodies[0]=json.dumps({'result_code':0,'data':{'index_eva_pe_growths':live+recovered}},default=str).encode()
     try:
         result = normalize_pe(bodies[0], detail, expected_date, previous_date)
     except FetchPEError as error:

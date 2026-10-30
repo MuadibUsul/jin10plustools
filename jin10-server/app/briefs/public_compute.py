@@ -60,7 +60,8 @@ def _history_prices(tree, metric: str) -> dict[date, Decimal]:
     for table in tree.xpath('//table'):
         headings = [re.sub(r'\s+', ' ', ''.join(node.itertext())).strip()
                     for node in table.xpath('./thead/tr/th')]
-        if headings == ['Date', 'Price (USD /hr)']:
+        expected='Price (USD / M tokens)' if metric=='token' else 'Price (USD /hr)'
+        if headings == ['Date', expected]:
             tables.append(table)
     if len(tables) != 1:
         raise ValueError(f'{metric}网页没有唯一的可见历史价格表')
@@ -83,7 +84,7 @@ def _history_prices(tree, metric: str) -> dict[date, Decimal]:
 
 
 def _parse(raw: bytes, metric: str, url: str, today: date,
-           target_date: date | None = None) -> dict:
+           target_date: date | None = None,allow_missing_week=False) -> dict:
     try:
         tree = html.fromstring(raw)
         headings = [' '.join(node.itertext()).strip() for node in tree.xpath('//h1')]
@@ -131,10 +132,19 @@ def _parse(raw: bytes, metric: str, url: str, today: date,
         if target_date is None or target_date == source_day:
             return reading
         if source_day < target_date:
+            if allow_missing_week:return reading
             raise ValueError(f'{metric}公开卡片仅更新到{source_day}，缺少目标数据日{target_date}')
         history = _history_prices(tree, metric)
         baseline_day = target_date - timedelta(days=7)
-        if target_date not in history or baseline_day not in history:
+        if target_date not in history:
+            if allow_missing_week:return reading
+            raise ValueError(f'{metric}网页历史表缺少{target_date}或七日前{baseline_day}的价格')
+        if baseline_day not in history:
+            if allow_missing_week:
+                target_price=history[target_date]
+                return {**reading,'date':target_date.isoformat(),'price':str(target_price),
+                    'precision':max(0,-target_price.as_tuple().exponent),'week_change_pct':None,
+                    'week_direction':None,'source_status':'public_history','week_change_source':'visible_history'}
             raise ValueError(f'{metric}网页历史表缺少{target_date}或七日前{baseline_day}的价格')
         target_price, baseline = history[target_date], history[baseline_day]
         change = ((target_price / baseline - 1) * 100).quantize(
@@ -155,7 +165,7 @@ def _parse(raw: bytes, metric: str, url: str, today: date,
 
 def fetch_visible(category: str, *, today: date | None = None,
                   target_date: date | None = None,
-                  client: httpx.Client | None = None) -> dict:
+                  client: httpx.Client | None = None,allow_missing_week=False,on_page=None) -> dict:
     """One robots read and one GET per relevant visible page; never retry."""
     if category not in PAGES:
         raise ValueError('仅AI算力CPI和AI景气度指标支持公开页面读取')
@@ -172,17 +182,32 @@ def fetch_visible(category: str, *, today: date | None = None,
             raise ValueError('来源网站robots规则无法核对，本次停止读取')
         parser = RobotFileParser()
         parser.parse(robots.splitlines())
-        readings = []
+        readings = []; histories={}; history_errors={}
         for metric, slug in PAGES[category].items():
             url = f'{ORIGIN}/products/silicon-index/{slug}'
             if not parser.can_fetch(USER_AGENT, url):
                 raise ValueError('来源网站robots规则不允许读取该页面')
-            readings.append(_parse(_bounded(client, url, MAX_HTML), metric, url, today,
-                                   target_date=target_date))
+            raw=_bounded(client, url, MAX_HTML)
+            readings.append(_parse(raw, metric, url, today,
+                                   target_date=target_date,allow_missing_week=allow_missing_week))
+            if category in PAGES:
+                try:
+                    prices=_history_prices(html.fromstring(raw),metric)
+                    if any(day>today for day in prices):raise ValueError('历史表出现未来日期')
+                    histories[metric]=[{'date':day.isoformat(),'price':str(value)}
+                                       for day,value in sorted(prices.items()) if day.isoformat()<=readings[-1]['date']]
+                except ValueError as exc:history_errors[metric]=str(exc)
+            if on_page:on_page(metric,readings[-1],histories.get(metric,[]))
+        source_day=readings[0]['date']
         if category == 'gpu_rental' and len({row['date'] for row in readings}) != 1:
-            raise ValueError('三张GPU公开卡片的数据日不一致，本次不生成稿件')
-        return {'category': category, 'data_date': readings[0]['date'],
-                'captured_at': datetime.now(timezone.utc).isoformat(), 'readings': readings}
+            if not allow_missing_week:raise ValueError('三张GPU公开卡片的数据日不一致，本次不生成稿件')
+            source_day=max(row['date'] for row in readings)
+            # Still retain each actual historical price independently. There is
+            # no fabricated three-card current observation when dates disagree.
+            readings=[]
+        return {'category': category, 'data_date': source_day,
+                'captured_at': datetime.now(timezone.utc).isoformat(), 'readings': readings,
+                'history':histories,'history_errors':history_errors}
     finally:
         if owned_client:
             client.close()

@@ -56,6 +56,7 @@ def _public_week(row, metric):
     item = matches[0]
     if Decimal(item['price']) != _decimal(row['token_price' if metric == 'token' else metric]):
         raise ValueError('公开页面价格与已入库数据不一致')
+    if item.get('week_change_pct') is None:return None
     return item
 
 

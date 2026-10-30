@@ -1,0 +1,1777 @@
+{
+  "schema_version": 1,
+  "provenance": "synthetic_not_market_data",
+  "description": "使用真实生产事实字段结构的合成工程用例；不是实时行情、人工签发稿或风格通过证明。",
+  "cases": [
+    {
+      "id": "volume_up_below_average",
+      "category": "volume",
+      "split": "development",
+      "payload": {
+        "title": "【A股温度计】两市成交额回升至1.44万亿元",
+        "dynamic_body": "2026-10-30，沪深两市成交额为1.44万亿元，较前一条有效交易日增加400.00亿元，变动+2.86%；连续6条有效交易日低于20日均线（1.50万亿元）。成交活跃度较前日回升。",
+        "data_date": "2026-10-30",
+        "facts": {
+          "amount_yi": "14400.00",
+          "amount_wan_yi": "1.44",
+          "change_yi": "400.00",
+          "change_pct": "+2.86",
+          "ma20_yi": "15000.00",
+          "ma20_wan_yi": "1.50",
+          "streak": 6,
+          "side": "低于",
+          "activity": "回升",
+          "previous_date": "2026-10-29"
+        },
+        "valid": true,
+        "warnings": [],
+        "images": [
+          "existing-chart.png"
+        ],
+        "fixed_notes": "原有固定说明，仅用于验证保留边界。",
+        "image_sha256": {
+          "existing-chart.png": "existing-image-digest"
+        }
+      },
+      "expect": {
+        "status": "ok"
+      }
+    },
+    {
+      "id": "volume_down",
+      "category": "volume",
+      "split": "development",
+      "payload": {
+        "title": "【A股温度计】两市成交额回落至1.44万亿元",
+        "dynamic_body": "2026-10-30，沪深两市成交额为1.44万亿元，较前一条有效交易日减少400.00亿元，变动-2.70%；连续6条有效交易日低于20日均线（1.50万亿元）。成交活跃度较前日回落。",
+        "data_date": "2026-10-30",
+        "facts": {
+          "amount_yi": "14400.00",
+          "amount_wan_yi": "1.44",
+          "change_yi": "-400.00",
+          "change_pct": "-2.70",
+          "ma20_yi": "15000.00",
+          "ma20_wan_yi": "1.50",
+          "streak": 6,
+          "side": "低于",
+          "activity": "回落",
+          "previous_date": "2026-10-29"
+        },
+        "valid": true,
+        "warnings": [],
+        "images": [
+          "existing-chart.png"
+        ],
+        "fixed_notes": "原有固定说明，仅用于验证保留边界。",
+        "image_sha256": {
+          "existing-chart.png": "existing-image-digest"
+        }
+      },
+      "expect": {
+        "status": "ok"
+      }
+    },
+    {
+      "id": "volume_flat",
+      "category": "volume",
+      "split": "holdout",
+      "payload": {
+        "title": "【A股温度计】两市成交额持平至1.44万亿元",
+        "dynamic_body": "2026-10-30，沪深两市成交额为1.44万亿元，较前一条有效交易日增加0.00亿元，变动+0.00%；连续6条有效交易日低于20日均线（1.50万亿元）。成交活跃度较前日持平。",
+        "data_date": "2026-10-30",
+        "facts": {
+          "amount_yi": "14400.00",
+          "amount_wan_yi": "1.44",
+          "change_yi": "0.00",
+          "change_pct": "+0.00",
+          "ma20_yi": "15000.00",
+          "ma20_wan_yi": "1.50",
+          "streak": 6,
+          "side": "低于",
+          "activity": "持平",
+          "previous_date": "2026-10-29"
+        },
+        "valid": true,
+        "warnings": [],
+        "images": [
+          "existing-chart.png"
+        ],
+        "fixed_notes": "原有固定说明，仅用于验证保留边界。",
+        "image_sha256": {
+          "existing-chart.png": "existing-image-digest"
+        }
+      },
+      "expect": {
+        "status": "ok"
+      }
+    },
+    {
+      "id": "volume_at_average",
+      "category": "volume",
+      "split": "holdout",
+      "payload": {
+        "title": "【A股温度计】两市成交额回升至1.50万亿元",
+        "dynamic_body": "2026-10-30，沪深两市成交额为1.50万亿元，较前一条有效交易日增加400.00亿元，变动+2.74%；连续1条有效交易日不低于20日均线（1.50万亿元）。成交活跃度较前日回升。",
+        "data_date": "2026-10-30",
+        "facts": {
+          "amount_yi": "15000.00",
+          "amount_wan_yi": "1.50",
+          "change_yi": "400.00",
+          "change_pct": "+2.74",
+          "ma20_yi": "15000.00",
+          "ma20_wan_yi": "1.50",
+          "streak": 1,
+          "side": "不低于",
+          "activity": "回升",
+          "previous_date": "2026-10-29"
+        },
+        "valid": true,
+        "warnings": [],
+        "images": [
+          "existing-chart.png"
+        ],
+        "fixed_notes": "原有固定说明，仅用于验证保留边界。",
+        "image_sha256": {
+          "existing-chart.png": "existing-image-digest"
+        }
+      },
+      "expect": {
+        "status": "ok"
+      }
+    },
+    {
+      "id": "volume_invalid_negative_amount",
+      "category": "volume",
+      "split": "development",
+      "payload": {
+        "title": "【A股温度计】两市成交额回升至1.44万亿元",
+        "dynamic_body": "2026-10-30，沪深两市成交额为1.44万亿元，较前一条有效交易日增加400.00亿元，变动+2.86%；连续6条有效交易日低于20日均线（1.50万亿元）。成交活跃度较前日回升。",
+        "data_date": "2026-10-30",
+        "facts": {
+          "amount_yi": "-1",
+          "amount_wan_yi": "1.44",
+          "change_yi": "400.00",
+          "change_pct": "+2.86",
+          "ma20_yi": "15000.00",
+          "ma20_wan_yi": "1.50",
+          "streak": 6,
+          "side": "低于",
+          "activity": "回升",
+          "previous_date": "2026-10-29"
+        },
+        "valid": true,
+        "warnings": [],
+        "images": [
+          "existing-chart.png"
+        ],
+        "fixed_notes": "原有固定说明，仅用于验证保留边界。",
+        "image_sha256": {
+          "existing-chart.png": "existing-image-digest"
+        }
+      },
+      "expect": {
+        "status": "rejected"
+      }
+    },
+    {
+      "id": "turnover_cooling",
+      "category": "turnover",
+      "split": "development",
+      "payload": {
+        "title": "【A股温度计】换手率均线显示交易活跃度回落",
+        "dynamic_body": "2026年10月30日，A股低于3%换手率股票占比的9日均线升至72.18%，高于5%换手率股票占比的9日均线降至13.87%，继续低于17%的参考阈值。整体来看，市场交易活跃度有所回落。",
+        "data_date": "2026-10-30",
+        "facts": {
+          "date": "2026-10-30",
+          "previous_date": "2026-10-29",
+          "low_ma9": "72.18",
+          "high_ma9": "13.87",
+          "previous_low_ma9": "71.42",
+          "previous_high_ma9": "14.34",
+          "low_change_pp": "0.76",
+          "high_change_pp": "-0.47",
+          "average_window_trading_days": 9,
+          "low_threshold": "96",
+          "high_threshold": "17",
+          "trend": "cooling",
+          "fact_body": "2026年10月30日，A股低于3%换手率股票占比的9日均线升至72.18%，高于5%换手率股票占比的9日均线降至13.87%，继续低于17%的参考阈值。"
+        },
+        "valid": true,
+        "warnings": [],
+        "images": [
+          "existing-chart.png"
+        ],
+        "fixed_notes": "原有固定说明，仅用于验证保留边界。",
+        "image_sha256": {
+          "existing-chart.png": "existing-image-digest"
+        }
+      },
+      "expect": {
+        "status": "ok"
+      }
+    },
+    {
+      "id": "turnover_warming",
+      "category": "turnover",
+      "split": "development",
+      "payload": {
+        "title": "【A股温度计】换手率均线显示交易活跃度回升",
+        "dynamic_body": "2026年10月30日，A股低于3%换手率股票占比的9日均线降至71.42%，高于5%换手率股票占比的9日均线升至14.34%，继续低于17%的参考阈值。整体来看，市场交易活跃度有所回升。",
+        "data_date": "2026-10-30",
+        "facts": {
+          "date": "2026-10-30",
+          "previous_date": "2026-10-29",
+          "low_ma9": "71.42",
+          "high_ma9": "14.34",
+          "previous_low_ma9": "72.18",
+          "previous_high_ma9": "13.87",
+          "low_change_pp": "-0.76",
+          "high_change_pp": "0.47",
+          "average_window_trading_days": 9,
+          "low_threshold": "96",
+          "high_threshold": "17",
+          "trend": "warming",
+          "fact_body": "2026年10月30日，A股低于3%换手率股票占比的9日均线降至71.42%，高于5%换手率股票占比的9日均线升至14.34%，继续低于17%的参考阈值。"
+        },
+        "valid": true,
+        "warnings": [],
+        "images": [
+          "existing-chart.png"
+        ],
+        "fixed_notes": "原有固定说明，仅用于验证保留边界。",
+        "image_sha256": {
+          "existing-chart.png": "existing-image-digest"
+        }
+      },
+      "expect": {
+        "status": "ok"
+      }
+    },
+    {
+      "id": "turnover_flat",
+      "category": "turnover",
+      "split": "holdout",
+      "payload": {
+        "title": "【A股温度计】两项换手率占比均线持平",
+        "dynamic_body": "2026年10月30日，A股低于3%换手率股票占比的9日均线持平于72.18%，高于5%换手率股票占比的9日均线持平于13.87%，继续低于17%的参考阈值。两项占比均线均持平，交易活跃度暂无明显变化。",
+        "data_date": "2026-10-30",
+        "facts": {
+          "date": "2026-10-30",
+          "previous_date": "2026-10-29",
+          "low_ma9": "72.18",
+          "high_ma9": "13.87",
+          "previous_low_ma9": "72.18",
+          "previous_high_ma9": "13.87",
+          "low_change_pp": "0.00",
+          "high_change_pp": "0.00",
+          "average_window_trading_days": 9,
+          "low_threshold": "96",
+          "high_threshold": "17",
+          "trend": "unchanged",
+          "fact_body": "2026年10月30日，A股低于3%换手率股票占比的9日均线持平于72.18%，高于5%换手率股票占比的9日均线持平于13.87%，继续低于17%的参考阈值。"
+        },
+        "valid": true,
+        "warnings": [],
+        "images": [
+          "existing-chart.png"
+        ],
+        "fixed_notes": "原有固定说明，仅用于验证保留边界。",
+        "image_sha256": {
+          "existing-chart.png": "existing-image-digest"
+        }
+      },
+      "expect": {
+        "status": "ok"
+      }
+    },
+    {
+      "id": "turnover_at_high_threshold",
+      "category": "turnover",
+      "split": "holdout",
+      "payload": {
+        "title": "【A股温度计】换手率均线显示交易活跃度回落",
+        "dynamic_body": "2026年10月30日，A股低于3%换手率股票占比的9日均线升至70.00%，高于5%换手率股票占比的9日均线降至17.00%，降至17%的参考阈值。整体来看，市场交易活跃度有所回落。",
+        "data_date": "2026-10-30",
+        "facts": {
+          "date": "2026-10-30",
+          "previous_date": "2026-10-29",
+          "low_ma9": "70.00",
+          "high_ma9": "17.00",
+          "previous_low_ma9": "69.00",
+          "previous_high_ma9": "18.00",
+          "low_change_pp": "1.00",
+          "high_change_pp": "-1.00",
+          "average_window_trading_days": 9,
+          "low_threshold": "96",
+          "high_threshold": "17",
+          "trend": "cooling",
+          "fact_body": "2026年10月30日，A股低于3%换手率股票占比的9日均线升至70.00%，高于5%换手率股票占比的9日均线降至17.00%，降至17%的参考阈值。"
+        },
+        "valid": true,
+        "warnings": [],
+        "images": [
+          "existing-chart.png"
+        ],
+        "fixed_notes": "原有固定说明，仅用于验证保留边界。",
+        "image_sha256": {
+          "existing-chart.png": "existing-image-digest"
+        }
+      },
+      "expect": {
+        "status": "ok"
+      }
+    },
+    {
+      "id": "turnover_invalid_ratio",
+      "category": "turnover",
+      "split": "development",
+      "payload": {
+        "title": "【A股温度计】换手率均线显示交易活跃度回落",
+        "dynamic_body": "2026年10月30日，A股低于3%换手率股票占比的9日均线升至72.18%，高于5%换手率股票占比的9日均线降至13.87%，继续低于17%的参考阈值。整体来看，市场交易活跃度有所回落。",
+        "data_date": "2026-10-30",
+        "facts": {
+          "date": "2026-10-30",
+          "previous_date": "2026-10-29",
+          "low_ma9": "101",
+          "high_ma9": "13.87",
+          "previous_low_ma9": "71.42",
+          "previous_high_ma9": "14.34",
+          "low_change_pp": "0.76",
+          "high_change_pp": "-0.47",
+          "average_window_trading_days": 9,
+          "low_threshold": "96",
+          "high_threshold": "17",
+          "trend": "cooling",
+          "fact_body": "2026年10月30日，A股低于3%换手率股票占比的9日均线升至72.18%，高于5%换手率股票占比的9日均线降至13.87%，继续低于17%的参考阈值。"
+        },
+        "valid": true,
+        "warnings": [],
+        "images": [
+          "existing-chart.png"
+        ],
+        "fixed_notes": "原有固定说明，仅用于验证保留边界。",
+        "image_sha256": {
+          "existing-chart.png": "existing-image-digest"
+        }
+      },
+      "expect": {
+        "status": "rejected"
+      }
+    },
+    {
+      "id": "valuation_erp_up",
+      "category": "valuation",
+      "split": "development",
+      "payload": {
+        "title": "【A股温度计】股债性价比指标更新，沪深300ERP报6.21%",
+        "dynamic_body": "2026-10-30，巴菲特指数（A股总市值/上年度全年GDP）为87.21%；沪深300指数股权风险溢价（ERP）为6.21%，较2026-10-29变动+0.21个百分点，高于6%参考线。",
+        "data_date": "2026-10-30",
+        "facts": {
+          "buffett_percent": "87.21",
+          "erp_latest": {
+            "date": "2026-10-30",
+            "erp_percent": "6.21"
+          },
+          "erp_previous": {
+            "date": "2026-10-29",
+            "erp_percent": "6.00"
+          }
+        },
+        "valid": true,
+        "warnings": [],
+        "images": [
+          "existing-chart.png"
+        ],
+        "fixed_notes": "原有固定说明，仅用于验证保留边界。",
+        "image_sha256": {
+          "existing-chart.png": "existing-image-digest"
+        }
+      },
+      "expect": {
+        "status": "ok"
+      }
+    },
+    {
+      "id": "valuation_erp_down",
+      "category": "valuation",
+      "split": "development",
+      "payload": {
+        "title": "【A股温度计】股债性价比指标更新，沪深300ERP报5.50%",
+        "dynamic_body": "2026-10-30，巴菲特指数（A股总市值/上年度全年GDP）为87.21%；沪深300指数股权风险溢价（ERP）为5.50%，较2026-10-29变动-0.10个百分点，低于6%参考线。",
+        "data_date": "2026-10-30",
+        "facts": {
+          "buffett_percent": "87.21",
+          "erp_latest": {
+            "date": "2026-10-30",
+            "erp_percent": "5.50"
+          },
+          "erp_previous": {
+            "date": "2026-10-29",
+            "erp_percent": "5.60"
+          }
+        },
+        "valid": true,
+        "warnings": [],
+        "images": [
+          "existing-chart.png"
+        ],
+        "fixed_notes": "原有固定说明，仅用于验证保留边界。",
+        "image_sha256": {
+          "existing-chart.png": "existing-image-digest"
+        }
+      },
+      "expect": {
+        "status": "ok"
+      }
+    },
+    {
+      "id": "valuation_erp_at_reference",
+      "category": "valuation",
+      "split": "holdout",
+      "payload": {
+        "title": "【A股温度计】股债性价比指标更新，沪深300ERP报6.00%",
+        "dynamic_body": "2026-10-30，巴菲特指数（A股总市值/上年度全年GDP）为87.21%；沪深300指数股权风险溢价（ERP）为6.00%，较2026-10-29变动+0.00个百分点，等于6%参考线。",
+        "data_date": "2026-10-30",
+        "facts": {
+          "buffett_percent": "87.21",
+          "erp_latest": {
+            "date": "2026-10-30",
+            "erp_percent": "6.00"
+          },
+          "erp_previous": {
+            "date": "2026-10-29",
+            "erp_percent": "6.00"
+          }
+        },
+        "valid": true,
+        "warnings": [],
+        "images": [
+          "existing-chart.png"
+        ],
+        "fixed_notes": "原有固定说明，仅用于验证保留边界。",
+        "image_sha256": {
+          "existing-chart.png": "existing-image-digest"
+        }
+      },
+      "expect": {
+        "status": "ok"
+      }
+    },
+    {
+      "id": "valuation_wrong_data_date",
+      "category": "valuation",
+      "split": "holdout",
+      "payload": {
+        "title": "【A股温度计】股债性价比指标更新，沪深300ERP报6.21%",
+        "dynamic_body": "2026-10-30，巴菲特指数（A股总市值/上年度全年GDP）为87.21%；沪深300指数股权风险溢价（ERP）为6.21%，较2026-10-29变动+0.21个百分点，高于6%参考线。",
+        "data_date": "2026-10-30",
+        "facts": {
+          "buffett_percent": "87.21",
+          "erp_latest": {
+            "date": "2026-10-31",
+            "erp_percent": "6.21"
+          },
+          "erp_previous": {
+            "date": "2026-10-29",
+            "erp_percent": "6.00"
+          }
+        },
+        "valid": true,
+        "warnings": [],
+        "images": [
+          "existing-chart.png"
+        ],
+        "fixed_notes": "原有固定说明，仅用于验证保留边界。",
+        "image_sha256": {
+          "existing-chart.png": "existing-image-digest"
+        }
+      },
+      "expect": {
+        "status": "rejected"
+      }
+    },
+    {
+      "id": "valuation_invalid_buffett",
+      "category": "valuation",
+      "split": "development",
+      "payload": {
+        "title": "【A股温度计】股债性价比指标更新，沪深300ERP报6.21%",
+        "dynamic_body": "2026-10-30，巴菲特指数（A股总市值/上年度全年GDP）为87.21%；沪深300指数股权风险溢价（ERP）为6.21%，较2026-10-29变动+0.21个百分点，高于6%参考线。",
+        "data_date": "2026-10-30",
+        "facts": {
+          "buffett_percent": "NaN",
+          "erp_latest": {
+            "date": "2026-10-30",
+            "erp_percent": "6.21"
+          },
+          "erp_previous": {
+            "date": "2026-10-29",
+            "erp_percent": "6.00"
+          }
+        },
+        "valid": true,
+        "warnings": [],
+        "images": [
+          "existing-chart.png"
+        ],
+        "fixed_notes": "原有固定说明，仅用于验证保留边界。",
+        "image_sha256": {
+          "existing-chart.png": "existing-image-digest"
+        }
+      },
+      "expect": {
+        "status": "rejected"
+      }
+    },
+    {
+      "id": "liquidity_previous_close",
+      "category": "liquidity",
+      "split": "development",
+      "payload": {
+        "title": "【流动性指标】DR007收盘加权利率报1.3352%",
+        "dynamic_body": "前一交易日（2026-10-30）17:00收盘，DR001加权利率为1.2533%，DR007加权利率为1.3352%。央行开展450亿元7天期逆回购，中标利率1.40%。",
+        "data_date": "2026-10-30",
+        "facts": {
+          "quotes": {
+            "quote_date": "2026-10-30",
+            "updated_at": "2026-10-30 17:00",
+            "rows": [
+              {
+                "product": "DR001",
+                "weighted_rate": "1.2533",
+                "latest_rate": "1.2500",
+                "updated_at": "2026-10-30 17:00"
+              },
+              {
+                "product": "DR007",
+                "weighted_rate": "1.3352",
+                "latest_rate": "1.3300",
+                "updated_at": "2026-10-30 17:00"
+              }
+            ]
+          },
+          "central_bank": {
+            "date": "2026-10-30",
+            "term_days": 7,
+            "rate_percent": "1.40",
+            "bid_yi": "450",
+            "awarded_yi": "450"
+          },
+          "history_range": [
+            "2026-07-30",
+            "2026-10-29"
+          ]
+        },
+        "valid": true,
+        "warnings": [],
+        "images": [
+          "existing-chart.png"
+        ],
+        "fixed_notes": "原有固定说明，仅用于验证保留边界。",
+        "image_sha256": {
+          "existing-chart.png": "existing-image-digest"
+        }
+      },
+      "expect": {
+        "status": "ok"
+      }
+    },
+    {
+      "id": "liquidity_bank_unavailable",
+      "category": "liquidity",
+      "split": "holdout",
+      "payload": {
+        "title": "【流动性指标】DR007收盘加权利率报1.3352%",
+        "dynamic_body": "前一交易日（2026-10-30）17:00收盘，DR001加权利率为1.2533%，DR007加权利率为1.3352%。",
+        "data_date": "2026-10-30",
+        "facts": {
+          "quotes": {
+            "quote_date": "2026-10-30",
+            "updated_at": "2026-10-30 17:00",
+            "rows": [
+              {
+                "product": "DR001",
+                "weighted_rate": "1.2533",
+                "latest_rate": "1.2500",
+                "updated_at": "2026-10-30 17:00"
+              },
+              {
+                "product": "DR007",
+                "weighted_rate": "1.3352",
+                "latest_rate": "1.3300",
+                "updated_at": "2026-10-30 17:00"
+              }
+            ]
+          },
+          "central_bank": null,
+          "history_range": [
+            "2026-07-30",
+            "2026-10-29"
+          ]
+        },
+        "valid": true,
+        "warnings": [],
+        "images": [
+          "existing-chart.png"
+        ],
+        "fixed_notes": "原有固定说明，仅用于验证保留边界。",
+        "image_sha256": {
+          "existing-chart.png": "existing-image-digest"
+        }
+      },
+      "expect": {
+        "status": "ok"
+      }
+    },
+    {
+      "id": "liquidity_same_rates",
+      "category": "liquidity",
+      "split": "development",
+      "payload": {
+        "title": "【流动性指标】DR007收盘加权利率报1.3352%",
+        "dynamic_body": "前一交易日（2026-10-30）17:00收盘，DR001加权利率为1.3352%，DR007加权利率为1.3352%。央行开展450亿元7天期逆回购，中标利率1.40%。",
+        "data_date": "2026-10-30",
+        "facts": {
+          "quotes": {
+            "quote_date": "2026-10-30",
+            "updated_at": "2026-10-30 17:00",
+            "rows": [
+              {
+                "product": "DR001",
+                "weighted_rate": "1.3352",
+                "latest_rate": "1.2500",
+                "updated_at": "2026-10-30 17:00"
+              },
+              {
+                "product": "DR007",
+                "weighted_rate": "1.3352",
+                "latest_rate": "1.3300",
+                "updated_at": "2026-10-30 17:00"
+              }
+            ]
+          },
+          "central_bank": {
+            "date": "2026-10-30",
+            "term_days": 7,
+            "rate_percent": "1.40",
+            "bid_yi": "450",
+            "awarded_yi": "450"
+          },
+          "history_range": [
+            "2026-07-30",
+            "2026-10-29"
+          ]
+        },
+        "valid": true,
+        "warnings": [],
+        "images": [
+          "existing-chart.png"
+        ],
+        "fixed_notes": "原有固定说明，仅用于验证保留边界。",
+        "image_sha256": {
+          "existing-chart.png": "existing-image-digest"
+        }
+      },
+      "expect": {
+        "status": "ok"
+      }
+    },
+    {
+      "id": "liquidity_intraday_rejected",
+      "category": "liquidity",
+      "split": "holdout",
+      "payload": {
+        "title": "【流动性指标】DR007收盘加权利率报1.3352%",
+        "dynamic_body": "前一交易日（2026-10-30）17:00收盘，DR001加权利率为1.2533%，DR007加权利率为1.3352%。央行开展450亿元7天期逆回购，中标利率1.40%。",
+        "data_date": "2026-10-30",
+        "facts": {
+          "quotes": {
+            "quote_date": "2026-10-30",
+            "updated_at": "2026-10-30 15:45",
+            "rows": [
+              {
+                "product": "DR001",
+                "weighted_rate": "1.2533",
+                "latest_rate": "1.2500",
+                "updated_at": "2026-10-30 15:45"
+              },
+              {
+                "product": "DR007",
+                "weighted_rate": "1.3352",
+                "latest_rate": "1.3300",
+                "updated_at": "2026-10-30 15:45"
+              }
+            ]
+          },
+          "central_bank": {
+            "date": "2026-10-30",
+            "term_days": 7,
+            "rate_percent": "1.40",
+            "bid_yi": "450",
+            "awarded_yi": "450"
+          },
+          "history_range": [
+            "2026-07-30",
+            "2026-10-29"
+          ]
+        },
+        "valid": true,
+        "warnings": [],
+        "images": [
+          "existing-chart.png"
+        ],
+        "fixed_notes": "原有固定说明，仅用于验证保留边界。",
+        "image_sha256": {
+          "existing-chart.png": "existing-image-digest"
+        }
+      },
+      "expect": {
+        "status": "rejected"
+      }
+    },
+    {
+      "id": "liquidity_missing_dr001",
+      "category": "liquidity",
+      "split": "development",
+      "payload": {
+        "title": "【流动性指标】DR007收盘加权利率报1.3352%",
+        "dynamic_body": "前一交易日（2026-10-30）17:00收盘，DR001加权利率为1.2533%，DR007加权利率为1.3352%。央行开展450亿元7天期逆回购，中标利率1.40%。",
+        "data_date": "2026-10-30",
+        "facts": {
+          "quotes": {
+            "quote_date": "2026-10-30",
+            "updated_at": "2026-10-30 17:00",
+            "rows": [
+              {
+                "product": "DR007",
+                "weighted_rate": "1.3352",
+                "latest_rate": "1.3300",
+                "updated_at": "2026-10-30 17:00"
+              }
+            ]
+          },
+          "central_bank": {
+            "date": "2026-10-30",
+            "term_days": 7,
+            "rate_percent": "1.40",
+            "bid_yi": "450",
+            "awarded_yi": "450"
+          },
+          "history_range": [
+            "2026-07-30",
+            "2026-10-29"
+          ]
+        },
+        "valid": true,
+        "warnings": [],
+        "images": [
+          "existing-chart.png"
+        ],
+        "fixed_notes": "原有固定说明，仅用于验证保留边界。",
+        "image_sha256": {
+          "existing-chart.png": "existing-image-digest"
+        }
+      },
+      "expect": {
+        "status": "rejected"
+      }
+    },
+    {
+      "id": "oil_etf_missing_change",
+      "category": "oil_etf",
+      "split": "development",
+      "payload": {
+        "title": "【原油ETF】两大原油ETF持仓数据更新",
+        "dynamic_body": "2026-10-30，WTI（USO）总名义敞口约1883.40万桶，其中期货1583.60万桶；Brent（BNO）期货持仓696.30万桶。",
+        "data_date": "2026-10-30",
+        "facts": {
+          "funds": [
+            {
+              "ticker": "USO",
+              "barrels": "18833983.62",
+              "futures_barrels": "15836000",
+              "swap_barrels_estimate": "2997983.62",
+              "reference_price": "93.90",
+              "change_barrels": null,
+              "change_basis": null,
+              "method": "nearest_future_swap_notional_v1"
+            },
+            {
+              "ticker": "BNO",
+              "barrels": "6963000",
+              "futures_barrels": "6963000",
+              "swap_barrels_estimate": "0",
+              "reference_price": "106.06",
+              "change_barrels": null,
+              "change_basis": null,
+              "method": "nearest_future_swap_notional_v1"
+            }
+          ],
+          "previous_date": "2026-10-29"
+        },
+        "valid": true,
+        "warnings": [],
+        "images": [
+          "existing-chart.png"
+        ],
+        "fixed_notes": "原有固定说明，仅用于验证保留边界。",
+        "image_sha256": {
+          "existing-chart.png": "existing-image-digest"
+        }
+      },
+      "expect": {
+        "status": "ok"
+      }
+    },
+    {
+      "id": "oil_etf_both_up",
+      "category": "oil_etf",
+      "split": "development",
+      "payload": {
+        "title": "【原油ETF】两大原油ETF持仓数据更新",
+        "dynamic_body": "2026-10-30，WTI（USO）总名义敞口约1883.40万桶，其中期货1583.60万桶；Brent（BNO）期货持仓696.30万桶。USO期货持仓较2026-10-29增加20.00万桶。BNO期货持仓较2026-10-29增加10.00万桶。",
+        "data_date": "2026-10-30",
+        "facts": {
+          "funds": [
+            {
+              "ticker": "USO",
+              "barrels": "18833983.62",
+              "futures_barrels": "15836000",
+              "swap_barrels_estimate": "2997983.62",
+              "reference_price": "93.90",
+              "change_barrels": "200000",
+              "change_basis": "futures_contracts_1000",
+              "method": "nearest_future_swap_notional_v1"
+            },
+            {
+              "ticker": "BNO",
+              "barrels": "6963000",
+              "futures_barrels": "6963000",
+              "swap_barrels_estimate": "0",
+              "reference_price": "106.06",
+              "change_barrels": "100000",
+              "change_basis": "futures_contracts_1000",
+              "method": "nearest_future_swap_notional_v1"
+            }
+          ],
+          "previous_date": "2026-10-29"
+        },
+        "valid": true,
+        "warnings": [],
+        "images": [
+          "existing-chart.png"
+        ],
+        "fixed_notes": "原有固定说明，仅用于验证保留边界。",
+        "image_sha256": {
+          "existing-chart.png": "existing-image-digest"
+        }
+      },
+      "expect": {
+        "status": "ok"
+      }
+    },
+    {
+      "id": "oil_etf_opposite_changes",
+      "category": "oil_etf",
+      "split": "holdout",
+      "payload": {
+        "title": "【原油ETF】两大原油ETF持仓数据更新",
+        "dynamic_body": "2026-10-30，WTI（USO）总名义敞口约1883.40万桶，其中期货1583.60万桶；Brent（BNO）期货持仓696.30万桶。USO期货持仓较2026-10-29增加20.00万桶。BNO期货持仓较2026-10-29减少10.00万桶。",
+        "data_date": "2026-10-30",
+        "facts": {
+          "funds": [
+            {
+              "ticker": "USO",
+              "barrels": "18833983.62",
+              "futures_barrels": "15836000",
+              "swap_barrels_estimate": "2997983.62",
+              "reference_price": "93.90",
+              "change_barrels": "200000",
+              "change_basis": "futures_contracts_1000",
+              "method": "nearest_future_swap_notional_v1"
+            },
+            {
+              "ticker": "BNO",
+              "barrels": "6963000",
+              "futures_barrels": "6963000",
+              "swap_barrels_estimate": "0",
+              "reference_price": "106.06",
+              "change_barrels": "-100000",
+              "change_basis": "futures_contracts_1000",
+              "method": "nearest_future_swap_notional_v1"
+            }
+          ],
+          "previous_date": "2026-10-29"
+        },
+        "valid": true,
+        "warnings": [],
+        "images": [
+          "existing-chart.png"
+        ],
+        "fixed_notes": "原有固定说明，仅用于验证保留边界。",
+        "image_sha256": {
+          "existing-chart.png": "existing-image-digest"
+        }
+      },
+      "expect": {
+        "status": "ok"
+      }
+    },
+    {
+      "id": "oil_etf_flat",
+      "category": "oil_etf",
+      "split": "holdout",
+      "payload": {
+        "title": "【原油ETF】两大原油ETF持仓数据更新",
+        "dynamic_body": "2026-10-30，WTI（USO）总名义敞口约1883.40万桶，其中期货1583.60万桶；Brent（BNO）期货持仓696.30万桶。USO期货持仓较2026-10-29持平0.00万桶。BNO期货持仓较2026-10-29持平0.00万桶。",
+        "data_date": "2026-10-30",
+        "facts": {
+          "funds": [
+            {
+              "ticker": "USO",
+              "barrels": "18833983.62",
+              "futures_barrels": "15836000",
+              "swap_barrels_estimate": "2997983.62",
+              "reference_price": "93.90",
+              "change_barrels": "0",
+              "change_basis": "futures_contracts_1000",
+              "method": "nearest_future_swap_notional_v1"
+            },
+            {
+              "ticker": "BNO",
+              "barrels": "6963000",
+              "futures_barrels": "6963000",
+              "swap_barrels_estimate": "0",
+              "reference_price": "106.06",
+              "change_barrels": "0",
+              "change_basis": "futures_contracts_1000",
+              "method": "nearest_future_swap_notional_v1"
+            }
+          ],
+          "previous_date": "2026-10-29"
+        },
+        "valid": true,
+        "warnings": [],
+        "images": [
+          "existing-chart.png"
+        ],
+        "fixed_notes": "原有固定说明，仅用于验证保留边界。",
+        "image_sha256": {
+          "existing-chart.png": "existing-image-digest"
+        }
+      },
+      "expect": {
+        "status": "ok"
+      }
+    },
+    {
+      "id": "oil_etf_invalid_barrels",
+      "category": "oil_etf",
+      "split": "development",
+      "payload": {
+        "title": "【原油ETF】两大原油ETF持仓数据更新",
+        "dynamic_body": "2026-10-30，WTI（USO）总名义敞口约1883.40万桶，其中期货1583.60万桶；Brent（BNO）期货持仓696.30万桶。",
+        "data_date": "2026-10-30",
+        "facts": {
+          "funds": [
+            {
+              "ticker": "USO",
+              "barrels": "-1",
+              "futures_barrels": "15836000",
+              "swap_barrels_estimate": "2997983.62",
+              "reference_price": "93.90",
+              "change_barrels": null,
+              "change_basis": null,
+              "method": "nearest_future_swap_notional_v1"
+            },
+            {
+              "ticker": "BNO",
+              "barrels": "6963000",
+              "futures_barrels": "6963000",
+              "swap_barrels_estimate": "0",
+              "reference_price": "106.06",
+              "change_barrels": null,
+              "change_basis": null,
+              "method": "nearest_future_swap_notional_v1"
+            }
+          ],
+          "previous_date": "2026-10-29"
+        },
+        "valid": true,
+        "warnings": [],
+        "images": [
+          "existing-chart.png"
+        ],
+        "fixed_notes": "原有固定说明，仅用于验证保留边界。",
+        "image_sha256": {
+          "existing-chart.png": "existing-image-digest"
+        }
+      },
+      "expect": {
+        "status": "rejected"
+      }
+    },
+    {
+      "id": "token_cost_weekly_down",
+      "category": "token_cost",
+      "split": "development",
+      "payload": {
+        "title": "【AI算力CPI】Token支出价格更新",
+        "dynamic_body": "截至10月30日，Token支出价格指数报0.9750美元/百万Token。七日变化为-1.82%。",
+        "data_date": "2026-10-30",
+        "facts": {
+          "token_price": "0.9750",
+          "weekly_change_pct": "-1.82",
+          "previous_date": "2026-10-23",
+          "previous_price": "0.9931",
+          "range_low": "0.9750",
+          "range_high": "0.9931",
+          "range_count": 2,
+          "tail_narrowed": false,
+          "prior_peak_price": "2.0651",
+          "prior_peak_date": "2026-05-28",
+          "peak_relation": "below",
+          "drawdown_pct": "52.79",
+          "weekly_source": "calculated",
+          "source_precision": 4
+        },
+        "valid": true,
+        "warnings": [],
+        "images": [
+          "existing-chart.png"
+        ],
+        "fixed_notes": "原有固定说明，仅用于验证保留边界。",
+        "image_sha256": {
+          "existing-chart.png": "existing-image-digest"
+        }
+      },
+      "expect": {
+        "status": "ok"
+      }
+    },
+    {
+      "id": "token_cost_public_precision",
+      "category": "token_cost",
+      "split": "holdout",
+      "payload": {
+        "title": "【AI算力CPI】Token支出价格更新",
+        "dynamic_body": "截至10月30日，Token支出价格指数报0.96美元/百万Token。七日变化为-4.1%。",
+        "data_date": "2026-10-30",
+        "facts": {
+          "token_price": "0.96",
+          "weekly_change_pct": "-4.1",
+          "previous_date": "",
+          "previous_price": "",
+          "range_low": "",
+          "range_high": "",
+          "range_count": 0,
+          "tail_narrowed": false,
+          "prior_peak_price": "2.0651",
+          "prior_peak_date": "2026-05-28",
+          "peak_relation": "below",
+          "drawdown_pct": "53.51",
+          "weekly_source": "public_visible_summary",
+          "source_precision": 2
+        },
+        "valid": true,
+        "warnings": [],
+        "images": [
+          "existing-chart.png"
+        ],
+        "fixed_notes": "原有固定说明，仅用于验证保留边界。",
+        "image_sha256": {
+          "existing-chart.png": "existing-image-digest"
+        }
+      },
+      "expect": {
+        "status": "ok"
+      }
+    },
+    {
+      "id": "token_cost_missing_week",
+      "category": "token_cost",
+      "split": "development",
+      "payload": {
+        "title": "【AI算力CPI】Token支出价格更新",
+        "dynamic_body": "截至10月30日，Token支出价格指数报0.9750美元/百万Token。周变化基准缺失。",
+        "data_date": "2026-10-30",
+        "facts": {
+          "token_price": "0.9750",
+          "weekly_change_pct": "",
+          "previous_date": "",
+          "previous_price": "",
+          "range_low": "0.9750",
+          "range_high": "0.9931",
+          "range_count": 2,
+          "tail_narrowed": false,
+          "prior_peak_price": "2.0651",
+          "prior_peak_date": "2026-05-28",
+          "peak_relation": "below",
+          "drawdown_pct": "52.79",
+          "weekly_source": "calculated",
+          "source_precision": 4
+        },
+        "valid": true,
+        "warnings": [],
+        "images": [
+          "existing-chart.png"
+        ],
+        "fixed_notes": "原有固定说明，仅用于验证保留边界。",
+        "image_sha256": {
+          "existing-chart.png": "existing-image-digest"
+        }
+      },
+      "expect": {
+        "status": "ok",
+        "forbidden": [
+          "止跌",
+          "新高"
+        ]
+      }
+    },
+    {
+      "id": "token_cost_nonseven_baseline",
+      "category": "token_cost",
+      "split": "holdout",
+      "payload": {
+        "title": "【AI算力CPI】Token支出价格更新",
+        "dynamic_body": "截至10月30日，Token支出价格指数报0.9750美元/百万Token。七日变化为-1.82%。",
+        "data_date": "2026-10-30",
+        "facts": {
+          "token_price": "0.9750",
+          "weekly_change_pct": "-1.82",
+          "previous_date": "2026-10-28",
+          "previous_price": "0.9931",
+          "range_low": "0.9750",
+          "range_high": "0.9931",
+          "range_count": 2,
+          "tail_narrowed": false,
+          "prior_peak_price": "2.0651",
+          "prior_peak_date": "2026-05-28",
+          "peak_relation": "below",
+          "drawdown_pct": "52.79",
+          "weekly_source": "calculated",
+          "source_precision": 4
+        },
+        "valid": true,
+        "warnings": [],
+        "images": [
+          "existing-chart.png"
+        ],
+        "fixed_notes": "原有固定说明，仅用于验证保留边界。",
+        "image_sha256": {
+          "existing-chart.png": "existing-image-digest"
+        }
+      },
+      "expect": {
+        "status": "rejected"
+      }
+    },
+    {
+      "id": "token_cost_invalid_price",
+      "category": "token_cost",
+      "split": "development",
+      "payload": {
+        "title": "【AI算力CPI】Token支出价格更新",
+        "dynamic_body": "截至10月30日，Token支出价格指数报0.9750美元/百万Token。七日变化为-1.82%。",
+        "data_date": "2026-10-30",
+        "facts": {
+          "token_price": "NaN",
+          "weekly_change_pct": "-1.82",
+          "previous_date": "2026-10-23",
+          "previous_price": "0.9931",
+          "range_low": "0.9750",
+          "range_high": "0.9931",
+          "range_count": 2,
+          "tail_narrowed": false,
+          "prior_peak_price": "2.0651",
+          "prior_peak_date": "2026-05-28",
+          "peak_relation": "below",
+          "drawdown_pct": "52.79",
+          "weekly_source": "calculated",
+          "source_precision": 4
+        },
+        "valid": true,
+        "warnings": [],
+        "images": [
+          "existing-chart.png"
+        ],
+        "fixed_notes": "原有固定说明，仅用于验证保留边界。",
+        "image_sha256": {
+          "existing-chart.png": "existing-image-digest"
+        }
+      },
+      "expect": {
+        "status": "rejected"
+      }
+    },
+    {
+      "id": "us_barometer_lower_grade",
+      "category": "us_barometer",
+      "split": "development",
+      "payload": {
+        "title": "【美股晴雨表】美股10月30日投资性价比：较低",
+        "dynamic_body": "1、巴菲特指数：235.18%，处于严重高估水平，股市表现已经超过合理区间，需要有进一步高增长业绩出现才能支撑当前估值。\n2、美国标普500指数股权风险溢价（ERP）：5.33%，处于偏低水平，暗示目前股市相对国债收益并无优势。",
+        "data_date": "2026-10-30",
+        "facts": {
+          "buffett_pct": "235.18",
+          "buffett_grade": "严重高估",
+          "erp_pct": "5.33",
+          "erp_grade": "偏低",
+          "verdict": "较低",
+          "score": -3,
+          "gdp_period": "2026-04-01",
+          "gdp_value": "32563.03"
+        },
+        "valid": true,
+        "warnings": [],
+        "images": [
+          "existing-chart.png"
+        ],
+        "fixed_notes": "原有固定说明，仅用于验证保留边界。",
+        "image_sha256": {
+          "existing-chart.png": "existing-image-digest"
+        }
+      },
+      "expect": {
+        "status": "ok"
+      }
+    },
+    {
+      "id": "us_barometer_higher_grade",
+      "category": "us_barometer",
+      "split": "development",
+      "payload": {
+        "title": "【美股晴雨表】美股10月30日投资性价比：高",
+        "dynamic_body": "1、巴菲特指数：60.00%，处于低估区间，股市规模相对经济明显偏低，通常对应更好的长期回报。\n2、美国标普500指数股权风险溢价（ERP）：7.20%，处于很高水平，股票明显比国债便宜，历史上多对应底部区域或较好的买入机会。",
+        "data_date": "2026-10-30",
+        "facts": {
+          "buffett_pct": "60.00",
+          "buffett_grade": "低估",
+          "erp_pct": "7.20",
+          "erp_grade": "很高",
+          "verdict": "高",
+          "score": 4,
+          "gdp_period": "2026-04-01",
+          "gdp_value": "32563.03"
+        },
+        "valid": true,
+        "warnings": [],
+        "images": [
+          "existing-chart.png"
+        ],
+        "fixed_notes": "原有固定说明，仅用于验证保留边界。",
+        "image_sha256": {
+          "existing-chart.png": "existing-image-digest"
+        }
+      },
+      "expect": {
+        "status": "ok"
+      }
+    },
+    {
+      "id": "us_barometer_neutral_grade",
+      "category": "us_barometer",
+      "split": "holdout",
+      "payload": {
+        "title": "【美股晴雨表】美股10月30日投资性价比：中性",
+        "dynamic_body": "1、巴菲特指数：120.00%，处于偏高区间，估值偏贵，宜留意业绩兑现节奏。\n2、美国标普500指数股权风险溢价（ERP）：5.60%，处于中性水平，股票与国债的性价比大致相当。",
+        "data_date": "2026-10-30",
+        "facts": {
+          "buffett_pct": "120.00",
+          "buffett_grade": "偏高",
+          "erp_pct": "5.60",
+          "erp_grade": "中性",
+          "verdict": "中性",
+          "score": 0,
+          "gdp_period": "2026-04-01",
+          "gdp_value": "32563.03"
+        },
+        "valid": true,
+        "warnings": [],
+        "images": [
+          "existing-chart.png"
+        ],
+        "fixed_notes": "原有固定说明，仅用于验证保留边界。",
+        "image_sha256": {
+          "existing-chart.png": "existing-image-digest"
+        }
+      },
+      "expect": {
+        "status": "ok"
+      }
+    },
+    {
+      "id": "us_barometer_at_threshold",
+      "category": "us_barometer",
+      "split": "holdout",
+      "payload": {
+        "title": "【美股晴雨表】美股10月30日投资性价比：中性",
+        "dynamic_body": "1、巴菲特指数：200.00%，处于严重高估水平，股市表现已经超过合理区间，需要有进一步高增长业绩出现才能支撑当前估值。\n2、美国标普500指数股权风险溢价（ERP）：6.00%，处于偏高水平，股票相对国债仍具一定吸引力。",
+        "data_date": "2026-10-30",
+        "facts": {
+          "buffett_pct": "200.00",
+          "buffett_grade": "严重高估",
+          "erp_pct": "6.00",
+          "erp_grade": "偏高",
+          "verdict": "中性",
+          "score": -1,
+          "gdp_period": "2026-04-01",
+          "gdp_value": "32563.03"
+        },
+        "valid": true,
+        "warnings": [],
+        "images": [
+          "existing-chart.png"
+        ],
+        "fixed_notes": "原有固定说明，仅用于验证保留边界。",
+        "image_sha256": {
+          "existing-chart.png": "existing-image-digest"
+        }
+      },
+      "expect": {
+        "status": "ok"
+      }
+    },
+    {
+      "id": "us_barometer_inconsistent_grade",
+      "category": "us_barometer",
+      "split": "development",
+      "payload": {
+        "title": "【美股晴雨表】美股10月30日投资性价比：较低",
+        "dynamic_body": "1、巴菲特指数：235.18%，处于严重高估水平，股市表现已经超过合理区间，需要有进一步高增长业绩出现才能支撑当前估值。\n2、美国标普500指数股权风险溢价（ERP）：5.33%，处于偏低水平，暗示目前股市相对国债收益并无优势。",
+        "data_date": "2026-10-30",
+        "facts": {
+          "buffett_pct": "235.18",
+          "buffett_grade": "低估",
+          "erp_pct": "5.33",
+          "erp_grade": "偏低",
+          "verdict": "较低",
+          "score": -3,
+          "gdp_period": "2026-04-01",
+          "gdp_value": "32563.03"
+        },
+        "valid": true,
+        "warnings": [],
+        "images": [
+          "existing-chart.png"
+        ],
+        "fixed_notes": "原有固定说明，仅用于验证保留边界。",
+        "image_sha256": {
+          "existing-chart.png": "existing-image-digest"
+        }
+      },
+      "expect": {
+        "status": "rejected"
+      }
+    },
+    {
+      "id": "us_structure_three_indices_down",
+      "category": "us_structure",
+      "split": "development",
+      "payload": {
+        "title": "【美股晴雨表】美股10月30日市场结构：市场宽度依然不佳",
+        "dynamic_body": "1、前一个交易日纳斯达克指数收跌1.88%、标普500指数收跌1.12%、道琼斯指数收跌0.09%。\n2、罗素2000指数收跌1.93%，较已收录高点回调11.04%。",
+        "data_date": "2026-10-30",
+        "facts": {
+          "spx_change": "-1.12",
+          "ndx_change": "-1.88",
+          "dji_change": "-0.09",
+          "rut_change": "-1.93",
+          "gap": "873.01",
+          "gap_percentile": "0.201",
+          "gap_low": "734.35",
+          "gap_low_date": "2026-10-07",
+          "rut_drawdown": "-11.04",
+          "verdict": "市场宽度依然不佳"
+        },
+        "valid": true,
+        "warnings": [],
+        "images": [
+          "existing-chart.png"
+        ],
+        "fixed_notes": "原有固定说明，仅用于验证保留边界。",
+        "image_sha256": {
+          "existing-chart.png": "existing-image-digest"
+        }
+      },
+      "expect": {
+        "status": "ok"
+      }
+    },
+    {
+      "id": "us_structure_mixed_close",
+      "category": "us_structure",
+      "split": "holdout",
+      "payload": {
+        "title": "【美股晴雨表】美股10月30日市场结构：市场宽度依然不佳",
+        "dynamic_body": "1、前一个交易日纳斯达克指数收涨1.35%、标普500指数收跌1.36%、道琼斯指数收平。\n2、罗素2000指数收跌0.20%，较已收录高点回调11.04%。",
+        "data_date": "2026-10-30",
+        "facts": {
+          "spx_change": "-1.36",
+          "ndx_change": "1.35",
+          "dji_change": "0.00",
+          "rut_change": "-0.20",
+          "gap": "873.01",
+          "gap_percentile": "0.201",
+          "gap_low": "734.35",
+          "gap_low_date": "2026-10-07",
+          "rut_drawdown": "-11.04",
+          "verdict": "市场宽度依然不佳"
+        },
+        "valid": true,
+        "warnings": [],
+        "images": [
+          "existing-chart.png"
+        ],
+        "fixed_notes": "原有固定说明，仅用于验证保留边界。",
+        "image_sha256": {
+          "existing-chart.png": "existing-image-digest"
+        }
+      },
+      "expect": {
+        "status": "ok"
+      }
+    },
+    {
+      "id": "us_structure_flat_close",
+      "category": "us_structure",
+      "split": "development",
+      "payload": {
+        "title": "【美股晴雨表】美股10月30日市场结构：市场宽度依然不佳",
+        "dynamic_body": "1、前一个交易日纳斯达克指数收平、标普500指数收平、道琼斯指数收平。\n2、罗素2000指数收平，较已收录高点回调11.04%。",
+        "data_date": "2026-10-30",
+        "facts": {
+          "spx_change": "0.00",
+          "ndx_change": "0.00",
+          "dji_change": "0.00",
+          "rut_change": "0.00",
+          "gap": "873.01",
+          "gap_percentile": "0.201",
+          "gap_low": "734.35",
+          "gap_low_date": "2026-10-07",
+          "rut_drawdown": "-11.04",
+          "verdict": "市场宽度依然不佳"
+        },
+        "valid": true,
+        "warnings": [],
+        "images": [
+          "existing-chart.png"
+        ],
+        "fixed_notes": "原有固定说明，仅用于验证保留边界。",
+        "image_sha256": {
+          "existing-chart.png": "existing-image-digest"
+        }
+      },
+      "expect": {
+        "status": "ok"
+      }
+    },
+    {
+      "id": "us_structure_missing_nasdaq",
+      "category": "us_structure",
+      "split": "development",
+      "payload": {
+        "title": "【美股晴雨表】美股10月30日市场结构：市场宽度依然不佳",
+        "dynamic_body": "1、前一个交易日纳斯达克指数收跌1.88%、标普500指数收跌1.12%、道琼斯指数收跌0.09%。\n2、罗素2000指数收跌1.93%，较已收录高点回调11.04%。",
+        "data_date": "2026-10-30",
+        "facts": {
+          "spx_change": "-1.12",
+          "dji_change": "-0.09",
+          "rut_change": "-1.93",
+          "gap": "873.01",
+          "gap_percentile": "0.201",
+          "gap_low": "734.35",
+          "gap_low_date": "2026-10-07",
+          "rut_drawdown": "-11.04",
+          "verdict": "市场宽度依然不佳"
+        },
+        "valid": true,
+        "warnings": [],
+        "images": [
+          "existing-chart.png"
+        ],
+        "fixed_notes": "原有固定说明，仅用于验证保留边界。",
+        "image_sha256": {
+          "existing-chart.png": "existing-image-digest"
+        }
+      },
+      "expect": {
+        "status": "rejected"
+      }
+    },
+    {
+      "id": "us_structure_invalid_percentile",
+      "category": "us_structure",
+      "split": "holdout",
+      "payload": {
+        "title": "【美股晴雨表】美股10月30日市场结构：市场宽度依然不佳",
+        "dynamic_body": "1、前一个交易日纳斯达克指数收跌1.88%、标普500指数收跌1.12%、道琼斯指数收跌0.09%。\n2、罗素2000指数收跌1.93%，较已收录高点回调11.04%。",
+        "data_date": "2026-10-30",
+        "facts": {
+          "spx_change": "-1.12",
+          "ndx_change": "-1.88",
+          "dji_change": "-0.09",
+          "rut_change": "-1.93",
+          "gap": "873.01",
+          "gap_percentile": "1.01",
+          "gap_low": "734.35",
+          "gap_low_date": "2026-10-07",
+          "rut_drawdown": "-11.04",
+          "verdict": "市场宽度依然不佳"
+        },
+        "valid": true,
+        "warnings": [],
+        "images": [
+          "existing-chart.png"
+        ],
+        "fixed_notes": "原有固定说明，仅用于验证保留边界。",
+        "image_sha256": {
+          "existing-chart.png": "existing-image-digest"
+        }
+      },
+      "expect": {
+        "status": "rejected"
+      }
+    },
+    {
+      "id": "gpu_rental_opposite_generations",
+      "category": "gpu_rental",
+      "split": "development",
+      "payload": {
+        "title": "【AI景气度指标】高端GPU租赁价接近已收录高点，代际价格分化",
+        "dynamic_body": "截至10月29日，英伟达B200租赁价格升至5.73美元/GPU每小时，较10月22日上涨2.30%，距离此前已收录高点5.99美元/GPU每小时（9月30日）仍低4.34%。同期，H100租赁价格报2.61美元，微涨0.40%；A100报1.47美元，下跌0.80%。新一代B200一周走强，而A100下跌，三卡租赁价格呈现代际分化。",
+        "data_date": "2026-10-29",
+        "facts": {
+          "a100": "1.47",
+          "h100": "2.61",
+          "b200": "5.73",
+          "previous_date": "2026-10-22",
+          "a100_change_pct": "-0.80",
+          "h100_change_pct": "+0.40",
+          "b200_change_pct": "+2.30",
+          "b200_peak": "5.99",
+          "b200_peak_date": "2026-09-30",
+          "b200_peak_relation": "below",
+          "b200_gap_pct": "4.34",
+          "source": "Silicon Data A100/H100/B200 NeoCloud",
+          "weekly_source": "calculated_from_seven_day_baseline",
+          "source_note": ""
+        },
+        "images": [
+          "existing-gpu.png"
+        ],
+        "fixed_notes": "原有图下注释，影子流程不得改写。",
+        "chart_notes": "原有图下注释，影子流程不得改写。",
+        "warnings": [],
+        "valid": true,
+        "facts_copy": {
+          "title": "既有规则标题",
+          "body": "既有规则正文；仅作为保留基线。"
+        },
+        "style_contract": "ai-compute-editorial-20261026-v2"
+      },
+      "expect": {
+        "status": "ok",
+        "title_patterns": [
+          "分化"
+        ]
+      },
+      "baseline_provenance": "synthetic_facts_rendered_by_existing_legacy_rule"
+    },
+    {
+      "id": "gpu_rental_near_peak_boundary_inclusive",
+      "category": "gpu_rental",
+      "split": "development",
+      "payload": {
+        "title": "【AI景气度指标】高端GPU租赁价回落，仍接近已收录高点",
+        "dynamic_body": "截至10月29日，英伟达B200租赁价格回落至5.69美元/GPU每小时，较10月22日下跌0.10%，距离此前已收录高点5.99美元/GPU每小时（9月30日）仍低5.00%。同期，H100租赁价格报2.61美元，下跌0.20%；A100报1.47美元，下跌0.10%。",
+        "data_date": "2026-10-29",
+        "facts": {
+          "a100": "1.47",
+          "h100": "2.61",
+          "b200": "5.69",
+          "previous_date": "2026-10-22",
+          "a100_change_pct": "-0.10",
+          "h100_change_pct": "-0.20",
+          "b200_change_pct": "-0.10",
+          "b200_peak": "5.99",
+          "b200_peak_date": "2026-09-30",
+          "b200_peak_relation": "below",
+          "b200_gap_pct": "5.00",
+          "source": "Silicon Data A100/H100/B200 NeoCloud",
+          "weekly_source": "calculated_from_seven_day_baseline",
+          "source_note": ""
+        },
+        "images": [
+          "existing-gpu.png"
+        ],
+        "fixed_notes": "原有图下注释，影子流程不得改写。",
+        "chart_notes": "原有图下注释，影子流程不得改写。",
+        "warnings": [],
+        "valid": true,
+        "facts_copy": {
+          "title": "既有规则标题",
+          "body": "既有规则正文；仅作为保留基线。"
+        },
+        "style_contract": "ai-compute-editorial-20261026-v2"
+      },
+      "expect": {
+        "status": "ok",
+        "title_patterns": [
+          "接近"
+        ]
+      },
+      "baseline_provenance": "synthetic_facts_rendered_by_existing_legacy_rule"
+    },
+    {
+      "id": "gpu_rental_mixed_sources_existing_labels",
+      "category": "gpu_rental",
+      "split": "holdout",
+      "payload": {
+        "title": "【AI景气度指标】高端GPU租赁价一周回升，仍接近已收录高点",
+        "dynamic_body": "截至10月29日，英伟达B200租赁价格升至5.73美元/GPU每小时，较七个自然日前上涨8.7%，距离此前已收录高点5.99美元/GPU每小时（9月30日）仍低4.34%。同期，H100租赁价格报2.61美元，上涨4.8%；A100报1.47美元，上涨2.6%。",
+        "data_date": "2026-10-29",
+        "facts": {
+          "a100": "1.47",
+          "h100": "2.61",
+          "b200": "5.73",
+          "previous_date": "",
+          "a100_change_pct": "2.6",
+          "h100_change_pct": "4.8",
+          "b200_change_pct": "8.7",
+          "b200_peak": "5.99",
+          "b200_peak_date": "2026-09-30",
+          "b200_peak_relation": "below",
+          "b200_gap_pct": "4.34",
+          "source": "Silicon Data A100/H100/B200 NeoCloud",
+          "weekly_source": "public_visible_history_mixed",
+          "source_note": ""
+        },
+        "images": [
+          "existing-gpu.png"
+        ],
+        "fixed_notes": "原有图下注释，影子流程不得改写。",
+        "chart_notes": "原有图下注释，影子流程不得改写。",
+        "warnings": [],
+        "valid": true,
+        "process_details": {
+          "sources": [
+            {
+              "label": "A100 · 2026-10-29 · 网页历史价格表",
+              "url": "https://example.test/a100"
+            },
+            {
+              "label": "H100 · 2026-10-29 · 公开卡片",
+              "url": "https://example.test/h100"
+            },
+            {
+              "label": "B200 · 2026-10-29 · 公开卡片",
+              "url": "https://example.test/b200"
+            }
+          ]
+        },
+        "facts_copy": {
+          "title": "既有规则标题",
+          "body": "既有规则正文；仅作为保留基线。"
+        },
+        "style_contract": "ai-compute-editorial-20261026-v2"
+      },
+      "expect": {
+        "status": "ok",
+        "body_patterns": [
+          "历史价格",
+          "约"
+        ]
+      },
+      "baseline_provenance": "synthetic_facts_rendered_by_existing_legacy_rule"
+    },
+    {
+      "id": "gpu_rental_one_weekly_baseline_missing",
+      "category": "gpu_rental",
+      "split": "development",
+      "payload": {
+        "title": "【AI景气度指标】截至10月29日三卡租赁价格",
+        "dynamic_body": "截至10月29日，英伟达B200租赁价格报5.73美元/GPU每小时，较10月22日上涨2.30%，距离此前已收录高点5.99美元/GPU每小时（9月30日）仍低4.34%。同期，H100租赁价格报2.61美元，微涨0.40%；A100报1.47美元，周变化基准缺失。",
+        "data_date": "2026-10-29",
+        "facts": {
+          "a100": "1.47",
+          "h100": "2.61",
+          "b200": "5.73",
+          "previous_date": "2026-10-22",
+          "a100_change_pct": "",
+          "h100_change_pct": "+0.40",
+          "b200_change_pct": "+2.30",
+          "b200_peak": "5.99",
+          "b200_peak_date": "2026-09-30",
+          "b200_peak_relation": "below",
+          "b200_gap_pct": "4.34",
+          "source": "Silicon Data A100/H100/B200 NeoCloud",
+          "weekly_source": "calculated_from_seven_day_baseline",
+          "source_note": ""
+        },
+        "images": [
+          "existing-gpu.png"
+        ],
+        "fixed_notes": "原有图下注释，影子流程不得改写。",
+        "chart_notes": "原有图下注释，影子流程不得改写。",
+        "warnings": [],
+        "valid": true,
+        "facts_copy": {
+          "title": "既有规则标题",
+          "body": "既有规则正文；仅作为保留基线。"
+        },
+        "style_contract": "ai-compute-editorial-20261026-v2"
+      },
+      "expect": {
+        "status": "ok",
+        "partial_weekly": true,
+        "title_forbidden": [
+          "K型",
+          "分化"
+        ],
+        "body_patterns": [
+          "基准.*缺失|缺.*基准|不报告|不计算"
+        ]
+      },
+      "baseline_provenance": "synthetic_facts_rendered_by_existing_legacy_rule"
+    },
+    {
+      "id": "gpu_rental_invalid_calendar_date",
+      "category": "gpu_rental",
+      "split": "holdout",
+      "payload": {
+        "title": "既有规则标题",
+        "dynamic_body": "既有规则正文；仅作为保留基线。",
+        "data_date": "2026-02-30",
+        "facts": {
+          "a100": "1.47",
+          "h100": "2.61",
+          "b200": "5.73",
+          "previous_date": "2026-10-22",
+          "a100_change_pct": "-0.80",
+          "h100_change_pct": "+0.40",
+          "b200_change_pct": "+2.30",
+          "b200_peak": "5.99",
+          "b200_peak_date": "2026-09-30",
+          "b200_peak_relation": "below",
+          "b200_gap_pct": "4.34",
+          "source": "Silicon Data A100/H100/B200 NeoCloud",
+          "weekly_source": "calculated_from_seven_day_baseline",
+          "source_note": ""
+        },
+        "images": [
+          "existing-gpu.png"
+        ],
+        "fixed_notes": "原有图下注释，影子流程不得改写。",
+        "chart_notes": "原有图下注释，影子流程不得改写。",
+        "warnings": [],
+        "valid": true
+      },
+      "expect": {
+        "status": "rejected",
+        "reason": "invalid_date"
+      }
+    }
+  ]
+}

@@ -1,0 +1,174 @@
+{
+  "schema_version": 1,
+  "pack_id": "valuation-editorial",
+  "version": "0.1.0",
+  "category": "valuation",
+  "status": "draft_pending_editor_review",
+  "review": {
+    "approved_by": null,
+    "reviewed_at": null
+  },
+  "sources": [
+    {
+      "path": "skills/jin10-plus-valuation-text/references/history.md",
+      "sha256": "e61ab97811c4bafb5df60ef1b52167d9683071629dd4e2bd8d3a5f798d2f6e9e",
+      "kind": "user_provided_historical_style_archive"
+    }
+  ],
+  "scenarios": [
+    {
+      "id": "higher",
+      "description": "股债性价比：按已校验事实确定higher场景，不从旧稿复制当日结论。"
+    },
+    {
+      "id": "lower",
+      "description": "股债性价比：按已校验事实确定lower场景，不从旧稿复制当日结论。"
+    },
+    {
+      "id": "unchanged",
+      "description": "股债性价比：按已校验事实确定unchanged场景，不从旧稿复制当日结论。"
+    }
+  ],
+  "slot_roles": {
+    "lead": [
+      "date",
+      "main_fact"
+    ],
+    "comparison": [
+      "comparison_fact"
+    ]
+  },
+  "modules": {
+    "headlines": [
+      {
+        "id": "higher_1",
+        "text": "【A股温度计】沪深300股权风险溢价上升",
+        "scenarios": [
+          "higher"
+        ],
+        "editorial_reason": "从用户历史文段提炼主旨组织方式，并按当前事实条件派生；尚待编辑审核。"
+      },
+      {
+        "id": "higher_2",
+        "text": "【A股温度计】股债性价比指标更新，ERP较前日上升",
+        "scenarios": [
+          "higher"
+        ],
+        "editorial_reason": "从用户历史文段提炼主旨组织方式，并按当前事实条件派生；尚待编辑审核。"
+      },
+      {
+        "id": "lower_1",
+        "text": "【A股温度计】沪深300股权风险溢价下降",
+        "scenarios": [
+          "lower"
+        ],
+        "editorial_reason": "从用户历史文段提炼主旨组织方式，并按当前事实条件派生；尚待编辑审核。"
+      },
+      {
+        "id": "lower_2",
+        "text": "【A股温度计】股债性价比指标更新，ERP较前日下降",
+        "scenarios": [
+          "lower"
+        ],
+        "editorial_reason": "从用户历史文段提炼主旨组织方式，并按当前事实条件派生；尚待编辑审核。"
+      },
+      {
+        "id": "unchanged_1",
+        "text": "【A股温度计】沪深300股权风险溢价持平",
+        "scenarios": [
+          "unchanged"
+        ],
+        "editorial_reason": "从用户历史文段提炼主旨组织方式，并按当前事实条件派生；尚待编辑审核。"
+      },
+      {
+        "id": "unchanged_2",
+        "text": "【A股温度计】股债性价比指标更新，ERP暂无变化",
+        "scenarios": [
+          "unchanged"
+        ],
+        "editorial_reason": "从用户历史文段提炼主旨组织方式，并按当前事实条件派生；尚待编辑审核。"
+      }
+    ],
+    "leads": [
+      {
+        "id": "dated",
+        "template": "{date}，{main_fact}",
+        "editorial_reason": "先明确数据日期，再给完整主要事实。"
+      },
+      {
+        "id": "as_of",
+        "template": "截至{date}，{main_fact}",
+        "editorial_reason": "按数据截止日表述，不改变比较基准。"
+      }
+    ],
+    "comparisons": [
+      {
+        "id": "direct",
+        "template": "{comparison_fact}",
+        "editorial_reason": "保持对照指标及日期、单位和数值的原子绑定。"
+      },
+      {
+        "id": "introduced",
+        "template": "从参考线位置看，{comparison_fact}",
+        "editorial_reason": "只增加段间衔接，不改变完整事实片段。"
+      }
+    ],
+    "closings": [
+      {
+        "id": "none",
+        "text": "",
+        "scenarios": [
+          "higher",
+          "lower",
+          "unchanged"
+        ],
+        "editorial_reason": "事实和比较已完整时直接收尾，不另加空泛总结。"
+      }
+    ]
+  },
+  "examples": [
+    {
+      "id": "valuation-structure-1",
+      "scenario": "higher",
+      "source_sample_id": "2026-10-20",
+      "body_structure": [
+        "数据日",
+        "主要指标及变化",
+        "相关比较或参考线"
+      ],
+      "editorial_reason": "仅参考用户原稿的日期、主事实、对照顺序；当前情形由事实规则派生，不把样本日期、数字或因果判断当作当期事实。"
+    },
+    {
+      "id": "valuation-structure-2",
+      "scenario": "lower",
+      "source_sample_id": "2026-10-19",
+      "body_structure": [
+        "数据日",
+        "主要指标及变化",
+        "相关比较或参考线"
+      ],
+      "editorial_reason": "仅参考用户原稿的日期、主事实、对照顺序；当前情形由事实规则派生，不把样本日期、数字或因果判断当作当期事实。"
+    },
+    {
+      "id": "valuation-structure-3",
+      "scenario": "unchanged",
+      "source_sample_id": "2026-10-16",
+      "body_structure": [
+        "数据日",
+        "主要指标及变化",
+        "相关比较或参考线"
+      ],
+      "editorial_reason": "仅参考用户原稿的日期、主事实、对照顺序；当前情形由事实规则派生，不把样本日期、数字或因果判断当作当期事实。"
+    }
+  ],
+  "rejected_patterns": [
+    {
+      "text": "未来收益确定",
+      "reason": "指标比较不能保证未来回报。"
+    },
+    {
+      "text": "旧稿中的当日数据与结论",
+      "reason": "历史资料只供表达结构参考。"
+    }
+  ]
+}

@@ -1,0 +1,99 @@
+{
+  "schema_version": 1,
+  "pack_id": "gpu-rental-editorial",
+  "version": "0.1.0",
+  "category": "gpu_rental",
+  "status": "draft_pending_editor_review",
+  "sources": [
+    {
+      "path": "skills/jin10-plus-gpu-rental-text/references/history.md",
+      "sha256": "cc5029ceca25e5e78c1d0f83b92082dcb4255a31a2a92f2572ffc0444d852414",
+      "kind": "user_provided_historical_style_archive"
+    },
+    {
+      "path": "docs/ai-compute/reference-copy.md",
+      "sha256": "704ff7d2457259b8578621d0084b6c3d50de6d595947ffb2e73312d453261aa3",
+      "kind": "user_reference_and_documented_fact_corrections"
+    }
+  ],
+  "scenarios": [
+    {"id": "peak_tie", "description": "B200当期价格与此前已收录高点相同，只写并列，不扩展为全市场或完整历史极值。"},
+    {"id": "peak_above", "description": "B200当期价格高于此前已收录高点，只表述已收录范围内的比较。"},
+    {"id": "near_divergence_up", "description": "B200周涨、A100周跌，且B200低于此前已收录高点、差距不超过5%；先写高点距离，再交代方向分化。"},
+    {"id": "k_divergence", "description": "B200周涨、A100周跌、H100不涨，K型仅描述三卡价格方向。"},
+    {"id": "divergence_up", "description": "B200周涨、A100周跌；代际价格分化不等于需求或供应已改变。"},
+    {"id": "divergence_down", "description": "B200周跌、A100周涨；按当前事实规范派生的反向比较，不声称来自原样本的当日事实。"},
+    {"id": "older_not_following", "description": "B200周涨，H100与A100均不涨；缺少任一卡周变化时不适用。"},
+    {"id": "near_peak_up", "description": "B200周涨且低于此前已收录高点、差距不超过5%；不使用未提供的半年窗口判断。"},
+    {"id": "near_peak_down", "description": "B200周跌且低于此前已收录高点、差距不超过5%；回落与接近高点可以同时成立。"},
+    {"id": "near_peak_flat", "description": "B200周变化为零且接近此前已收录高点；按当前事实规范派生，不推断高位趋势。"},
+    {"id": "all_up", "description": "三卡周变化均大于零；按事实规范派生的常规比较场景。"},
+    {"id": "all_down", "description": "三卡周变化均小于零；按事实规范派生的常规比较场景。"},
+    {"id": "all_flat", "description": "三卡周变化均为零；按事实规范派生的常规比较场景。"},
+    {"id": "mixed", "description": "三卡周变化齐全，但不满足更明确场景；仅写走势不一，不强行使用K型或涨跌互现。"},
+    {"id": "missing_week", "description": "至少一卡缺少可用周变化；按事实规范派生，只报告已知价格及各卡可用变化，不推断分化。"}
+  ],
+  "modules": {
+    "headlines": [
+      {"id": "tie_direct", "text": "【AI景气度指标】B200租赁价与已收录高点并列", "scenarios": ["peak_tie"], "source_sample_ids": ["03"], "editorial_reason": "保留样本突出B200与高点比较的重心；按修正要求明确并列，属于编辑派生表达，待审核。"},
+      {"id": "tie_position", "text": "【AI景气度指标】B200租赁价并列此前已收录高点", "scenarios": ["peak_tie"], "source_sample_ids": ["03"], "editorial_reason": "备用短标题；只允许相等的价格位置比较，不暗示此前下跌后重返高点。"},
+      {"id": "above_direct", "text": "【AI景气度指标】B200租赁价高于此前已收录高点", "scenarios": ["peak_above"], "source_sample_ids": ["03"], "editorial_reason": "沿用样本的高点新闻点，同时限定已收录范围。"},
+      {"id": "above_comparison", "text": "【AI景气度指标】B200租赁价超过此前已收录高点", "scenarios": ["peak_above"], "source_sample_ids": ["03"], "editorial_reason": "高点比较的同义表达，不扩大比较窗口。"},
+      {"id": "near_divergence", "text": "【AI景气度指标】B200租赁价接近已收录高点，代际价格分化", "scenarios": ["near_divergence_up"], "source_sample_ids": ["03"], "editorial_reason": "保留样本03的B200位置与三卡对照两个信息层次。"},
+      {"id": "near_opposite", "text": "【AI景气度指标】B200租赁价接近前期已收录高点，A100走弱", "scenarios": ["near_divergence_up"], "source_sample_ids": ["03", "05"], "editorial_reason": "把笼统分化落到具体卡种，避免重复解释。"},
+      {"id": "k_type", "text": "【AI景气度指标】三卡租赁价格呈K型分化", "scenarios": ["k_divergence"], "source_sample_ids": ["09"], "editorial_reason": "提炼样本09的标题结构，只保留满足条件的价格方向判断。"},
+      {"id": "k_direction", "text": "【AI景气度指标】B200租赁价上涨，前两代未跟随", "scenarios": ["k_divergence", "older_not_following"], "source_sample_ids": ["06", "09"], "editorial_reason": "用可核对方向表达K型/未跟随，不增加需求解释。"},
+      {"id": "divergence_up", "text": "【AI景气度指标】B200租赁价走强，A100走弱", "scenarios": ["divergence_up"], "source_sample_ids": ["03", "05"], "editorial_reason": "直接指出分化双方，避免把H100一并归为下跌。"},
+      {"id": "divergence_prices", "text": "【AI景气度指标】B200与A100租赁价格走势分化", "scenarios": ["divergence_up", "divergence_down"], "source_sample_ids": ["03", "05"], "editorial_reason": "从样本对照结构提炼；反向场景为事实规范派生，不借用历史结论。"},
+      {"id": "divergence_down", "text": "【AI景气度指标】B200租赁价回落，A100上涨", "scenarios": ["divergence_down"], "source_sample_ids": ["05"], "editorial_reason": "按真实方向对照；这是样本比较结构的反向派生表达。"},
+      {"id": "older_idle", "text": "【AI景气度指标】B200一周上涨，H100与A100未跟随", "scenarios": ["older_not_following"], "source_sample_ids": ["01", "06"], "editorial_reason": "沿用先写B200、再写前两代的样本节奏，不把平价写为下跌。"},
+      {"id": "near_up", "text": "【AI景气度指标】B200租赁价上涨，仍接近已收录高点", "scenarios": ["near_peak_up"], "source_sample_ids": ["03"], "editorial_reason": "把周方向与价格位置分开表达，保留已收录范围。"},
+      {"id": "near_up_short", "text": "【AI景气度指标】B200租赁价一周走高，接近前期已收录高点", "scenarios": ["near_peak_up"], "source_sample_ids": ["03", "06"], "editorial_reason": "提供同场景短标题，不增加持续上涨天数或需求判断。"},
+      {"id": "near_down", "text": "【AI景气度指标】B200租赁价回落，仍接近已收录高点", "scenarios": ["near_peak_down"], "source_sample_ids": ["01"], "editorial_reason": "保留样本01的回落与高点位置并列结构，避免写成创高。"},
+      {"id": "near_down_short", "text": "【AI景气度指标】B200租赁价一周下跌，仍在已收录高点附近", "scenarios": ["near_peak_down"], "source_sample_ids": ["01"], "editorial_reason": "同场景另一表达；接近阈值由事实规则给出。"},
+      {"id": "near_flat", "text": "【AI景气度指标】B200租赁价一周持平，仍接近已收录高点", "scenarios": ["near_peak_flat"], "source_sample_ids": ["01"], "editorial_reason": "由样本的方向与位置结构派生，持平必须是零周变化。"},
+      {"id": "near_flat_short", "text": "【AI景气度指标】B200租赁价接近此前已收录高点，一周持平", "scenarios": ["near_peak_flat"], "source_sample_ids": ["01"], "editorial_reason": "同场景信息顺序变化，不推断趋势稳定或供需状态。"},
+      {"id": "all_up", "text": "【AI景气度指标】三卡租赁价格一周上涨", "scenarios": ["all_up"], "source_sample_ids": [], "editorial_reason": "历史范文未覆盖三卡同涨；按当前事实规范派生，待编辑审核。"},
+      {"id": "all_up_names", "text": "【AI景气度指标】A100、H100与B200租赁价一周均上涨", "scenarios": ["all_up"], "source_sample_ids": [], "editorial_reason": "点明三卡范围，不扩展成全部GPU价格上涨。"},
+      {"id": "all_down", "text": "【AI景气度指标】三卡租赁价格一周下跌", "scenarios": ["all_down"], "source_sample_ids": [], "editorial_reason": "历史范文未覆盖三卡同跌；按当前事实规范派生，待编辑审核。"},
+      {"id": "all_down_names", "text": "【AI景气度指标】A100、H100与B200租赁价一周均回落", "scenarios": ["all_down"], "source_sample_ids": [], "editorial_reason": "点明比较范围和周方向，不附加需求降温判断。"},
+      {"id": "all_flat", "text": "【AI景气度指标】三卡租赁价格一周持平", "scenarios": ["all_flat"], "source_sample_ids": [], "editorial_reason": "历史范文未覆盖三卡零变化；按当前事实规范派生，待编辑审核。"},
+      {"id": "all_flat_names", "text": "【AI景气度指标】A100、H100与B200租赁价周变化均持平", "scenarios": ["all_flat"], "source_sample_ids": [], "editorial_reason": "只说三卡周变化为零，不推断一周内每天都没有波动。"},
+      {"id": "mixed", "text": "【AI景气度指标】三卡租赁价格走势不一", "scenarios": ["mixed"], "source_sample_ids": [], "editorial_reason": "当前规范派生的保守比较，不把上涨与持平误写成涨跌互现。"},
+      {"id": "mixed_names", "text": "【AI景气度指标】A100、H100与B200租赁价表现不一", "scenarios": ["mixed"], "source_sample_ids": [], "editorial_reason": "保留三卡对照重心，具体方向在正文逐卡报告。"},
+      {"id": "missing_week", "text": "【AI景气度指标】三卡租赁价格更新", "scenarios": ["missing_week"], "source_sample_ids": [], "editorial_reason": "基准缺失时按当前事实规范派生，标题只报告价格，不推断分化。"},
+      {"id": "missing_week_names", "text": "【AI景气度指标】A100、H100与B200租赁价格一览", "scenarios": ["missing_week"], "source_sample_ids": [], "editorial_reason": "无完整三卡周变化时保留中性标题，缺口在正文说明。"}
+    ],
+    "leads": [
+      {"id": "as_of", "template": "截至{data_day}，{b200_fact}{peak_tail}。", "source_sample_ids": ["01", "03"], "editorial_reason": "先明确数据日，再给B200完整事实与高点位置。事实片段由程序整体渲染，模型不可拆换指标和数字。"},
+      {"id": "dated", "template": "{data_day}，{b200_fact}{peak_tail}。", "source_sample_ids": ["03"], "editorial_reason": "同一主句的简短日期开头；B200价格、周变化和高点关系仍完整绑定。"}
+    ],
+    "comparisons": [
+      {"id": "parallel", "template": "同期，{h100_fact}；{a100_fact}。", "source_sample_ids": ["01", "03"], "editorial_reason": "沿用样本H100在前、A100在后的同期对照，整块事实保留卡名、价格、单位和周方向。"},
+      {"id": "direct", "template": "{h100_fact}；{a100_fact}。", "source_sample_ids": ["05"], "editorial_reason": "省去重复引导词；全段仍由首句日期约束，逐卡事实顺序不变。"}
+    ],
+    "closings": [
+      {"id": "none", "text": "", "scenarios": ["peak_tie", "peak_above", "near_divergence_up", "k_divergence", "divergence_up", "divergence_down", "older_not_following", "near_peak_up", "near_peak_down", "near_peak_flat", "all_up", "all_down", "all_flat", "mixed", "missing_week"], "source_sample_ids": [], "editorial_reason": "标题和事实句已足够时可以直接收尾，不强行添加总结或机制推断。"},
+      {"id": "k_directions", "text": "B200一周上涨，H100与A100未跟随上涨，三卡价格呈K型分化。", "scenarios": ["k_divergence"], "source_sample_ids": ["09"], "editorial_reason": "保留样本的代际比较节奏，删除需求迁移与紧缺推断。"},
+      {"id": "up_down_comparison", "text": "B200一周走强、A100走弱，三卡租赁价格呈现代际分化。", "scenarios": ["near_divergence_up", "divergence_up"], "source_sample_ids": ["03", "05"], "editorial_reason": "把分化落实为可验证的价格方向，不将H100误写成下跌。"},
+      {"id": "down_up_comparison", "text": "B200一周回落、A100上涨，三卡租赁价格走势分化。", "scenarios": ["divergence_down"], "source_sample_ids": ["05"], "editorial_reason": "由原范文对照结构派生的反向表达，待审核，只写价格方向。"},
+      {"id": "older_not_following", "text": "B200一周上涨，H100与A100未跟随上涨。", "scenarios": ["older_not_following"], "source_sample_ids": ["06"], "editorial_reason": "保留样本的前后代对照，去掉供需解释与结构性紧缺判断。"}
+    ]
+  },
+  "examples": [
+    {"id": "sample_01_structure", "scenario": "near_peak_down", "source_sample_id": "01", "title_pattern": "B200周方向＋已收录高点位置", "body_structure": ["数据日与B200完整价格事实", "高点关系", "H100与A100同期事实"], "editorial_reason": "借鉴原稿的主次结构；原样本中的当日回落与周上涨不能混为一个方向，运行时只使用事实包定义的周变化。"},
+    {"id": "sample_03_structure", "scenario": "near_divergence_up", "source_sample_id": "03", "title_pattern": "B200接近已收录高点＋三卡价格分化", "body_structure": ["数据日与B200完整价格事实", "已收录高点与距离", "H100与A100同期事实", "有条件的价格方向对照"], "editorial_reason": "保留用户参考的B200先行、三卡对照节奏；原稿未经核实的半年新高不进入生产示范。"},
+    {"id": "sample_05_structure", "scenario": "divergence_up", "source_sample_id": "05", "title_pattern": "B200走强＋A100走弱", "body_structure": ["B200完整价格事实", "H100完整价格事实", "A100完整价格事实", "可选价格分化总结"], "editorial_reason": "保留原样本具体卡种比较，去掉新高窗口与需求迁移判断。"},
+    {"id": "sample_06_structure", "scenario": "older_not_following", "source_sample_id": "06", "title_pattern": "B200周涨＋前两代未跟随", "body_structure": ["B200完整价格事实", "H100与A100同期事实", "可选未跟随价格总结"], "editorial_reason": "提炼原样本的对照组织；运行时必须有三卡周方向支持，原样本平台震荡不能直接当作周变化为零。"},
+    {"id": "sample_09_structure", "scenario": "k_divergence", "source_sample_id": "09", "title_pattern": "三卡租赁价格K型分化", "body_structure": ["B200完整价格事实", "H100与A100同期事实", "可选K型价格总结"], "editorial_reason": "仅复用K型标题和新旧卡对照结构，使用当前严格方向条件，不沿用需求或紧缺结论。"}
+  ],
+  "rejected_patterns": [
+    {"text": "创半年新高", "reason": "当前事实包未提供完整半年窗口，且原参考存在并列价格；用已收录高点关系替代。"},
+    {"text": "历史新高", "reason": "已收录范围不代表完整历史，不能扩大极值范围。"},
+    {"text": "需求正在从旧一代向最新一代迁移", "reason": "价格差异不能单独证明需求迁移，需要独立证据。"},
+    {"text": "结构性紧缺", "reason": "租价方向不能单独证明供需紧缺。"},
+    {"text": "相关指数上涨通常意味着GPU更紧缺、需求更旺", "reason": "原样本固定解释不进入动态正文；本试点不修改图中固定说明。"},
+    {"text": "涨跌互现", "reason": "仅上涨与持平的组合也可能进入mixed场景，不能用此词覆盖所有mixed情形。"}
+  ],
+  "review": {"required": true, "approved_by": null}
+}

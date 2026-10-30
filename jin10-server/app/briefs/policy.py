@@ -1,4 +1,4 @@
-"""Weekday publication policy. Deliberately no holiday calendar."""
+"""Market-specific data dates and a daily morning production window."""
 from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
@@ -25,12 +25,13 @@ def previous_weekday(day: date) -> date:
 def expected_date(category: str, issue_day: date) -> date:
     if category not in CATEGORIES:
         raise ValueError('Unknown category')
-    return previous_weekday(issue_day)
+    from .trading_calendar import market_for, previous_session
+    return previous_session(market_for(category),issue_day)
 
 
 def production_window(now: datetime) -> bool:
     local = now.astimezone(CHINA)
-    return local.weekday() < 5 and time(8) <= local.time().replace(tzinfo=None) < time(10)
+    return time(8) <= local.time().replace(tzinfo=None) < time(10)
 
 
 def first_run(category: str) -> time:

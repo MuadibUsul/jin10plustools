@@ -25,15 +25,22 @@ def window(rows, day, years=10):
     return [row for row in rows if start.isoformat() <= row['date'] <= end.isoformat()]
 
 
-def fetch(day, out):
+def fetch(day, out,*,allow_gap_repair=False,on_series=None):
     record(out, 2, '正在获取 Wilshire 5000、FRED 季度GDP 与 StreetStats 股权风险溢价')
     wilshire_rows = fetch_data.wilshire()
+    if on_series:on_series('wilshire',wilshire_rows)
     gdp_rows = fetch_data.gdp()
+    if on_series:on_series('gdp',gdp_rows)
     erp_rows = fetch_data.streetstats_erp()
+    if on_series:on_series('erp',erp_rows)
     for label, rows in (('美股总市值', wilshire_rows), ('股权风险溢价', erp_rows)):
-        if not any(row['date'] == day for row in rows):
+        if not allow_gap_repair and not any(row['date'] == day for row in rows):
             raise ValueError(f'{label}目标日期尚未更新')
+    from app.briefs.policy import CHINA, expected_date
+    from datetime import datetime
+    unverified=date.fromisoformat(day)<expected_date('us_barometer',datetime.now(CHINA).date())
     return {'target': day, 'wilshire': window(wilshire_rows, day), 'gdp': gdp_rows,
+            'historical_vintage_unverified':unverified,'gdp_vintage_policy':'current_revised',
             'erp': window(erp_rows, day), 'sources': dict(SOURCES)}
 
 
@@ -60,5 +67,5 @@ def render(snapshot, out):
             'gdp_period': quarter['period'], 'gdp_value': str(quarter['value']),
             'sources': dict(SOURCES),
         },
-        'warnings': [],
+        'warnings': ['GDP使用当前已公布修订值；历史曲线不是当时可得GDP版本回放'],
     }

@@ -27,11 +27,11 @@ def draft(db_factory,seed,warnings=None,valid=True):
         append_version(db,issue,payload,user_id=user.id);db.commit();return str(issue.id)
 
 
-def test_weekday_policy_has_no_holiday_calendar():
+def test_morning_window_can_deliver_friday_us_data_on_saturday():
     assert previous_weekday(date(2026,10,19))==date(2026,10,16)
     assert previous_weekday(date(2026,10,20))==date(2026,10,19)
     assert production_window(datetime(2026,10,1,8,0,tzinfo=CHINA))
-    assert not production_window(datetime(2026,10,17,8,0,tzinfo=CHINA))
+    assert production_window(datetime(2026,10,17,8,0,tzinfo=CHINA))
     assert not production_window(datetime(2026,10,15,10,0,tzinfo=CHINA))
     assert expected_date('liquidity',date(2026,10,19))==date(2026,10,16)
     assert first_run('liquidity')==time(8)

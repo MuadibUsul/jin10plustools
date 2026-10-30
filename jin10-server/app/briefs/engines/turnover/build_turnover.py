@@ -22,7 +22,7 @@ def q2(value: Decimal) -> Decimal:
     return value.quantize(Q, rounding=ROUND_HALF_UP)
 
 
-def load_and_calculate(path: Path) -> list[dict]:
+def load_and_calculate(path: Path,session_dates=None) -> list[dict]:
     raw = json.loads(path.read_text(encoding='utf-8'), parse_float=Decimal)
     if not isinstance(raw, list):
         raise ValueError('Expected a list of raw daily count records')
@@ -46,9 +46,16 @@ def load_and_calculate(path: Path) -> list[dict]:
         row['low_daily'] = Decimal(row['belowPercent3']) / total * 100
         row['high_daily'] = Decimal(total - row['belowPercent5']) / total * 100
     calculated = []
+    calendar=sorted(set(session_dates)) if session_dates is not None else None
+    positions={day:index for index,day in enumerate(calendar or [])}
     for i in range(8, len(raw)):
         window = raw[i-8:i+1]
         row = raw[i]
+        if calendar is not None:
+            first,last=positions.get(window[0]['date']),positions.get(row['date'])
+            if (first is None or last is None or last-first!=8
+                    or [item['date'] for item in window]!=calendar[first:last+1]):
+                continue  # No invented MA9 across a missing trading session.
         calculated.append({
             'date': row['date'],
             'low_ma9': q2(sum((r['low_daily'] for r in window), Decimal(0))/9),
@@ -89,8 +96,8 @@ def verify_reference(rows: list[dict], reference: Path | None) -> dict:
 
 
 def build_outputs(data: Path, out_dir: Path, reference: Path | None = None,
-                  start: str = '2015-01-01', as_of: str | None = None) -> dict:
-    all_rows = load_and_calculate(data)
+                  start: str = '2015-01-01', as_of: str | None = None,session_dates=None) -> dict:
+    all_rows = load_and_calculate(data,session_dates=session_dates)
     audit = verify_reference(all_rows, reference)
     # Calculate the full MA9 history BEFORE applying the display date filter.
     rows = [r for r in all_rows if r['date'] >= start and (not as_of or r['date'] <= as_of)]

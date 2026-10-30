@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
 from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -51,6 +52,10 @@ class Settings(BaseSettings):
     openai_model: str = 'gpt-4o-mini'
     # AI polishing for the five fixed-brief text-Skill previews. Tests set false.
     briefs_skill_ai_enabled: bool = True
+    # GPU editorial pilot: shadow adds an offline comparison without replacing copy.
+    briefs_gpu_editorial_mode: Literal['off', 'shadow', 'active'] = 'shadow'
+    # All fixed briefs; off disables every pilot, active still requires reviewed packs.
+    briefs_editorial_mode: Literal['off', 'shadow', 'active'] = 'shadow'
 
     # Isolated News Skill OS preview. No worker or database writes when disabled.
     news_skill_os_enabled: bool = Field(

@@ -22,6 +22,46 @@ MAX_FILE_BYTES = 10_000_000
 MAX_RUN_BYTES = 100_000_000
 
 
+def restore_all_a_capture(db,job,folder,expected,previous,*,limit=128):
+    """Restore a same-team, exact-session capture with every original page."""
+    from .engines.valuation.fetch_free_all_a import SOURCE,load_verified_capture
+    folder=Path(folder);folder.mkdir(parents=True,exist_ok=True)
+    rows=db.scalars(select(BriefSourceSnapshot).where(
+        BriefSourceSnapshot.team_id==job.team_id,BriefSourceSnapshot.category=='valuation',
+        BriefSourceSnapshot.relative_path.like('%all-a-%-normalized.json')
+        ).order_by(BriefSourceSnapshot.captured_at.desc()).limit(limit))
+    for snapshot in rows:
+        if hashlib.sha256(snapshot.content).hexdigest()!=snapshot.sha256:continue
+        payload=json.loads(snapshot.content)
+        if (payload.get('source')!=SOURCE or payload.get('expected_date')!=expected
+                or payload.get('previous_date_rechecked')!=previous):continue
+        original=db.scalar(select(BriefSourceSnapshot).where(
+            BriefSourceSnapshot.team_id==job.team_id,BriefSourceSnapshot.category=='valuation',
+            BriefSourceSnapshot.sha256==snapshot.sha256).order_by(BriefSourceSnapshot.captured_at).limit(1))
+        if original and hashlib.sha256(original.content).hexdigest()==snapshot.sha256:snapshot=original
+        prefix=snapshot.relative_path.rsplit('/',1)[0]+'/' if '/' in snapshot.relative_path else ''
+        evidence=[];raws=[]
+        for item in payload.get('raw_evidence',[]):
+            # Captures may have been acquired on Windows before deployment.
+            name=str(item['file']).replace('\\','/').rsplit('/',1)[-1]
+            source=db.scalar(select(BriefSourceSnapshot).where(
+                BriefSourceSnapshot.team_id==job.team_id,BriefSourceSnapshot.job_id==snapshot.job_id,
+                BriefSourceSnapshot.attempt==snapshot.attempt,BriefSourceSnapshot.relative_path==prefix+name))
+            if source is None or source.sha256!=item['sha256'] or hashlib.sha256(source.content).hexdigest()!=source.sha256:
+                evidence=[];break
+            path=folder/'all-a-restored-pages'/(source.sha256+'.json')
+            evidence.append({**item,'file':str(path.resolve())});raws.append((path,source.content))
+        if not evidence:continue
+        for path,raw in raws:path.parent.mkdir(exist_ok=True);path.write_bytes(raw)
+        restored={**payload,'raw_evidence':evidence,'restored_from_database':True,
+            'source_snapshot_id':str(snapshot.id),'original_captured_at':snapshot.captured_at.isoformat()}
+        path=folder/'all-a-restored.json'
+        path.write_text(json.dumps(restored,ensure_ascii=False),encoding='utf-8')
+        load_verified_capture(path,expected,previous)
+        return True
+    return False
+
+
 def restore_daily_pe(db,job,folder,expected,*,limit=256,required_dates=None):
     """Recover exact missing PE dates even from jobs that never finished.
 

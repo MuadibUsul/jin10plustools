@@ -275,8 +275,10 @@ def execute(factory,id):
             return
     if category=='valuation' and action in ('produce','refresh','reconcile'):
         with factory() as db:
-            from .source_archive import restore_daily_pe
-            from .trading_calendar import sessions
+            from .source_archive import restore_daily_pe,restore_all_a_capture
+            from .trading_calendar import sessions,previous_session
+            restored_cap=restore_all_a_capture(db,db.get(BriefJob,id),out,target_day.isoformat(),
+                previous_session('xshg',target_day).isoformat())
             recovered_daily=restore_daily_pe(db,db.get(BriefJob,id),out,target_day.isoformat(),
                 required_dates=sessions('xshg',target_day-timedelta(days=92),target_day))
             if recovered_daily:
@@ -285,6 +287,7 @@ def execute(factory,id):
             restored=restore_pe_capture(db,db.get(BriefJob,id),out,
                                         expected_date(category,day).isoformat())
             db.commit()
+            if restored_cap:record(out,1,'已核验数据库中相同两日的完整市值原始分页，作为网络故障时的复用来源')
             if restored:log.info('Restored dated PE evidence from PostgreSQL for job %s',id)
             if restored:record(out,1,'已恢复经哈希核验的历史PE证据；仍需检查目标日及其前一交易日是否齐全')
     env=dict(os.environ);env['AI_PROVIDER']=ai['provider'];env['AI_API_KEY']=ai['key']

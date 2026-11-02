@@ -283,7 +283,7 @@ def oil_etf(day,out,state,refresh=False):
 
 def valuation(day,out,state,refresh=False):
     from .engines.valuation.run_erp import run_erp
-    from .engines.valuation.fetch_free_all_a import fetch_all_a
+    from .engines.valuation.fetch_free_all_a import fetch_with_archive
     from .charts import valuation_chart
     erp_history=state/'erp-history.json';bond_history=state/'bond-history.json'
     if not erp_history.exists():shutil.copy2(HERE/'seed/erp-history.json',erp_history)
@@ -330,7 +330,16 @@ def valuation(day,out,state,refresh=False):
     save(erp_history,rows)
     prior_day=previous_session('xshg',day).isoformat()
     record(out,2,'ERP数据已核验，正在读取A股总市值及GDP分母')
-    cap=fetch_all_a(day,prior_day,out/'all-a')
+    cap=fetch_with_archive(day,prior_day,out/'all-a',out/'all-a-restored.json')
+    # Save both dated inputs before chart/copy work. Provider corrections must
+    # update the normalized source table as well as the derived Buffett series.
+    raw_path=state/'all-a-history.json'
+    raw_inputs={row['date']:row for row in read(raw_path)} if raw_path.exists() else {}
+    for row in cap['rows']:
+        raw_inputs[row['date']]={**row,'source':cap['source'],
+            'raw_evidence_sha256s':[item['sha256'] for item in cap['raw_evidence']]}
+    raw_history=[raw_inputs[stamp] for stamp in sorted(raw_inputs)]
+    save(raw_path,raw_history);save(out/'all-a-history.json',raw_history)
     originals=read(HERE/'seed/buffett-history.json')
     history_path=state/'buffett-history.json'
     history=read(history_path) if history_path.exists() else originals
@@ -358,6 +367,7 @@ def valuation(day,out,state,refresh=False):
           f"{'高于' if erp>6 else '等于' if erp==6 else '低于'}6%参考线。权益资产相对国债的估值优势较前日{'增强' if change>0 else '减弱' if change<0 else '变化不大'}。")
     warnings=['巴菲特指数最新值采用东方财富全A上市公司总市值，历史保留原站序列，来源过渡待核对；未宣称与乐咕数值一致',
               'ERP采用免费市值加权PE候选源和中债国债收益率曲线，已记录与原模板的来源差异']
+    if cap.get('acquisition_warning'):warnings.append(cap['acquisition_warning'])
     revision=result.get('bond_revision_check') or {}
     corrections=revision.get('corrections') or []
     if corrections:

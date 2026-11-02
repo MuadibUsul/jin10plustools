@@ -206,6 +206,44 @@ def fetch_all_a(expected_date, previous_date, output_dir, reference_yi=None):
     return normalized
 
 
+def load_verified_capture(path,expected_date,previous_date):
+    """Re-normalize exact dated raw pages; a saved aggregate alone is insufficient."""
+    path=Path(path);payload=json.loads(path.read_text(encoding='utf-8-sig'))
+    if (payload.get('source')!=SOURCE or payload.get('expected_date')!=expected_date
+            or payload.get('previous_date_rechecked')!=previous_date or not payload.get('raw_evidence')):
+        raise FetchAllAError('incompatible_archive','Archived market cap does not match both requested sessions.')
+    pages=[]
+    for item in payload['raw_evidence']:
+        raw_path=Path(item['file']).resolve()
+        if not raw_path.is_relative_to(path.parent.resolve()):
+            raise FetchAllAError('invalid_archive','Archived market-cap path escapes the restored capture.')
+        raw=raw_path.read_bytes()
+        if hashlib.sha256(raw).hexdigest()!=item['sha256']:
+            raise FetchAllAError('invalid_archive','Archived market-cap page digest does not match.')
+        pages.append(raw)
+    normalized=normalize_all_a(pages,expected_date,previous_date)
+    original={r['date']:r for r in payload['rows']}
+    for row in normalized['rows']:
+        before=original[row['date']]
+        if any(row[key]!=before[key] for key in ('market_cap_cny','market_cap_yi','company_count','exchange_counts')):
+            raise FetchAllAError('invalid_archive','Archived market-cap aggregate disagrees with its original pages.')
+    return {**normalized,'raw_evidence':payload['raw_evidence'],
+        'fetched_at':payload.get('fetched_at'),'restored_from_database':payload.get('restored_from_database',False),
+        'source_snapshot_id':payload.get('source_snapshot_id'),'original_captured_at':payload.get('original_captured_at')}
+
+
+def fetch_with_archive(expected_date,previous_date,output_dir,archive):
+    try:return fetch_all_a(expected_date,previous_date,output_dir)
+    except FetchAllAError as exc:
+        # Invalid live data and access/quota rejections remain visible failures.
+        # Only a transport failure may reuse already observed exact-date pages.
+        if exc.code!='network_error' or not Path(archive).is_file():raise
+        restored=load_verified_capture(archive,expected_date,previous_date)
+        restored['acquisition_warning']='实时接口网络故障；复用已核验的相同两日原始分页，未声称新抓取'
+        restored['network_error']=str(exc)
+        return restored
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--expected-date', required=True)

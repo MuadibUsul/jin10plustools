@@ -132,5 +132,3 @@ def test_background_backfill_never_uses_gdp_before_publication_or_blocks_later_d
     calls.clear()
     repair_buffett(history,'2026-10-29',tmp_path/'second',gdp,cap_fetcher=cap,close_fetcher=close)
     assert calls==['2026-10-29']
-
-

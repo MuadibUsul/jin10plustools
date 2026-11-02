@@ -16,9 +16,58 @@ FILES={'volume':('plot-data.json','volume-collected.json'),'turnover':('source.j
 FILES['oil_etf']=('result.json',)
 
 
+def recover_oil_futures(db,team_id,*,limit=256):
+    """Read existing dated holdings archives, including their original HTML.
+
+    USO futures are a separate series: they cannot replace its total exposure,
+    which also includes swaps. BNO's published measure is futures holdings.
+    """
+    from .engines.oil_etf.previous import parse,PAGES
+    method='companiesmarketcap_dated_futures_v1'
+    known={(row.series,row.data_date.isoformat()) for row in db.scalars(
+        select(BriefDataPoint).where(BriefDataPoint.team_id==team_id,
+            BriefDataPoint.category=='oil_etf'))}
+    manifests=db.scalars(select(BriefSourceSnapshot).where(
+        BriefSourceSnapshot.team_id==team_id,BriefSourceSnapshot.category=='oil_etf',
+        BriefSourceSnapshot.relative_path.like('%source-archive/%/manifest.json')
+        ).order_by(BriefSourceSnapshot.captured_at.asc()).limit(limit))
+    restored=0;seen=set()
+    for manifest in manifests:
+        if manifest.sha256 in seen:continue
+        seen.add(manifest.sha256)
+        if hashlib.sha256(manifest.content).hexdigest()!=manifest.sha256:
+            raise ValueError('持仓归档清单哈希不符')
+        data=json.loads(manifest.content);day=date.fromisoformat(data['data_date']).isoformat()
+        if set(data['funds'])!=set(PAGES):raise ValueError('持仓归档清单不完整')
+        prefix=manifest.relative_path.rsplit('/',1)[0]+'/'
+        verified=[]
+        for ticker in PAGES:
+            raw=db.scalar(select(BriefSourceSnapshot).where(
+                BriefSourceSnapshot.team_id==team_id,BriefSourceSnapshot.job_id==manifest.job_id,
+                BriefSourceSnapshot.attempt==manifest.attempt,
+                BriefSourceSnapshot.relative_path==prefix+ticker+'.html'))
+            if raw is None:raise ValueError('持仓归档缺少原始网页')
+            if hashlib.sha256(raw.content).hexdigest()!=raw.sha256:
+                raise ValueError('持仓归档原始网页哈希不符')
+            fact=parse(ticker,raw.content,day)
+            if fact!=data['funds'][ticker]:raise ValueError('持仓归档数量与原始网页不符')
+            series='USO_futures' if ticker=='USO' else 'BNO'
+            values={'date':day,**fact,'source_status':'verified_existing_futures_archive'}
+            if ticker=='BNO':values['barrels']=fact['futures_barrels']
+            verified.append((series,values,raw))
+        for series,values,raw in verified:
+            if (series,day) in known:continue
+            restored+=save_points(db,team_id,'oil_etf',[
+                {'date':day,'series':series,'method':method,'values':values}],manifest.job_id,
+                source_snapshot_id=raw.id,collected_at=max(manifest.captured_at,raw.captured_at))
+            known.add((series,day))
+    return restored
+
+
 def recover_snapshots(db,team_id,category,folder,*,limit=32,replay_revisions=False):
     """Restore actual hashed captures, never synthesize a missing observation."""
-    names=FILES.get(category,());found=set();restored=0
+    names=FILES.get(category,());found=set()
+    restored=recover_oil_futures(db,team_id) if category=='oil_etf' else 0
     rows=db.scalars(select(BriefSourceSnapshot).where(BriefSourceSnapshot.team_id==team_id,
         BriefSourceSnapshot.category==category,
         or_(*(BriefSourceSnapshot.relative_path.endswith('/'+name) for name in names),
@@ -81,8 +130,11 @@ def restore_working_history(db,team_id,category,state):
     if category=='oil_etf':
         path=state/'oil-history.json';history=read(path) if path.exists() else {}
         for row in rows:
-            if row.method!='issuer_futures_and_swap_estimate_v1':continue
-            history.setdefault(row.data_date.isoformat(),{}).setdefault(row.series,row.values)
+            if row.method=='issuer_futures_and_swap_estimate_v1':ticker=row.series
+            elif row.method=='companiesmarketcap_dated_futures_v1':
+                ticker='USO' if row.series=='USO_futures' else row.series
+            else:continue
+            history.setdefault(row.data_date.isoformat(),{}).setdefault(ticker,row.values)
         if history:save(path,history)
     if category=='valuation':
         for series,filename in (('buffett','buffett-history.json'),('erp','erp-history.json')):

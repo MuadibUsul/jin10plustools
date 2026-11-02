@@ -1,5 +1,7 @@
 # Project requirements
 
+- As requested on 2026-11-02, diagnose fixed-brief gaps against the existing production database, history files and original capture archives before fetching replacements. Use the established programmatic capture rules; do not open interactive browser pages as an alternative data collection workflow. Do not treat a coverage warning as proof that the server lacks history.
+
 - As requested on 2026-11-02, PLUS deployments must not create backups or automatic rollback images/actions. After a successful scoped update, delete unused PLUS image tags only; retain every image used by any running container, existing database/storage volumes and other websites. Do not infer permission to delete existing backup files from this instruction.
 
 - As requested on 2026-10-15, the unified workspace is live at `plus.tlines.tech/`, with daily selection at `/daily/` and fixed briefs at `/briefs/`. `/test/` is retired and its services are stopped. Use the existing production database and storage; do not replace them with the former test snapshot or recreate the test site unless explicitly requested.

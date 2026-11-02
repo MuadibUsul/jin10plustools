@@ -1,5 +1,7 @@
 # Project requirements
 
+- As requested on 2026-11-02, PLUS deployments must not create backups or automatic rollback images/actions. After a successful scoped update, delete unused PLUS image tags only; retain every image used by any running container, existing database/storage volumes and other websites. Do not infer permission to delete existing backup files from this instruction.
+
 - As requested on 2026-10-15, the unified workspace is live at `plus.tlines.tech/`, with daily selection at `/daily/` and fixed briefs at `/briefs/`. `/test/` is retired and its services are stopped. Use the existing production database and storage; do not replace them with the former test snapshot or recreate the test site unless explicitly requested.
 - For 固定快讯, Plus新鲜事 and Plus注解辅助, all final image downloads (including future AI-generated images) must use `jin10-server/app/services/image_delivery.py`.
 - Use the unmodified original `app/assets/plus-watermark.png` at the lower right, scaled proportionally. Final files must be at most 266,000 bytes. Optimize compression before reducing dimensions; preserve readable text and chart lines. Do not bypass a clarity/size failure with an oversized or illegible download.

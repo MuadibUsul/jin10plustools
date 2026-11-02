@@ -50,7 +50,7 @@ PLUS_RELEASE_IMAGE="$release_image" "${compose_cmd[@]}" config --images | grep -
   exit 1
 }
 
-mkdir -p "$root/releases" "$root/backups"
+mkdir -p "$root/releases"
 release_dir="$(mktemp -d "$root/releases/$revision.XXXXXX")"
 tar -xzf "$archive" -C "$release_dir"
 rm -f -- "$archive"
@@ -58,21 +58,9 @@ rm -f -- "$archive"
 echo "Building PLUS image $release_image"
 docker build -f "$release_dir/jin10-server/Dockerfile" -t "$release_image" "$release_dir"
 
-backup="$root/backups/plus-before-$revision-$(date -u +%Y%m%dT%H%M%SZ).dump"
-"${compose_cmd[@]}" exec -T db sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' > "$backup"
-[[ -s "$backup" ]] || { echo 'Database backup is empty' >&2; exit 1; }
-echo "PLUS database backup saved: $backup"
-
-rollback_image="plus-api:rollback-$revision"
-docker tag "$api_image_id" "$rollback_image"
-
-rollback() {
-  echo 'PLUS release failed; restoring previous API and worker image' >&2
-  PLUS_RELEASE_IMAGE="$rollback_image" "${compose_cmd[@]}" up -d --no-deps --no-build api brief-worker || true
-}
-
+# Requested 2026-11-02: no deployment backups or automatic rollback.
+# Existing database/storage stay in place; only unused PLUS images are removed.
 if ! PLUS_RELEASE_IMAGE="$release_image" "${compose_cmd[@]}" up -d --no-deps --no-build api; then
-  rollback
   exit 1
 fi
 
@@ -85,21 +73,49 @@ for _ in $(seq 1 60); do
   sleep 3
 done
 if [[ "$api_healthy" != true ]]; then
-  rollback
   echo 'PLUS API did not become healthy' >&2
   exit 1
 fi
 
 if ! PLUS_RELEASE_IMAGE="$release_image" "${compose_cmd[@]}" up -d --no-deps --no-build brief-worker; then
-  rollback
   exit 1
 fi
 sleep 5
 worker_id="$("${compose_cmd[@]}" ps -q brief-worker)"
 if [[ -z "$worker_id" || "$(docker inspect -f '{{.State.Running}}' "$worker_id")" != true ]]; then
-  rollback
   echo 'PLUS worker did not stay running' >&2
   exit 1
 fi
+
+# Persist the healthy tag before removing old tags, so the next compose restart
+# cannot select a removed image. No other environment setting is changed.
+python3 - "$env_file" "$release_image" <<'PY'
+import os, re, sys, tempfile
+from pathlib import Path
+path=Path(sys.argv[1])
+assert path.is_file() and not path.is_symlink()
+original=path.read_text(encoding='utf-8')
+line='PLUS_RELEASE_IMAGE='+sys.argv[2]
+pattern=r'(?m)^(?:export\s+)?PLUS_RELEASE_IMAGE\s*=.*$'
+updated=re.sub(pattern,line,original) if re.search(pattern,original) else original.rstrip('\n')+'\n'+line+'\n'
+fd,name=tempfile.mkstemp(prefix='.env-release-',dir=path.parent)
+try:
+    with os.fdopen(fd,'w',encoding='utf-8') as stream:stream.write(updated)
+    os.chmod(name,path.stat().st_mode & 0o777)
+    os.replace(name,path)
+finally:
+    if os.path.exists(name):os.unlink(name)
+PY
+
+while IFS= read -r image; do
+  [[ -n "$image" && "$image" != *':<none>' ]] || continue
+  image_id="$(docker image inspect -f '{{.Id}}' "$image")"
+  running_ids="$(docker ps -q)"
+  if [[ -n "$running_ids" ]] && docker inspect -f '{{.Image}}' $running_ids | grep -Fxq "$image_id"; then
+    continue
+  fi
+  # No force: stopped-container references remain protected by Docker.
+  docker image rm "$image" || echo "PLUS image still referenced; retained: $image" >&2
+done < <(docker image ls --filter 'reference=plus-*' --format '{{.Repository}}:{{.Tag}}')
 
 echo "PLUS API and worker are running release $revision"

@@ -152,3 +152,49 @@ def repair_buffett(history_path,day,out,gdp_table,*,cap_fetcher=None,close_fetch
     report['remaining_dates']=sorted(wanted-{row['date'] for row in history})
     save(out/'repair-report.json',report)
     return report
+
+
+def rebuild_buffett_history(history_path,cap_path,day,gdp_table,out,*,close_fetcher=None,allow_later_published_gdp=False):
+    """Recalculate missing sessions from actual caps, official closes and GDP.
+
+    Old source rows remain unchanged. GDP must have a dated official publication
+    no later than the observation; unavailable annual inputs stay unavailable.
+    """
+    from .sources import read,save
+    from .engines.valuation.run_erp import fetch_close
+    history=read(history_path);known={row['date'] for row in history}
+    cap={row['date']:row for row in read(cap_path)}
+    missing=set(sessions('xshg',min(known),day))-known
+    eligible={};blocked={}
+    for stamp in sorted(missing):
+        gdp=gdp_table.get(str(date.fromisoformat(stamp).year-1))
+        if stamp not in cap:blocked[stamp]='market_cap_unavailable';continue
+        if not gdp or not gdp.get('published_on'):
+            blocked[stamp]='dated_prior_year_GDP_unavailable';continue
+        if gdp['published_on']>stamp and not allow_later_published_gdp:
+            blocked[stamp]='prior_year_GDP_not_yet_published';continue
+        eligible[stamp]=gdp
+    report={'restored_dates':[],'blocked_dates':blocked,'close_requests':0}
+    out=Path(out);out.mkdir(parents=True,exist_ok=True)
+    for year in sorted({stamp[:4] for stamp in eligible}):
+        days=[stamp for stamp in eligible if stamp[:4]==year]
+        capture=(close_fetcher or fetch_close)(max(days),min(days),out/('close-'+year),all_between=True)
+        report['close_requests']+=1
+        closes={row['date']:row for row in capture['rows']}
+        for stamp in days:
+            if stamp not in closes:report['blocked_dates'][stamp]='official_close_unavailable';continue
+            gdp=eligible[stamp];row=cap[stamp]
+            point_in_time=gdp['published_on']<=stamp
+            history.append({'date':stamp,'marketCap':row['market_cap_yi'],'gdp':gdp['value_yi'],
+                'close':closes[stamp]['close'],'source':row['source'] if point_in_time else row['source']+'|retrospective_gdp_v1',
+                'gdp_vintage':gdp,'close_source':capture['source'],
+                'gdp_available_on_observation_date':point_in_time,
+                'close_evidence':capture.get('raw_evidence'),
+                'source_status':'verified_published_inputs_historical_recalculation',
+                'original_source_equivalence':'not_asserted'})
+            report['restored_dates'].append(stamp)
+        save(history_path,sorted(history,key=lambda row:row['date']))
+        save(out/'repair-report.json',report)
+    report['remaining_dates']=sorted(missing-set(report['restored_dates']))
+    save(out/'repair-report.json',report)
+    return report

@@ -81,9 +81,17 @@ def restore_working_history(db,team_id,category,state):
     if category=='oil_etf':
         path=state/'oil-history.json';history=read(path) if path.exists() else {}
         for row in rows:
+            if row.method!='issuer_futures_and_swap_estimate_v1':continue
             history.setdefault(row.data_date.isoformat(),{}).setdefault(row.series,row.values)
         if history:save(path,history)
     if category=='valuation':
+        for series,filename in (('buffett','buffett-history.json'),('erp','erp-history.json')):
+            path=state/filename;history=read(path) if path.exists() else []
+            dates={row['date'] for row in history}
+            for row in rows:
+                if row.series==series and row.data_date.isoformat() not in dates:
+                    history.append(dict(row.values));dates.add(row.data_date.isoformat());count+=1
+            if history:save(path,sorted(history,key=lambda row:row['date']))
         raw_path=state/'all-a-history.json';raw_values={}
         for row in rows:
             if row.series=='all_a_market_cap':raw_values.setdefault(row.data_date.isoformat(),dict(row.values))
@@ -119,10 +127,25 @@ def missing_ranges(wanted,existing,*,padding=3):
              date.fromisoformat(group[-1])+timedelta(days=padding)) for group in groups]
 
 
-def repair_ranges(rows,wanted,fetch_range,*,max_requests=12,checkpoint=None):
+def repair_ranges(rows,wanted,fetch_range,*,max_requests=12,checkpoint=None,attempts=None,attempt_checkpoint=None):
     merged={row['date']:row for row in rows};requests=0
-    for start,end in missing_ranges(wanted,merged)[:max_requests]:
-        fetched=fetch_range(start,end);requests+=1
+    attempts=attempts if attempts is not None else {}
+    ranges=missing_ranges(wanted,merged)
+    # Never let permanently absent early dates starve every later hole. New
+    # ranges go first; otherwise retry the least recently attempted range.
+    ranges.sort(key=lambda span:(attempts.get(span[0].isoformat()+'..'+span[1].isoformat(),{}).get('order',0),span[0]))
+    order=max((entry.get('order',0) for entry in attempts.values()),default=0)
+    errors=[]
+    for start,end in ranges[:max_requests]:
+        attempt_key=start.isoformat()+'..'+end.isoformat();requests+=1;order+=1
+        attempts[attempt_key]={'order':order,'attempts':attempts.get(attempt_key,{}).get('attempts',0)+1}
+        if attempt_checkpoint:attempt_checkpoint(attempts)
+        try:fetched=fetch_range(start,end)
+        except (OSError,ValueError,RuntimeError) as exc:
+            attempts[attempt_key]['error']=str(exc)[:300]
+            errors.append({'start':start.isoformat(),'end':end.isoformat(),'error':str(exc)[:300]})
+            if attempt_checkpoint:attempt_checkpoint(attempts)
+            continue
         incoming={}
         for row in fetched:
             stamp=date.fromisoformat(row['date']).isoformat()
@@ -137,8 +160,11 @@ def repair_ranges(rows,wanted,fetch_range,*,max_requests=12,checkpoint=None):
                     if abs(Decimal(str(incoming[stamp][key]))-Decimal(str(merged[stamp][key])))>Decimal('0.01'):
                         raise ValueError('补抓重叠日期数值不一致，不能直接拼接')
         merged.update(incoming)
+        attempts[attempt_key]['returned_dates']=sorted(incoming)
+        if attempt_checkpoint:attempt_checkpoint(attempts)
         if checkpoint:checkpoint([merged[stamp] for stamp in sorted(merged)])
-    return [merged[day] for day in sorted(merged)],{'requests':requests,'remaining_dates':sorted(set(wanted)-set(merged))}
+    return [merged[day] for day in sorted(merged)],{'requests':requests,'remaining_dates':sorted(set(wanted)-set(merged)),
+        'source_errors':errors,'attempted_ranges':len(attempts)}
 
 
 def main():

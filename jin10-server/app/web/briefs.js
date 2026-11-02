@@ -102,12 +102,15 @@ function renderCards() {
     }
     if (dataState) {
       const missing = Object.values(dataState.report?.metrics || {}).reduce((sum, x) => sum + (x.missing_dates?.length || 0), 0);
-      const text = dataState.status === 'complete' ? '历史数据已覆盖' : missing ? `历史仍缺 ${missing} 项` : dataState.error || dataState.report?.error || '历史数据正在恢复或待更新';
+      const metrics = Object.values(dataState.report?.metrics || {});
+      const datesCovered = metrics.length > 0 && metrics.every(x => x.complete === true || x.frequency === 'quarterly' && x.observed_days > 0);
+      const text = dataState.status === 'complete' ? '历史数据已覆盖' : missing ? `历史仍缺 ${missing} 项` : datesCovered ? '历史日期已覆盖，有来源或版本说明' : dataState.error || dataState.report?.error || '历史数据正在恢复或待更新';
       const details = node('details'); details.append(node('summary', text, dataState.status === 'complete' ? 'muted' : 'warning'));
       for (const [name, metric] of Object.entries(dataState.report?.metrics || {})) {
         details.append(node('p', `${name}：${metric.first_date || '无'} 至 ${metric.last_date || '无'}；缺失 ${metric.missing_dates?.length || 0} 天`, 'muted'));
         if (metric.missing_dates?.length) details.append(node('p', metric.missing_dates.join('、'), 'muted'));
       }
+      for (const limitation of dataState.report?.limitations || []) details.append(node('p', limitation, 'warning'));
       body.append(details);
     }
     const controls = node('div', undefined, 'toolbar');

@@ -391,7 +391,7 @@ def us_barometer(day,out,state,refresh=False):
         snapshot[series]=captured(series,snapshot[series])
     from .engines.us_structure.fetch_data import repair as repair_us_series
     snapshot['wilshire'],repair_report=repair_us_series('wilshire',snapshot['wilshire'],day,
-        checkpoint=lambda rows:captured('wilshire',rows))
+        checkpoint=lambda rows:captured('wilshire',rows),attempt_path=state/'wilshire-gap-attempts.json')
     snapshot['wilshire']=captured('wilshire',snapshot['wilshire'])
     save(out/'wilshire-repair.json',repair_report)
     from .engines.us_barometer.run import window
@@ -424,7 +424,7 @@ def us_structure(day,out,state,refresh=False):
     for series,rows in snapshot['data'].items():
         snapshot['data'][series]=captured(series,rows)
         snapshot['data'][series],repair_report=repair_us_series(series,snapshot['data'][series],day,
-            checkpoint=lambda repaired,name=series:captured(name,repaired))
+            checkpoint=lambda repaired,name=series:captured(name,repaired),attempt_path=state/(series+'-gap-attempts.json'))
         snapshot['data'][series]=captured(series,snapshot['data'][series])
         save(out/(series+'-repair.json'),repair_report)
     from .engines.us_structure.run import window

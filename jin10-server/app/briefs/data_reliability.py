@@ -21,7 +21,8 @@ UNITS={'volume':{'turn':'CNY_100_million','vol':'source_native','ma20':'CNY_100_
        'valuation':{'close':'index_points','pe_ttm_mcw':'times','pe_ttm_mcw_raw':'times','bond_yield_number':'percent_number',
            'erp':'fraction','erp_percent':'percent_number','marketCap':'CNY_100_million','market_cap_yi':'CNY_100_million','gdp':'CNY_100_million'},
        'liquidity':{'weighted_rate':'percent_number'},
-       'oil_etf':{'barrels':'barrels','futures_barrels':'barrels','change_barrels':'barrels','reference_price':'USD_per_barrel'},
+       'oil_etf':{'barrels':'barrels','futures_barrels':'barrels','change_barrels':'barrels','reference_price':'USD_per_barrel',
+                  'reported_value_wan_barrels':'10000_barrels','reported_quantum_barrels':'barrels'},
        'us_structure':{'close':'index_points','low':'index_points'},
        'us_barometer':{'close':'index_points','erp':'fraction','value':'USD_billion_SAAR'},
        'gpu_rental':{'price':'USD_per_GPU_hour'},'token_cost':{'price':'USD_per_million_tokens'}}
@@ -203,6 +204,10 @@ def coverage(db,team_id,category,target):
             metrics[series]['complete']=None
             limitations.append('GDP为当前修订序列，不能证明历史时点已公布的原始版本')
         if len(methods)>1:limitations.append(f'{series}存在多种来源/方法，未认定历史同口径')
+        if any(row.values.get('gdp_available_on_observation_date') is False for row in chosen):
+            limitations.append('部分估值为事后回算，GDP公布日晚于市场日期；不可作为当时已知数据')
+        if any(row.values.get('source_status')=='user_supplied_published_archive' for row in chosen):
+            limitations.append('部分持仓来自已发布快讯存档，按原文披露精度保存，未冒充发行方完整明细')
     return {'target_date':target.isoformat(),'market':market,'metrics':metrics,
             'limitations':sorted(set(limitations)),
             'status':'complete' if metrics and all(item['complete'] is True and item['comparable_history']

@@ -1,0 +1,50 @@
+{
+  "2018": {
+    "value_yi": "900309",
+    "period": "2018全年",
+    "source": "https://www.stats.gov.cn/xxgk/sjfb/tjgb2020/201902/t20190228_1768642.html",
+    "published_on": "2019-02-28",
+    "source_sha256": "4ac6371deca4f4aa6a4df91fd9364f138f406a1f3b3b80110c4cf75cf279987f",
+    "vintage_policy": "specified_original_NBS_publication; no claim of latest revised GDP"
+  },
+  "2019": {
+    "value_yi": "990865",
+    "period": "2019全年",
+    "source": "https://www.stats.gov.cn/xxgk/jd/sjjd2020/202001/t20200119_1764895.html",
+    "published_on": "2020-01-19",
+    "source_sha256": "38fe2cce974ba209d331b5fbec075f1569d5f459256463e9c9aebbe3f9ec4651",
+    "vintage_policy": "specified_original_NBS_publication; no claim of latest revised GDP"
+  },
+  "2020": {
+    "value_yi": "1015986",
+    "period": "2020全年",
+    "source": "https://www.stats.gov.cn/xxgk/sjfb/zxfb2020/202101/t20210118_1812458.html",
+    "published_on": "2021-01-18",
+    "source_sha256": "9cf7e5c508b4f5806ef429d7c05bfacbe5f3603292aca8f3bd553fb6b272b45f",
+    "vintage_policy": "specified_original_NBS_publication; no claim of latest revised GDP"
+  },
+  "2021": {
+    "value_yi": "1143670",
+    "period": "2021全年",
+    "source": "https://www.stats.gov.cn/xxgk/sjfb/zxfb2020/202201/t20220118_1826501.html",
+    "published_on": "2022-01-18",
+    "source_sha256": "e3f2fc0bd5bfd3774df3d06c39a9ab5da15d8717ad8a617c6b1885708b0150e4",
+    "vintage_policy": "specified_original_NBS_publication; no claim of latest revised GDP"
+  },
+  "2022": {
+    "value_yi": "1210207",
+    "period": "2022全年",
+    "source": "https://www.stats.gov.cn/xxgk/sjfb/zxfb2020/202301/t20230117_1892123.html",
+    "published_on": "2023-01-17",
+    "source_sha256": "6f4efdde91f2805fcd648d918fb4fbe2a0713d693fcc20b76b900672464706ce",
+    "vintage_policy": "specified_original_NBS_publication; no claim of latest revised GDP"
+  },
+  "2023": {
+    "value_yi": "1260582",
+    "period": "2023全年",
+    "source": "https://www.stats.gov.cn/sj/zxfb/202401/t20240117_1946624.html",
+    "published_on": "2024-01-17",
+    "source_sha256": "9ca2a1a7edc683e0011444db2249bd8487ae9ecf590153d4a6c4abd4854bfbbe",
+    "vintage_policy": "specified_original_NBS_publication; no claim of latest revised GDP"
+  }
+}

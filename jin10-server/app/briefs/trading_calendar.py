@@ -1,8 +1,9 @@
 """Market-specific sessions with explicit verified horizons; never guess a year."""
-from datetime import date, timedelta
+from datetime import date, datetime, time, timedelta, timezone
 from functools import lru_cache
 import json
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 
 class CalendarUnavailable(ValueError):
@@ -75,6 +76,22 @@ def previous_session(market, day):
         day-=timedelta(days=1)
         if is_session(market,day): return day
     raise CalendarUnavailable('交易日历中没有可用的前一交易日')
+
+
+def completed_session(market,now=None):
+    """Conservative collection cutoff, independent of the edition's target day.
+
+    The close-time buffer also waits past early closes; a dated source must still
+    publish the observation. It never authorizes a fabricated daily value.
+    """
+    now=now or datetime.now(timezone.utc)
+    if now.tzinfo is None:raise ValueError('采集时间必须带时区')
+    zone,cutoff={'xshg':('Asia/Shanghai',time(16)),
+                 'cfets':('Asia/Shanghai',time(17,15)),
+                 'xnys':('America/New_York',time(16,15))}[market]
+    local=now.astimezone(ZoneInfo(zone))
+    if local.time().replace(tzinfo=None)>=cutoff and is_session(market,local.date()):return local.date()
+    return previous_session(market,local.date())
 
 
 def sessions(market, start, end):

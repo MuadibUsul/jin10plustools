@@ -25,7 +25,7 @@ PAGE_SIZE = 10000
 MAX_PAGES = 5
 MAX_BYTES = 4 * 1024 * 1024
 SOURCE = 'eastmoney_public_all_a_company_total_capitalization'
-BSE_FIRST_SESSION='2021-11-15'  # https://www.bse.cn/company/introduce.html
+BSE_FIRST_SESSION='2021-11-15'  # https://www.neeq.com.cn/important_news/200011105.html
 
 
 class FetchAllAError(RuntimeError):
@@ -113,6 +113,7 @@ def normalize_all_a(raw_pages, expected_date, previous_date, reference_yi=None):
         raise FetchAllAError('incomplete_data', 'Valuation row count does not match the reported total.')
     values = {previous_date: {}, expected_date: {}}
     exchanges = {previous_date: {'SH': 0, 'SZ': 0, 'BJ': 0}, expected_date: {'SH': 0, 'SZ': 0, 'BJ': 0}}
+    seen=set();excluded={previous_date:0,expected_date:0}
     for row in records:
         if not isinstance(row, dict):
             raise FetchAllAError('invalid_data', 'Valuation record is not an object.')
@@ -128,16 +129,22 @@ def normalize_all_a(raw_pages, expected_date, previous_date, reference_yi=None):
         exchange = (secucode.rsplit('.', 1)[-1] if isinstance(secucode, str) else '')
         valid = ((exchange == 'SH' and code.startswith('6')) or
                  (exchange == 'SZ' and code.startswith(('0', '3'))) or
-                 (exchange == 'BJ' and day>=BSE_FIRST_SESSION and code.startswith(('4', '8', '920'))))
+                 (exchange == 'BJ' and code.startswith(('4', '8', '920'))))
         if not valid or secucode != code + '.' + exchange:
             raise FetchAllAError('unexpected_security', 'Valuation response includes a non-A-share or an unknown code/exchange.')
-        if code in values[day]:
+        if (day,code) in seen:
             raise FetchAllAError('invalid_data', 'Valuation response repeats a security/date pair.')
+        seen.add((day,code))
         market_cap = _decimal(row.get('TOTAL_MARKET_CAP'), 'TOTAL_MARKET_CAP')
         close = _decimal(row.get('CLOSE_PRICE'), 'CLOSE_PRICE')
         shares = _decimal(row.get('TOTAL_SHARES'), 'TOTAL_SHARES')
         if shares != shares.to_integral_value() or abs(market_cap - close * shares) > Decimal('0.02'):
             raise FetchAllAError('definition_changed', 'Market cap no longer equals A-share close times integer total company shares.')
+        # This provider labels predecessor NEEQ records with today's BJ suffix.
+        # They were not BSE-listed A shares before its opening. Keep original
+        # response bytes and exclusion counts, rather than adding them to A caps.
+        if exchange=='BJ' and day<BSE_FIRST_SESSION:
+            excluded[day]+=1;continue
         values[day][code] = market_cap
         exchanges[day][exchange] += 1
     rows = []
@@ -148,7 +155,8 @@ def normalize_all_a(raw_pages, expected_date, previous_date, reference_yi=None):
             raise FetchAllAError('incomplete_data', 'One or more exchanges are absent from a required session.')
         total = sum(values[day].values(), Decimal(0))
         rows.append({'date': day, 'market_cap_cny': str(total), 'market_cap_yi': str(total / Decimal('100000000')),
-                     'company_count': len(values[day]), 'exchange_counts': exchanges[day], 'source': SOURCE})
+                     'company_count': len(values[day]), 'exchange_counts': exchanges[day],
+                     'pre_bse_rows_excluded':excluded[day], 'source': SOURCE})
         if reference_yi is not None:
             if day not in reference_yi:
                 raise FetchAllAError('missing_reference', 'Reference totals must cover both requested sessions.')
@@ -166,6 +174,7 @@ def normalize_all_a(raw_pages, expected_date, previous_date, reference_yi=None):
             'automatic_source_switch_allowed': False,
             'historical_backfill_2015_complete': False,
             'universe_audit': 'Response completeness is checked against this provider, not independently against all exchanges historical listing rosters',
+            'universe_policy':'SH/SZ A shares; BJ only from 2021-11-15; pre-opening BJ-labelled predecessor rows excluded',
             'previous_date_rechecked': previous_date, 'expected_date': expected_date, 'rows': rows}
 
 

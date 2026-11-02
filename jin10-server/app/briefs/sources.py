@@ -15,7 +15,7 @@ from .policy import previous_weekday
 from .delivery import default_notes
 from . import central_bank
 from .progress import record
-from .trading_calendar import previous_session, require_window
+from .trading_calendar import previous_session, require_window, completed_session, sessions
 
 HERE=Path(__file__).parent
 
@@ -26,6 +26,18 @@ def save(path,value):
 
 
 def read(path):return json.loads(Path(path).read_text(encoding='utf-8-sig'))
+
+
+def volume_averages(rows):
+    if not rows:return rows
+    positions={stamp:index for index,stamp in enumerate(sessions('xshg',rows[0]['date'],rows[-1]['date']))}
+    for index,row in enumerate(rows):
+        row['turn']=Decimal(str(row['turn']));row['vol']=Decimal(str(row['vol']))
+        row['ma20']=None
+        if row['date'] not in positions:raise ValueError('成交额来源包含非交易日')
+        if index>=19 and positions[row['date']]-positions[rows[index-19]['date']]==19:
+            row['ma20']=sum((Decimal(str(value['turn'])) for value in rows[index-19:index+1]),Decimal(0))/20
+    return rows
 
 
 def normalize_volume(payload,day,*,required=True):
@@ -42,47 +54,60 @@ def normalize_volume(payload,day,*,required=True):
     if required and (len(result)<21 or result[-1]['date']!=day):raise ValueError('成交额目标日期尚未更新或历史不足')
     if len({r['date'] for r in result})!=len(result):raise ValueError('成交额日期重复')
     if required:require_window(result,'xshg',day,21,label='成交额20日均线及前日比较')
-    for i,r in enumerate(result):r['ma20']=sum((v['turn'] for v in result[i-19:i+1]),Decimal(0))/20 if i>=19 else None
-    return result
+    return volume_averages(result)
 
 
 def volume(day,out,state,refresh=False):
     from .series_store import merge_history
     history_path=state/'volume-history.json'
     stored=read(history_path)['rows'] if history_path.is_file() else []
-    incoming=[];seen=set()
+    seen=set();fresh=[];capture_errors=[];page_error=None
+    cutoff=completed_session('xshg').isoformat()
+    def checkpoint(batch):
+        nonlocal stored
+        for raw in batch:
+            try:fresh.extend(normalize_volume({'data':[raw]},cutoff,required=False))
+            except (ValueError,ArithmeticError,TypeError,KeyError) as exc:
+                capture_errors.append({'date':raw.get('date'),'error':str(exc)})
+        combined={row['date']:row for row in stored}
+        combined.update({row['date']:row for row in fresh})
+        stored=volume_averages([combined[stamp] for stamp in sorted(combined)])
+        merge_history(history_path,stored,method='jin10_hushen_turnover_yi_v1')
+        save(out/'volume-collected.json',stored)
+        save(out/'plot-data.json',[row for row in stored if row['date']<=day])
+        if capture_errors:save(out/'volume-capture-errors.json',capture_errors)
     # Always refresh an overlapping year, and page back to the requested day on
     # historical runs. A shorter source response never replaces accumulated data.
     start=(date.fromisoformat(day)-timedelta(days=366)).isoformat()
     for page in range(1,51):
         url='https://mp-api.jin10.com/api/dynamic-data/child?'+urlencode({'page':page,'limit':100,'tb_name':'_vir_64','order':'date,desc'})
         request=Request(url,headers={'x-app-id':'fiXF2nOnDycGutVA','x-version':'1.0','Referer':'https://www.jin10.com/','User-Agent':'Mozilla/5.0'})
-        with urlopen(request,timeout=25) as response:raw=response.read(4_000_001)
-        if len(raw)>4_000_000:raise ValueError('成交额来源过大')
+        try:
+            with urlopen(request,timeout=25) as response:raw=response.read(4_000_001)
+        except (OSError,RuntimeError) as exc:
+            page_error=str(exc);break
+        if len(raw)>4_000_000:page_error='成交额来源过大';break
         (out/f'volume-raw-page-{page}.json').write_bytes(raw)
-        batch=json.loads(raw,parse_float=Decimal).get('data')
-        if not isinstance(batch,list):raise ValueError('成交额来源结构变化')
-        dates={row['date'] for row in batch}
+        try:
+            batch=json.loads(raw,parse_float=Decimal).get('data')
+            if not isinstance(batch,list):raise ValueError('成交额来源结构变化')
+            dates={row['date'] for row in batch}
+            if len(dates)!=len(batch):raise ValueError('成交额同页日期重复')
+        except (ValueError,TypeError,KeyError,AttributeError) as exc:
+            page_error=str(exc);break
         if not batch:break
-        if dates & seen:raise ValueError('成交额分页日期重复，停止不完整抓取')
-        seen.update(dates);incoming.extend(batch)
+        if dates & seen:page_error='成交额分页日期重复，停止不完整抓取';break
+        seen.update(dates);checkpoint(batch)
         if min(dates)<=start or len(batch)<100:break
-    else: raise ValueError('成交额达到分页上限，区间尚未覆盖')
-    # Convert accumulated normalized points back to the source contract before
-    # validating; only incoming exact dates replace older same-method values.
-    fresh=normalize_volume({'data':incoming},day,required=False)
-    all_rows={row['date']:row for row in stored}
-    all_rows.update({row['date']:row for row in fresh})
-    ordered=[all_rows[stamp] for stamp in sorted(all_rows) if stamp<=day]
-    for index,row in enumerate(ordered):
-        row['turn']=Decimal(str(row['turn']));row['vol']=Decimal(str(row['vol']))
-        row['ma20']=sum((Decimal(str(value['turn'])) for value in ordered[index-19:index+1]),Decimal(0))/20 if index>=19 else None
-    rows=ordered
-    merge_history(history_path,rows,method='jin10_hushen_turnover_yi_v1')
-    save(out/'plot-data.json',rows)
+    else:page_error='成交额达到分页上限，区间尚未覆盖'
+    if page_error:save(out/'volume-pagination-error.json',{'page':page,'error':page_error})
+    rows=[row for row in stored if row['date']<=day]
     if not any(row['date']==day for row in fresh):raise ValueError('成交额目标日期尚未更新；已补存可取得的真实历史')
-    require_window(ordered,'xshg',day,21,label='成交额20日均线及前日比较')
-    return render_volume(rows,out)
+    require_window(rows,'xshg',day,21,label='成交额20日均线及前日比较')
+    result=render_volume(rows,out)
+    if capture_errors:result['warnings'].append(f'来源有{len(capture_errors)}条不完整记录，已保留其余真实数据，未补填缺值')
+    if page_error:result['warnings'].append('历史分页尚未完成，已保存可取得数据：'+page_error[:200])
+    return result
 
 
 def render_volume(rows,out):
@@ -121,6 +146,7 @@ def turnover(day,out,state,refresh=False):
     capture=fetch_snapshot(out/'turnover-fetch')
     fresh=read(capture['path'])
     merged=merge_history(state/'turnover-history.json',fresh,method='legu_count_ratios_ma9_v1')
+    save(out/'turnover-collected.json',merged)
     wanted=[row for row in merged if row['date']<=day]
     save(out/'source.json',wanted)
     require_window(wanted,'xshg',day,10,label='换手率9日均线')
@@ -264,17 +290,21 @@ def valuation(day,out,state,refresh=False):
     if not bond_history.exists():shutil.copy2(HERE/'seed/bond-history.json',bond_history)
     buffett_path=state/'buffett-history.json'
     if not buffett_path.exists():shutil.copy2(HERE/'seed/buffett-history.json',buffett_path)
-    from .valuation_repair import repair_buffett
-    try:
-        repair_buffett(buffett_path,day,out/'buffett-history-repair',read(HERE/'seed/gdp.json'))
-    except (OSError,ValueError,RuntimeError) as exc:
-        save(out/'buffett-history-repair-error.json',{'error':str(exc)})
+    from .valuation_repair import available_pe,repair_buffett,repair_erp
+    # Capture the fleeting daily PE detail before slow historical work. Even if
+    # both target sessions already exist, a newly published daily value is saved.
+    pe_values=None
+    try:pe_values=available_pe(out/'pe-daily',history_path=state/'pe-published-history.json')
+    except (OSError,ValueError,RuntimeError) as exc:save(out/'pe-daily-error.json',{'error':str(exc)})
+    if (state/'pe-published-history.json').exists():
+        shutil.copy2(state/'pe-published-history.json',out/'pe-published-history.json')
+    if os.getenv('DATA_COLLECTION_ONLY')=='1':
+        try:repair_buffett(buffett_path,day,out/'buffett-history-repair',read(HERE/'seed/gdp.json'),max_requests=2)
+        except (OSError,ValueError,RuntimeError) as exc:save(out/'buffett-history-repair-error.json',{'error':str(exc)})
     save(out/'buffett-plot-data.json',[row for row in read(buffett_path) if row['date']<=day])
-    if (state/'all-a-history.json').exists():
-        shutil.copy2(state/'all-a-history.json',out/'all-a-history.json')
-    from .valuation_repair import repair_erp
+    if (state/'all-a-history.json').exists():shutil.copy2(state/'all-a-history.json',out/'all-a-history.json')
     try:
-        repair_report=repair_erp(erp_history,day,out/'erp-history-repair',pe_history=state/'pe-published-history.json')
+        repair_report=repair_erp(erp_history,day,out/'erp-history-repair',pe_history=state/'pe-published-history.json',pe_values=pe_values)
         if (state/'pe-published-history.json').exists():
             shutil.copy2(state/'pe-published-history.json',out/'pe-published-history.json')
         record(out,2,f"已补回{len(repair_report['restored_dates'])}个ERP历史交易日")
@@ -346,20 +376,23 @@ def us_barometer(day,out,state,refresh=False):
     from .engines.us_barometer.run import SNAPSHOT,fetch,render
     from .series_store import merge_history
     partial={}
+    cutoff=completed_session('xnys').isoformat()
     methods={'wilshire':'yahoo_w5000_v1','erp':'streetstats_erp_v1','gdp':'fred_current_revised'}
     def captured(name,rows):
         key='period' if name=='gdp' else 'date'
-        rows=[row for row in rows if row[key]<=day]
+        rows=[row for row in rows if row[key]<=cutoff]
         partial[name]=merge_history(state/(name+'-history.json'),rows,method=methods[name],key=key)
-        save(out/SNAPSHOT,{'target':day,**partial,'sources':{}})
+        save(out/'us-collected.json',{'target':day,'collection_cutoff':cutoff,**partial,'sources':{}})
+        save(out/SNAPSHOT,{'target':day,**{name:[row for row in values if row['period' if name=='gdp' else 'date']<=day]
+             for name,values in partial.items()},'sources':{}})
+        return partial[name]
     snapshot=fetch(day,out,allow_gap_repair=True,on_series=captured)
     for series in ('wilshire','erp','gdp'):
-        snapshot[series]=merge_history(state/(series+'-history.json'),snapshot[series],
-            method={'wilshire':'yahoo_w5000_v1','erp':'streetstats_erp_v1','gdp':'fred_current_revised'}[series],
-            key='period' if series=='gdp' else 'date')
+        snapshot[series]=captured(series,snapshot[series])
     from .engines.us_structure.fetch_data import repair as repair_us_series
     snapshot['wilshire'],repair_report=repair_us_series('wilshire',snapshot['wilshire'],day,
-        checkpoint=lambda rows:merge_history(state/'wilshire-history.json',rows,method='yahoo_w5000_v1'))
+        checkpoint=lambda rows:captured('wilshire',rows))
+    snapshot['wilshire']=captured('wilshire',snapshot['wilshire'])
     save(out/'wilshire-repair.json',repair_report)
     from .engines.us_barometer.run import window
     for name in ('wilshire','erp'):snapshot[name]=window(snapshot[name],day)
@@ -377,17 +410,22 @@ def us_structure(day,out,state,refresh=False):
     from .engines.us_structure.run import SNAPSHOT,fetch,render
     from .series_store import merge_history
     partial={}
+    cutoff=completed_session('xnys').isoformat()
     def captured(name,rows):
-        rows=[row for row in rows if row['date']<=day]
+        rows=[row for row in rows if row['date']<=cutoff]
         partial[name]=merge_history(state/(name+'-history.json'),rows,method='yahoo_daily_close_low_v1')
-        save(out/SNAPSHOT,{'target':day,'data':partial,'sources':{'yahoo':'https://query1.finance.yahoo.com/v8/finance/chart/'}})
+        save(out/'us-structure-collected.json',{'target':day,'collection_cutoff':cutoff,'data':partial,
+             'sources':{'yahoo':'https://query1.finance.yahoo.com/v8/finance/chart/'}})
+        save(out/SNAPSHOT,{'target':day,'data':{name:[row for row in values if row['date']<=day]
+             for name,values in partial.items()},'sources':{'yahoo':'https://query1.finance.yahoo.com/v8/finance/chart/'}})
+        return partial[name]
     snapshot=fetch(day,out,allow_gap_repair=True,on_series=captured)
     from .engines.us_structure.fetch_data import repair as repair_us_series
     for series,rows in snapshot['data'].items():
-        snapshot['data'][series]=merge_history(state/(series+'-history.json'),rows,method='yahoo_daily_close_low_v1')
+        snapshot['data'][series]=captured(series,rows)
         snapshot['data'][series],repair_report=repair_us_series(series,snapshot['data'][series],day,
-            checkpoint=lambda repaired,name=series:merge_history(state/(name+'-history.json'),repaired,method='yahoo_daily_close_low_v1'))
-        merge_history(state/(series+'-history.json'),snapshot['data'][series],method='yahoo_daily_close_low_v1')
+            checkpoint=lambda repaired,name=series:captured(name,repaired))
+        snapshot['data'][series]=captured(series,snapshot['data'][series])
         save(out/(series+'-repair.json'),repair_report)
     from .engines.us_structure.run import window
     snapshot['data']={name:window(rows,day) for name,rows in snapshot['data'].items()}

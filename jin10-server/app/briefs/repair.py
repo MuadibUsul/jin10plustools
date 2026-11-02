@@ -7,10 +7,10 @@ from sqlalchemy import select,or_
 from app.db.models import BriefDataPoint, BriefSourceSnapshot
 from .data_reliability import extract,save_points
 
-FILES={'volume':('plot-data.json',),'turnover':('source.json',),
+FILES={'volume':('plot-data.json','volume-collected.json'),'turnover':('source.json','turnover-collected.json'),
        'valuation':('erp-plot-data.json','buffett-plot-data.json','pe-published-history.json','all-a-history.json'),
-       'liquidity':('liquidity-snapshot.json','partial-history.json'),'us_barometer':('us-snapshot.json',),
-       'us_structure':('us-structure-snapshot.json',),
+       'liquidity':('liquidity-snapshot.json','partial-history.json'),'us_barometer':('us-snapshot.json','us-collected.json'),
+       'us_structure':('us-structure-snapshot.json','us-structure-collected.json'),
        'token_cost':('ai-compute-source.json','public-compute-read.json'),
        'gpu_rental':('ai-compute-source.json','public-compute-read.json')}
 FILES['oil_etf']=('result.json',)
@@ -92,7 +92,7 @@ def restore_working_history(db,team_id,category,state):
         path=state/'pe-published-history.json';known={}
         for row in rows:
             if row.series=='csi300_pe':known.setdefault(row.data_date.isoformat(),dict(row.values))
-        if path.exists():known.update({row['date']:row for row in read(path)})
+        if path.exists():known={**{row['date']:row for row in read(path)},**known}
         restored_files={}
         for day in sorted(known,reverse=True):
             row=known[day];sha=row.get('source_sha256')
@@ -170,6 +170,11 @@ def main():
             try:
                 count=recover_snapshots(db,args.team_id,category,args.out/category,
                     limit=args.limit,replay_revisions=True)
+                if category=='valuation':
+                    from types import SimpleNamespace
+                    from .source_archive import restore_daily_pe
+                    count+=restore_daily_pe(db,SimpleNamespace(team_id=args.team_id),args.out/category,
+                        expected_date(category,args.issue_date).isoformat(),limit=min(args.limit,10000))
                 state=(root_for(args.team_id)/'history'/category if args.apply else args.out/'working'/category)
                 restore_working_history(db,args.team_id,category,state)
                 status=coverage(db,args.team_id,category,expected_date(category,args.issue_date))

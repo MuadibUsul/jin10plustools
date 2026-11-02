@@ -206,6 +206,57 @@ def test_liquidity_restores_an_expired_quote_from_real_daily_history(tmp_path,mo
     assert snapshot['quotes']['source_actual_updated_at']=='2026-10-30 10:00'
 
 
+def test_official_dr_month_tenor_does_not_block_required_dr_closes():
+    from app.briefs.engines.liquidity.fetch_data import parse_quotes,SourceError
+    payload={'head':{'rep_code':'200'},'data':{'showDateCN':'2026-10-30 17:00'},'records':[
+        {'productCode':code,'date':'26-10-30','weightedRate':'1.3','latestRate':'1.3','avgPrd':'60' if code=='DR2M' else '1'}
+        for code in ('DR001','DR007','DR014','DR2M')]}
+    result=parse_quotes(json.dumps(payload).encode(),'2026-10-30')
+    assert [row['product'] for row in result['rows']]==['DR001','DR007','DR014','DR2M']
+    payload['records'][0]['productCode']='R001'
+    with pytest.raises(SourceError,match='Unexpected product'):parse_quotes(json.dumps(payload).encode(),'2026-10-30')
+
+
+def test_volume_checkpoints_each_page_and_retains_closes_newer_than_edition(tmp_path,monkeypatch):
+    from app.briefs import sources,charts
+    from urllib.parse import urlparse,parse_qs
+    from app.briefs.data_reliability import extract
+    state=tmp_path/'state';state.mkdir();out=tmp_path/'run';out.mkdir()
+    days=cal.sessions('xshg','2026-01-01','2026-10-30')[-100:]
+    rows=[{'date':day,'sh_turn':'7000','sz_turn':'6000','sh_vol':'100','sz_vol':'200'} for day in reversed(days)]
+    class Reply:
+        def __enter__(self):return self
+        def __exit__(self,*args):pass
+        def read(self,*args):return json.dumps({'data':rows}).encode()
+    def fetch(request,**kwargs):
+        page=int(parse_qs(urlparse(request.full_url).query)['page'][0])
+        if page>1:raise OSError('page two unavailable')
+        return Reply()
+    monkeypatch.setattr(sources,'completed_session',lambda _:date(2026,10,30))
+    monkeypatch.setattr(sources,'urlopen',fetch)
+    monkeypatch.setattr(charts,'volume_chart',lambda rows,out:out/'chart.png')
+    result=sources.volume('2026-10-29',out,state)
+    assert result['data_date']=='2026-10-29' and result['warnings']
+    assert json.loads((out/'plot-data.json').read_text())[-1]['date']=='2026-10-29'
+    assert json.loads((state/'volume-history.json').read_text())['rows'][-1]['date']=='2026-10-30'
+    assert extract('volume',out)[-1]['date']=='2026-10-30'
+    assert extract('volume',out,only_file='volume-collected.json')[-1]['date']=='2026-10-30'
+
+
+def test_volume_ma20_never_bridges_a_missing_session():
+    rows=volume_rows();missing=[row for row in rows if row['date']!='2026-10-15']
+    values=normalize_volume({'data':missing},'2026-10-30',required=False)
+    assert values[-1]['ma20'] is None
+
+
+def test_collection_cutoff_waits_for_the_actual_market_close():
+    from app.briefs.trading_calendar import completed_session
+    assert completed_session('xshg',datetime(2026,10,30,15,30,tzinfo=CHINA))==date(2026,10,29)
+    assert completed_session('xshg',datetime(2026,10,30,16,tzinfo=CHINA))==date(2026,10,30)
+    assert completed_session('xnys',datetime(2026,10,30,22,tzinfo=CHINA))==date(2026,10,29)
+    assert completed_session('xnys',datetime(2026,10,31,5,tzinfo=CHINA))==date(2026,10,30)
+
+
 def test_successful_repair_never_overwrites_an_editorial_draft(db_factory,seed,monkeypatch):
     from app.briefs.worker import execute
     from app.briefs.service import enqueue,root_for
@@ -229,6 +280,77 @@ def test_successful_repair_never_overwrites_an_editorial_draft(db_factory,seed,m
         assert db.get(BriefJob,job_id).status=='succeeded'
         assert db.scalar(select(BriefVersion)) is None
         assert db.scalar(select(BriefDataCheck)) is not None
+
+
+def test_background_repair_can_keep_running_after_the_morning_deadline(db_factory,seed,monkeypatch):
+    from app.briefs import worker
+    from app.briefs.service import enqueue,root_for
+    from app.db.models import BriefVersion
+    from app.briefs.sources import save
+    team=seed['editor'].team_id
+    with db_factory() as db:
+        job=enqueue(db,team,date(2026,10,30),'volume',action='reconcile',cycle='daytime')
+        job.status='running';job.attempts=1;db.commit();job_id=job.id
+    folder=root_for(team)/'runs'/str(job_id);folder.mkdir(parents=True)
+    save(folder/'plot-data.json',[{'date':'2026-10-29','turn':'13000','vol':'300','ma20':'12500'}])
+    save(folder/'result.json',{'valid':True,'title':'Source facts','dynamic_body':'Source facts',
+        'data_date':'2026-10-29','artifact_dir':'runs/'+str(job_id),'images':[],'facts':{}})
+    class Afternoon(datetime):
+        @classmethod
+        def now(cls,tz=None):return datetime(2026,10,30,14,tzinfo=CHINA).astimezone(tz)
+    class Process:
+        def __init__(self,*args,**kwargs):self.polls=iter([None,None,0])
+        def poll(self):return next(self.polls)
+        def kill(self):pytest.fail('Daytime collector was killed by the morning deadline')
+        def wait(self):return 0
+    monkeypatch.setattr(worker,'datetime',Afternoon)
+    monkeypatch.setattr(worker.subprocess,'Popen',Process)
+    monkeypatch.setattr(worker.time,'sleep',lambda _:None)
+    monkeypatch.setattr('app.briefs.skill_production.apply_skill_copy',lambda *args:pytest.fail('Collector called AI'))
+    worker.execute(db_factory,job_id)
+    with db_factory() as db:
+        assert db.get(BriefJob,job_id).status=='succeeded'
+        assert db.scalar(select(BriefVersion)) is None
+        assert db.scalar(select(BriefDataPoint)).values['turn']=='13000'
+
+
+def test_unrecoverable_historical_source_gap_is_terminal_in_the_morning(db_factory,seed,monkeypatch):
+    from app.briefs import worker
+    from app.briefs.service import enqueue,root_for
+    from app.briefs.sources import save
+    team=seed['editor'].team_id
+    with db_factory() as db:
+        job=enqueue(db,team,date(2026,11,2),'valuation')
+        job.status='running';job.attempts=1;db.commit();job_id=job.id
+    folder=root_for(team)/'runs'/str(job_id);folder.mkdir(parents=True)
+    save(folder/'error.json',{'message':'PE来源缺少历史交易日：2026-10-29','retryable':False})
+    class Morning(datetime):
+        @classmethod
+        def now(cls,tz=None):return datetime(2026,11,2,8,10,tzinfo=CHINA).astimezone(tz)
+    class Process:
+        def __init__(self,*args,**kwargs):pass
+        def poll(self):return 3
+    monkeypatch.setattr(worker,'datetime',Morning)
+    monkeypatch.setattr(worker.subprocess,'Popen',Process)
+    worker.execute(db_factory,job_id)
+    with db_factory() as db:
+        job=db.get(BriefJob,job_id)
+        assert job.status=='failed' and job.active_key is None and '2026-10-29' in job.error
+
+
+def test_editor_can_resume_an_existing_waiting_job(client,db_factory,seed):
+    from tests.conftest import login
+    from app.briefs.service import enqueue
+    from datetime import timedelta
+    team=seed['editor'].team_id
+    with db_factory() as db:
+        job=enqueue(db,team,date(2026,10,30),'valuation',user_id=seed['editor'].id)
+        job.status='waiting';job.next_attempt_at=datetime.now(timezone.utc)+timedelta(hours=2)
+        db.commit();job_id=job.id
+    response=client.post('/api/briefs/jobs',headers=login(client,'editor@plus.test'),
+        json={'issue_date':'2026-10-30','category':'valuation','action':'produce'})
+    assert response.status_code==202
+    assert response.json()['id']==str(job_id) and response.json()['status']=='queued'
 
 
 def test_background_ai_collection_stores_data_without_generating_content(db_factory,seed,monkeypatch):
@@ -353,8 +475,10 @@ def test_all_a_historical_universe_does_not_require_an_unopened_exchange():
     assert historical['rows'][0]['exchange_counts']=={'SH':1,'SZ':1,'BJ':0}
     with pytest.raises(FetchAllAError):
         normalize_all_a(raw(['2026-10-28','2026-10-29']),'2026-10-29','2026-10-28')
-    with pytest.raises(FetchAllAError):
-        normalize_all_a(raw(['2019-04-30','2019-05-06'],True),'2019-05-06','2019-04-30')
+    predecessors=normalize_all_a(raw(['2020-07-30','2020-07-31'],True),'2020-07-31','2020-07-30')
+    assert predecessors['rows'][0]['pre_bse_rows_excluded']==1
+    assert predecessors['rows'][0]['company_count']==2
+    assert predecessors['rows'][0]['market_cap_cny']=='2000'
 
 
 def test_market_cap_is_kept_when_index_source_fails_and_cached_input_can_resume(tmp_path):

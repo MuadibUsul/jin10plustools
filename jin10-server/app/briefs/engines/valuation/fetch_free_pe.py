@@ -36,6 +36,19 @@ class FetchPEError(RuntimeError):
         self.code = code
 
 
+def observed_values(raw):
+    data=_parse_json(raw)
+    if 'index_eva_pe_growths' in data:records=data['index_eva_pe_growths']
+    elif data.get('index_code')=='SH000300':records=[data]
+    else:raise FetchPEError('invalid_data','PE evidence does not identify CSI 300 observations.')
+    values={}
+    for row in records:
+        day=_timestamp_day(row['ts'])
+        if day in values:raise FetchPEError('invalid_data','PE evidence repeats a date.')
+        values[day]=_number(row['pe'])
+    return values
+
+
 def _day(value):
     if not isinstance(value, str):
         raise FetchPEError('invalid_date', 'Dates must use YYYY-MM-DD.')
@@ -120,7 +133,12 @@ def normalize_pe(history_raw, detail_raw, expected_date, previous_date):
             raise FetchPEError('source_inconsistent', 'PE latest-detail and history responses disagree.')
     missing = sorted({expected_date, previous_date} - values.keys())
     if missing:
-        raise FetchPEError('missing_session', 'PE source lacks required sessions: ' + ', '.join(missing))
+        error=FetchPEError('missing_session', 'PE source lacks required sessions: ' + ', '.join(missing))
+        error.missing_dates=missing
+        error.retryable=not any(day<source_latest for day in missing)
+        error.user_message=('PE来源缺少历史交易日：' if not error.retryable else 'PE来源尚未更新交易日：')+'、'.join(missing)
+        if not error.retryable:error.user_message+='；需恢复该日原始记录，重复请求当前抽样接口无法补齐'
+        raise error
     return {
         'source': 'snowball_fund_danjuan_public',
         'source_index_code': 'SH000300',
@@ -162,9 +180,7 @@ def verified_capture(path):
             raw = raw_path.read_bytes()
             if hashlib.sha256(raw).hexdigest() != item['sha256']:
                 return None
-            records = _parse_json(raw).get('index_eva_pe_growths', [])
-            for row in records:
-                observed.setdefault(_timestamp_day(row['ts']), set()).add(_number(row['pe']))
+            for day,value in observed_values(raw).items():observed.setdefault(day,set()).add(value)
             portable.append({**item, 'file': str(raw_path.resolve())})
         if any(_number(row['pe_ttm_mcw_raw']) not in observed.get(row['date'], set()) for row in cached['rows']):
             return None
@@ -253,7 +269,8 @@ def fetch_pe(expected_date, previous_date, output_dir, *, verify_detail=False, u
                 if not any(_timestamp_day(item['ts'])==day and _number(item['pe'])==value for item in records):continue
                 timestamp=int(datetime.fromisoformat(day).replace(tzinfo=CHINA).timestamp()*1000)
                 recovered.append({'ts':timestamp,'pe':str(value)})
-                evidence.append({'url':'durable_source:snowball_fund_danjuan_public','file':str(evidence_path.resolve()),
+                portable=output/('pe-evidence-'+row['source_sha256']+'.json');portable.write_bytes(original)
+                evidence.append({'url':'durable_source:snowball_fund_danjuan_public','file':str(portable.resolve()),
                     'sha256':row['source_sha256'],'bytes':len(original)})
         if recovered:
             cache_raw=json.dumps({'result_code':0,'data':{'index_eva_pe_growths':recovered}}).encode()

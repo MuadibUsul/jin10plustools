@@ -54,7 +54,7 @@ def parse_quotes(raw,expected_date):
     rows=[];seen=set()
     for record in records:
         code=record.get('productCode','')
-        if not re.fullmatch(r'DR\d{3}',code):
+        if not re.fullmatch(r'DR(?:\d{3}|[1-9]\d?[MWY])',code):
             raise SourceError('source_changed','Unexpected product; DR must not be replaced by R or FDR')
         if code in seen:raise SourceError('duplicate_product','Duplicate quotation product')
         seen.add(code)

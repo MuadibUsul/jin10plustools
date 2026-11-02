@@ -41,6 +41,25 @@ def test_missing_earlier_bond_session_is_added_and_reported():
     assert bonds['2026-10-14']['yield_source_text'] == '1.6516'
 
 
+def test_backfilled_erp_dates_acquire_their_missing_official_bond_inputs(tmp_path,monkeypatch):
+    initial=tmp_path/'bond-history.json'
+    initial.write_text(json.dumps([_bond('2026-10-14','1.65')]),encoding='utf-8')
+    calls=[]
+    def history(start,end,output):
+        calls.append((start,end));output.mkdir(parents=True)
+        path=output/'bond-normalized.json'
+        path.write_text(json.dumps([_bond('2026-10-19','1.6497'),_bond('2026-10-26','1.63')]),encoding='utf-8')
+        return {'normalized_path':str(path)}
+    monkeypatch.setattr(erp,'fetch_bond_history',history)
+    monkeypatch.setattr(erp,'fetch_bond',lambda *args:{'normalized':[_bond('2026-10-29','1.6233'),_bond('2026-10-30','1.65')]})
+    rows,evidence,revision=erp._load_bonds_with_revision(initial,'2026-10-30','2026-10-29',tmp_path/'out',lambda _:None,
+        recheck=True,required_dates=['2026-10-14','2026-10-19','2026-10-26'])
+    assert calls==[('2026-10-19','2026-10-26')]
+    assert rows['2026-10-19']['yield_source_text']=='1.6497'
+    assert revision['checked_dates']==['2026-10-29','2026-10-30']
+    assert {r['date'] for r in json.loads((tmp_path/'out/raw/bond/official-rolling-normalized.json').read_text(encoding='utf-8'))}==set(rows)
+
+
 def test_run_erp_rechecks_latest_two_bonds_even_when_expected_is_already_stored(tmp_path, monkeypatch):
     history = tmp_path / 'history.json'
     history.write_text(json.dumps([

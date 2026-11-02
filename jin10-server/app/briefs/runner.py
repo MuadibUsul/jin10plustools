@@ -219,7 +219,9 @@ def main():
         save(Path(args.root)/'runs'/args.run_id/'result.json',result)
     except Exception as exc:
         # Never include request headers, model keys or raw response bodies.
-        save(Path(args.root)/'runs'/args.run_id/'error.json',{'type':type(exc).__name__,'message':str(exc)[:500]})
+        save(Path(args.root)/'runs'/args.run_id/'error.json',{'type':type(exc).__name__,
+             'code':getattr(exc,'code',None),'message':getattr(exc,'user_message',str(exc))[:500],
+             'retryable':getattr(exc,'retryable',True),'missing_dates':getattr(exc,'missing_dates',[])})
         from .progress import read
         folder=Path(args.root)/'runs'/args.run_id
         record(folder,read(folder).get('step',1),'执行失败：'+str(exc)[:500])

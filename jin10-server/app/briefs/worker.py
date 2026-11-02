@@ -273,12 +273,20 @@ def execute(factory,id):
                 db.commit()
             record(out,2,'公开网页读取未完成：'+message[:500])
             return
-    if category=='valuation' and action=='produce':
+    if category=='valuation' and action in ('produce','refresh','reconcile'):
         with factory() as db:
+            from .source_archive import restore_daily_pe
+            from .trading_calendar import sessions
+            recovered_daily=restore_daily_pe(db,db.get(BriefJob,id),out,target_day.isoformat(),
+                required_dates=sessions('xshg',target_day-timedelta(days=92),target_day))
+            if recovered_daily:
+                from .repair import restore_working_history
+                restore_working_history(db,team_id,category,root/'history'/category)
             restored=restore_pe_capture(db,db.get(BriefJob,id),out,
                                         expected_date(category,day).isoformat())
+            db.commit()
             if restored:log.info('Restored dated PE evidence from PostgreSQL for job %s',id)
-            if restored:record(out,1,'已恢复经过哈希核验的PE原始来源证据')
+            if restored:record(out,1,'已恢复经哈希核验的历史PE证据；仍需检查目标日及其前一交易日是否齐全')
     env=dict(os.environ);env['AI_PROVIDER']=ai['provider'];env['AI_API_KEY']=ai['key']
     env['AI_MODEL']=ai['model'];env['AI_BASE_URL']=ai['base_url']
     env['CATEGORY_NOTES']=category_notes
@@ -289,6 +297,7 @@ def execute(factory,id):
     env['MANUAL_GENERATION']='1' if job.created_by is not None else '0'
     # The runner keeps the fixed rule payload; Skill copy runs after it returns.
     env['SKILL_PRODUCTION']='1'
+    env['DATA_COLLECTION_ONLY']='1' if action=='reconcile' else '0'
     old_result=out/'result.json'
     if job.attempts>1 and old_result.exists():
         old_result.replace(out/f'prior-result-{job.attempts}-{time.time_ns()}.json')
@@ -296,9 +305,9 @@ def execute(factory,id):
              '--root',str(root),'--run-id',str(id),'--action','refresh' if action=='reconcile' or automatic and action=='produce' else action]
     process=subprocess.Popen(command,env=env,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,start_new_session=os.name!='nt')
     cutoff=time.monotonic()+360
-    error=None
+    error=None;retryable=True
     while process.poll() is None:
-        if time.monotonic()>cutoff or (automatic and not production_window(datetime.now(CHINA))):
+        if time.monotonic()>cutoff or (automatic and action!='reconcile' and not production_window(datetime.now(CHINA))):
             if os.name!='nt':os.killpg(process.pid,signal.SIGKILL)
             else:process.kill()
             process.wait();error='任务超时或自动任务已到10:00截止时间';break
@@ -308,6 +317,7 @@ def execute(factory,id):
     payload=json.loads(result.read_text(encoding='utf-8')) if result.exists() else None
     if not payload and (out/'error.json').exists():
         report=json.loads((out/'error.json').read_text(encoding='utf-8'));error=report['message']
+        retryable=report.get('retryable',True)
     if action!='reconcile' and payload and ai.get('provider')=='chat2api':
         if ai.get('requested_model') and ai['requested_model']!=ai['model']:
             payload.setdefault('warnings',[]).append(
@@ -411,7 +421,7 @@ def execute(factory,id):
             job.status='succeeded';job.active_key=None;job.error=None
         else:
             job.error=error or '未生成完整结果，来源可能尚未更新'
-            slot=next_slot(category,datetime.now(CHINA)) if automatic else None
+            slot=next_slot(category,datetime.now(CHINA)) if automatic and retryable else None
             if slot and job.attempts<6:
                 job.status='waiting';job.next_attempt_at=slot
             else:job.status='failed';job.active_key=None

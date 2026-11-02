@@ -51,7 +51,7 @@ def enqueue(db,team_id,day,category,*,action='produce',preview=False,user_id=Non
         BriefJob.status.in_(['queued','running','waiting']))).first()
     if active:
         # A manual click takes a queued automatic retry out of the morning schedule.
-        if user_id is not None and active.created_by is None and active.status in ('queued','waiting'):
+        if user_id is not None and (active.status=='waiting' or active.created_by is None and active.status=='queued'):
             active.created_by=user_id;active.preview=preview
             active.status='queued';active.next_attempt_at=utcnow()
             db.flush()

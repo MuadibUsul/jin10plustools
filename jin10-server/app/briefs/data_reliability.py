@@ -16,7 +16,7 @@ EXPECTED={'volume':('volume',),'turnover':('turnover',),'valuation':('erp','buff
           'liquidity':('DR001','DR007'),'oil_etf':('USO','BNO'),
           'us_barometer':('wilshire','erp','gdp'),'us_structure':('spx','ndx','dji','rut','spxew'),
           'token_cost':('token',),'gpu_rental':('a100','h100','b200')}
-UNITS={'volume':{'turn':'CNY_100_million','vol':'source_native'},
+UNITS={'volume':{'turn':'CNY_100_million','vol':'source_native','ma20':'CNY_100_million'},
        'turnover':{'totalCompany':'company_count','belowPercent3':'company_count','belowPercent5':'company_count','close':'index_points'},
        'valuation':{'close':'index_points','pe_ttm_mcw':'times','pe_ttm_mcw_raw':'times','bond_yield_number':'percent_number',
            'erp':'fraction','erp_percent':'percent_number','marketCap':'CNY_100_million','market_cap_yi':'CNY_100_million','gdp':'CNY_100_million'},
@@ -60,9 +60,9 @@ def extract(category,folder,payload=None,*,only_file=None):
         for row in rows or []:
             stamp=date.fromisoformat(row[key]).isoformat()
             result.append({'series':series,'date':stamp,'method':method,'values':plain(row)})
-    if category=='volume':add('volume',load('plot-data.json'),'jin10_hushen_turnover_yi_v1')
+    if category=='volume':add('volume',load('volume-collected.json') or load('plot-data.json'),'jin10_hushen_turnover_yi_v1')
     elif category=='turnover':
-        raw=load('source.json') or {}
+        raw=load('turnover-collected.json') or load('source.json') or {}
         add('turnover',raw.get('rows',raw.get('data',[])) if isinstance(raw,dict) else raw,'legu_count_ratios_ma9_v1')
     elif category=='valuation':
         add('csi300_pe',load('pe-published-history.json'),'snowball_fund_danjuan_public')
@@ -85,12 +85,12 @@ def extract(category,folder,payload=None,*,only_file=None):
         for fund in payload.get('facts',{}).get('funds',[]):
             add(fund['ticker'],[{'date':payload['data_date'],**fund}],'issuer_futures_and_swap_estimate_v1')
     elif category=='us_barometer':
-        raw=load('us-snapshot.json') or {}
+        raw=load('us-collected.json') or load('us-snapshot.json') or {}
         add('wilshire',raw.get('wilshire',[]),'yahoo_w5000_v1')
         add('erp',raw.get('erp',[]),'streetstats_erp_v1')
         add('gdp',raw.get('gdp',[]),'fred_current_revised_not_point_in_time',key='period')
     elif category=='us_structure':
-        raw=load('us-structure-snapshot.json') or {}
+        raw=load('us-structure-collected.json') or load('us-structure-snapshot.json') or {}
         for series,rows in raw.get('data',{}).items():add(series,rows,'yahoo_daily_close_low_v1')
     elif category in ('token_cost','gpu_rental'):
         rows=load('ai-compute-source.json') or []
@@ -150,9 +150,12 @@ def link_sources(db,job):
     names={'volume':'plot-data.json','turnover':'source.json','liquidity':'liquidity-snapshot.json',
         'oil_etf':'result.json','us_barometer':'us-snapshot.json','us_structure':'us-structure-snapshot.json',
         'token_cost':'ai-compute-source.json','gpu_rental':'ai-compute-source.json'}
+    collected={'volume':'volume-collected.json','turnover':'turnover-collected.json',
+               'us_barometer':'us-collected.json','us_structure':'us-structure-collected.json'}
     for point in db.scalars(select(BriefDataPoint).where(BriefDataPoint.job_id==job.id,
                                                        BriefDataPoint.source_snapshot_id.is_(None))):
         name=names.get(job.category)
+        if any(row.relative_path==collected.get(job.category) for row in snapshots):name=collected[job.category]
         if job.category=='valuation':name={'erp':'erp-plot-data.json','buffett':'buffett-plot-data.json',
                                            'csi300_pe':'pe-published-history.json','all_a_market_cap':'all-a-history.json'}[point.series]
         source=next((row for row in snapshots if row.relative_path==name),None)

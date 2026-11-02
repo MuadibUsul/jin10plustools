@@ -196,7 +196,7 @@ def _merge_recent_bonds(bonds, recent_rows, checked_dates):
             'unchanged_dates': unchanged}
 
 
-def _load_bonds_with_revision(bond_history, expected, previous, output, notify, *, recheck):
+def _load_bonds_with_revision(bond_history, expected, previous, output, notify, *, recheck, required_dates=()):
     """Load the official series and, when requested, re-read the latest two rows.
 
     Running this before close/PE acquisition means a later source failure cannot
@@ -209,6 +209,18 @@ def _load_bonds_with_revision(bond_history, expected, previous, output, notify, 
         capture = fetch_bond_history(HISTORY_START, expected, output / 'raw' / 'bond')
         bond_history = capture['normalized_path']
     bonds, bond_evidence = _load_bond_rows(bond_history, expected)
+    missing=sorted(set(required_dates)-set(bonds)-{previous,expected})
+    backfills=[]
+    for year in sorted({day[:4] for day in missing})[:3]:
+        days=[day for day in missing if day[:4]==year]
+        notify(f'正在补回中债历史收益率：{min(days)} 至 {max(days)}')
+        capture=fetch_bond_history(min(days),max(days),output/'raw'/('bond-backfill-'+year))
+        recovered,evidence=_load_bond_rows(capture['normalized_path'],expected)
+        for day,row in recovered.items():bonds.setdefault(day,row)
+        backfills.append(evidence)
+    if backfills:
+        bond_evidence={'initial_history':bond_evidence,'missing_history_backfills':backfills}
+        _write_json(output/'raw'/'bond'/'official-rolling-normalized.json',[bonds[d] for d in sorted(bonds)])
     revision_report = None
     if recheck and provided_history:
         notify(f'正在复核中债国债收益率：{previous}（上一交易日）、{expected}（最新交易日）')
@@ -371,7 +383,7 @@ def run_erp(workbook, out_dir, *, mode, expected_date, bond_history=None, force_
             # Check the treasury rows first: the bond monitor must still run if
             # the later PE or close source is temporarily unavailable.
             bonds, bond_evidence, revision_report = _load_bonds_with_revision(
-                bond_history, expected, previous, output, notify, recheck=True)
+                bond_history, expected, previous, output, notify, recheck=True,required_dates=by_date)
         # No old workbook close or PE can serve as a live acquisition fallback.
         notify(f'正在获取沪深300收盘点位：{previous}、{expected}')
         close = fetch_close(expected, previous, output / 'raw' / 'close')
@@ -402,7 +414,7 @@ def run_erp(workbook, out_dir, *, mode, expected_date, bond_history=None, force_
                                 'new_pe_source': pe_rows[day].get('source', pe['source'])})
         if bonds is None:
             bonds, bond_evidence, revision_report = _load_bonds_with_revision(
-                bond_history, expected, previous, output, notify, recheck=mode == 'free-official')
+                bond_history, expected, previous, output, notify, recheck=mode == 'free-official',required_dates=by_date)
         required = sorted(by_date)
         gaps['missing_bond_dates'] = [day for day in required if day not in bonds]
         source_report.update({'online_data_acquisition_performed': True,

@@ -10,50 +10,44 @@ from .trading_calendar import sessions
 def available_pe(output,*,history_path=None):
     from .engines.valuation.fetch_free_pe import _download,_parse_json,_timestamp_day,_number,HISTORY_URL,DETAIL_URL
     from .sources import read,save
-    from .policy import CHINA
-    from .trading_calendar import is_session,previous_session
-    now=datetime.now(CHINA)
-    completed=(now.date() if now.hour>=16 and is_session('xshg',now.date())
-               else previous_session('xshg',now.date())).isoformat()
-    raw=_download(HISTORY_URL)
+    from .trading_calendar import completed_session
+    completed=completed_session('xshg').isoformat()
     output=Path(output);output.mkdir(parents=True,exist_ok=True)
-    history_sha=hashlib.sha256(raw).hexdigest()
-    history_file=output/('pe-backfill-'+history_sha+'.json');history_file.write_bytes(raw)
-    records=_parse_json(raw).get('index_eva_pe_growths')
-    if not isinstance(records,list):raise ValueError('PE历史结构变化')
-    result={};evidence={}
-    for row in records:
-        day=_timestamp_day(row['ts']);value=_number(row['pe'])
-        if day>completed:continue
-        if day in result:raise ValueError('PE补抓日期重复')
-        result[day]=value
-        evidence[day]={'source_file':str(history_file.resolve()),'source_sha256':history_sha}
-    # The history endpoint samples older sessions. Preserve its independently
-    # dated latest-detail value every day before that day disappears from history.
-    detail_raw=_download(DETAIL_URL)
-    detail_sha=hashlib.sha256(detail_raw).hexdigest()
-    detail_file=output/('pe-detail-'+detail_sha+'.json');detail_file.write_bytes(detail_raw)
-    detail=_parse_json(detail_raw)
-    if detail.get('index_code')!='SH000300':raise ValueError('PE最新明细指标身份不符')
-    stamp=_timestamp_day(detail['ts']);value=_number(detail['pe'])
-    if stamp in result and result[stamp]!=value:raise ValueError('PE最新明细与历史同日数值不一致')
-    if stamp<=completed:
-        result[stamp]=value
-        evidence[stamp]={'source_file':str(detail_file.resolve()),'source_sha256':detail_sha}
-    before=read(history_path) if history_path and Path(history_path).is_file() else []
-    merged={row['date']:Decimal(str(row['pe_ttm_mcw_raw'])) for row in before}
-    merged.update(result)
-    previous={row['date']:row for row in before}
-    normalized=[{'date':day,'pe_ttm_mcw_raw':str(merged[day]),
-                 **(evidence.get(day) or {key:previous[day][key] for key in ('source_file','source_sha256')
-                    if key in previous.get(day,{})})} for day in sorted(merged)]
-    if history_path:save(history_path,normalized)
-    save(output.parent/'pe-published-history.json',normalized)
-    result=merged
+    previous={row['date']:row for row in read(history_path)} if history_path and Path(history_path).is_file() else {}
+    result={day:Decimal(str(row['pe_ttm_mcw_raw'])) for day,row in previous.items()}
+    evidence={day:{key:row[key] for key in ('source_file','source_sha256') if key in row} for day,row in previous.items()}
+    errors=[];acquired={};succeeded=0
+    for name,url in (('history',HISTORY_URL),('detail',DETAIL_URL)):
+        try:
+            raw=_download(url);sha=hashlib.sha256(raw).hexdigest()
+            source_file=output/('pe-'+name+'-'+sha+'.json');source_file.write_bytes(raw)
+            parsed=_parse_json(raw)
+            if name=='history':
+                records=parsed.get('index_eva_pe_growths')
+                if not isinstance(records,list):raise ValueError('PE历史结构变化')
+            else:
+                if parsed.get('index_code')!='SH000300':raise ValueError('PE最新明细指标身份不符')
+                records=[parsed]
+            batch={}
+            for row in records:
+                day=_timestamp_day(row['ts']);value=_number(row['pe'])
+                if day>completed:continue
+                if day in batch:raise ValueError('PE补抓日期重复')
+                if day in acquired and acquired[day]!=value:raise ValueError('PE最新明细与历史同日数值不一致')
+                batch[day]=value
+            acquired.update(batch);result.update(batch);succeeded+=1
+            evidence.update({day:{'source_file':str(source_file.resolve()),'source_sha256':sha} for day in batch})
+            normalized=[{'date':day,'pe_ttm_mcw_raw':str(result[day]),**evidence[day]} for day in sorted(result)]
+            if history_path:save(history_path,normalized)
+            save(output.parent/'pe-published-history.json',normalized)
+        except (OSError,ValueError,RuntimeError,KeyError,TypeError) as exc:
+            errors.append({'endpoint':name,'error':str(exc)})
+    if errors:save(output/'acquisition-errors.json',errors)
+    if not succeeded:raise ValueError('PE历史与最新明细均未取得；已保留既有证据')
     return result
 
 
-def repair_erp(history_path,day,out,*,pe_fetcher=None,close_fetcher=None,bond_fetcher=None,pe_history=None):
+def repair_erp(history_path,day,out,*,pe_fetcher=None,close_fetcher=None,bond_fetcher=None,pe_history=None,pe_values=None):
     from .sources import read,save
     from .engines.valuation.run_erp import fetch_close
     from .engines.valuation.fetch_free_bond import fetch_bond_history,METHOD_ID
@@ -65,7 +59,7 @@ def repair_erp(history_path,day,out,*,pe_fetcher=None,close_fetcher=None,bond_fe
     report={'requested_start':start,'requested_end':day,'missing_before':missing,'restored_dates':[]}
     if not missing:return report
     out=Path(out);out.mkdir(parents=True,exist_ok=True)
-    pe=pe_fetcher(out/'pe') if pe_fetcher else available_pe(out/'pe',history_path=pe_history)
+    pe=pe_values if pe_values is not None else pe_fetcher(out/'pe') if pe_fetcher else available_pe(out/'pe',history_path=pe_history)
     candidates=[stamp for stamp in missing if stamp in pe]
     # Source downsampling is explicit. A missing source PE is never substituted
     # with a different weighted PE definition or an interpolated value.
@@ -116,14 +110,19 @@ def repair_buffett(history_path,day,out,gdp_table,*,cap_fetcher=None,close_fetch
         if stamp in inputs and stamp!=day:
             cap={'source':inputs[stamp]['source'],'rows':[inputs[stamp]]}
         else:
-            cap=(cap_fetcher or fetch_all_a)(stamp,previous,out/('cap-'+stamp))
             report['requests']+=1
+            try:cap=(cap_fetcher or fetch_all_a)(stamp,previous,out/('cap-'+stamp))
+            except (OSError,ValueError,RuntimeError) as exc:
+                report.setdefault('source_errors',[]).append({'date':stamp,'error':str(exc)});continue
         for row in cap['rows']:
             if row['date']<=day:
                 inputs[row['date']]={**row,'source':cap['source']}
                 if row['date'] in missing:report['raw_restored_dates'].append(row['date'])
         save(raw_path,[inputs[key] for key in sorted(inputs)])
         save(out/'all-a-history.json',[inputs[key] for key in sorted(inputs)])
+        years={str(date.fromisoformat(row['date']).year-1) for row in cap['rows'] if row['date']<=day}
+        report['unavailable_gdp_years'].extend(year for year in years if not gdp_table.get(year))
+        if not any(gdp_table.get(year) for year in years):continue
         try:
             closes=(close_fetcher or fetch_close)(stamp,previous,out/('close-'+stamp),all_between=True)
             closing.update({row['date']:row['close'] for row in closes['rows']})
@@ -148,6 +147,7 @@ def repair_buffett(history_path,day,out,gdp_table,*,cap_fetcher=None,close_fetch
         save(out/'all-a-history.json',[inputs[key] for key in sorted(inputs)])
     report['restored_dates']=sorted(set(report['restored_dates']))
     report['raw_restored_dates']=sorted(set(report['raw_restored_dates']))
+    report['unavailable_gdp_years']=sorted(set(report['unavailable_gdp_years']))
     report['remaining_raw_dates']=sorted(set(missing)-set(inputs))
     report['remaining_dates']=sorted(wanted-{row['date'] for row in history})
     save(out/'repair-report.json',report)

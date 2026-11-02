@@ -76,7 +76,8 @@ function renderCards() {
     const busy = active(job) || pendingCategories.has(category.id);
     card.setAttribute('aria-busy', String(busy));
     const indicator = card.querySelector('.job-indicator');
-    const indicatorClass = busy ? 'job-indicator spinning' : `job-indicator ${job?.status || ''}`;
+    const executing = pendingCategories.has(category.id) || ['queued', 'running'].includes(job?.status);
+    const indicatorClass = executing ? 'job-indicator spinning' : `job-indicator ${job?.status || ''}`;
     if (indicator.className !== indicatorClass) indicator.className = indicatorClass;
     card.querySelector('.process-button').setAttribute('aria-label', `${category.label}生成过程：${busy ? '正在执行或等待' : labels[job?.status] || '暂无任务'}`);
     const body = card.querySelector('.brief-card-body');
@@ -93,6 +94,7 @@ function renderCards() {
     body.append(node('h3', version?.title || '等待本期数据与成品'));
     body.append(node('p', version ? `数据日 ${copyDate(version.data_date)}` : '尚无有效数据', 'muted'));
     if (job) body.append(node('p', `${job.status === 'failed' && version ? '最近一次任务失败；已有预览图可查看' : labels[job.status] || job.status}${job.error ? '：' + job.error : ''}`, job.status === 'failed' ? 'error' : 'muted'));
+    if (job?.status === 'waiting' && job.next_attempt_at) body.append(node('p', `下次重试：${displayTime(job.next_attempt_at)}`, 'muted'));
     if (version?.warnings.length) body.append(node('p', '有来源或口径说明，请核对', 'warning'));
     if (version?.data_date === dataState?.target_date && version?.data_reliability?.publication_digest && dataState?.report?.publication_digest &&
         version.data_reliability.publication_digest !== dataState.report.publication_digest) {
@@ -110,7 +112,7 @@ function renderCards() {
     }
     const controls = node('div', undefined, 'toolbar');
     if (item?.versions.length) { const view = node('button', '查看与取稿'); view.onclick = () => safe(() => open(item)); controls.append(view); }
-    if (canEdit()) { const run = node('button', busy ? '任务执行中' : '生成稿件'); run.disabled = busy; run.title = computeCategories.has(category.id) ? '读取公开网页展示值并生成稿件' : '自动刷新来源，并处理最接近当前的可用数据'; run.onclick = () => safe(() => runJob(category.id, 'produce')); controls.append(run); }
+    if (canEdit()) { const run = node('button', executing ? '任务执行中' : job?.status === 'waiting' ? '立即重试' : '生成稿件'); run.disabled = executing; run.title = computeCategories.has(category.id) ? '读取公开网页展示值并生成稿件' : '自动刷新来源，并处理最接近当前的可用数据'; run.onclick = () => safe(() => runJob(category.id, 'produce')); controls.append(run); }
     if (canEdit() && computeCategories.has(category.id)) { const manual = node('button', '人工填数并生成'); manual.disabled = busy; manual.onclick = () => openManual(category.id); controls.append(manual); }
     body.append(controls);
   }

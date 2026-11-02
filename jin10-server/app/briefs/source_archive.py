@@ -11,7 +11,7 @@ import json
 from datetime import date
 from pathlib import Path
 
-from sqlalchemy import select
+from sqlalchemy import select,or_
 
 from app.db.models import BriefSourceSnapshot
 from .policy import expected_date
@@ -20,6 +20,63 @@ DATA_EXTENSIONS = frozenset({'.json', '.csv', '.tsv', '.html', '.xml', '.txt',
                              '.md', '.xls', '.xlsx', '.parquet'})
 MAX_FILE_BYTES = 10_000_000
 MAX_RUN_BYTES = 100_000_000
+
+
+def restore_daily_pe(db,job,folder,expected,*,limit=256,required_dates=None):
+    """Recover exact missing PE dates even from jobs that never finished.
+
+    Older workers archived original replies without a successful normalized PE
+    pair. Those bytes still contain valid observations and must remain usable.
+    """
+    from .engines.valuation.fetch_free_pe import observed_values
+    from .trading_calendar import previous_session
+    from .sources import read,save
+    from .data_reliability import save_points
+    folder=Path(folder);daily=folder/'pe-published-history.json'
+    values={row['date']:row for row in read(daily)} if daily.exists() else {}
+    wanted=set(required_dates) if required_dates is not None else {expected,previous_session('xshg',expected).isoformat()}
+    if any(day>expected or date.fromisoformat(day).isoformat()!=day for day in wanted):raise ValueError('PE恢复区间不合法')
+    available=set()
+    for day in wanted & values.keys():
+        row=values[day];path=Path(row.get('source_file',''))
+        try:
+            raw=path.read_bytes()
+            if hashlib.sha256(raw).hexdigest()==row.get('source_sha256') and str(observed_values(raw).get(day))==row['pe_ttm_mcw_raw']:
+                available.add(day)
+        except (OSError,ValueError,RuntimeError,KeyError,TypeError):pass
+    if wanted<=available:return 0
+    snapshots=db.scalars(select(BriefSourceSnapshot).where(
+        BriefSourceSnapshot.team_id==job.team_id,BriefSourceSnapshot.category=='valuation',
+        or_(BriefSourceSnapshot.relative_path.like('%/pe/pe-%-history.json'),
+            BriefSourceSnapshot.relative_path.like('%/pe/pe-%-detail.json'),
+            BriefSourceSnapshot.relative_path.like('pe-daily/pe-history-%.json'),
+            BriefSourceSnapshot.relative_path.like('pe-daily/pe-detail-%.json'))
+        ).order_by(BriefSourceSnapshot.captured_at.desc()).limit(limit))
+    restored=0
+    for snapshot in snapshots:
+        if hashlib.sha256(snapshot.content).hexdigest()!=snapshot.sha256:continue
+        try:observed=observed_values(snapshot.content)
+        except (ValueError,RuntimeError,KeyError,TypeError):continue
+        found=(wanted-available)&observed.keys()
+        if not found:continue
+        # A later job may archive a restored copy of the same original bytes.
+        # Preserve the first actual acquisition time rather than the copy time.
+        original=db.scalar(select(BriefSourceSnapshot).where(
+            BriefSourceSnapshot.team_id==job.team_id,BriefSourceSnapshot.category=='valuation',
+            BriefSourceSnapshot.sha256==snapshot.sha256).order_by(BriefSourceSnapshot.captured_at).limit(1))
+        if original and hashlib.sha256(original.content).hexdigest()==snapshot.sha256:snapshot=original
+        path=folder/'pe-restored'/('pe-'+snapshot.sha256+'.json');path.parent.mkdir(exist_ok=True,parents=True)
+        path.write_bytes(snapshot.content)
+        points=[]
+        for day in found:
+            values[day]={'date':day,'pe_ttm_mcw_raw':str(observed[day]),'source_file':str(path.resolve()),'source_sha256':snapshot.sha256}
+            points.append({'date':day,'series':'csi300_pe','method':'snowball_fund_danjuan_public','values':values[day]})
+        save_points(db,job.team_id,'valuation',points,snapshot.job_id,
+                    source_snapshot_id=snapshot.id,collected_at=snapshot.captured_at)
+        available.update(found);restored+=len(found)
+        save(daily,[values[day] for day in sorted(values)])
+        if wanted<=available:break
+    return restored
 
 
 def archive_run(db, job, folder: Path, *, history_dir: Path | None = None,

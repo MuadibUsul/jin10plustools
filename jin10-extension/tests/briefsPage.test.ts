@@ -9,7 +9,7 @@ const shell = readFileSync(join(root, 'retro-computer.js'), 'utf8')
 const script = shell + '\n' + readFileSync(join(root, 'briefs.js'), 'utf8').replace(/^import[^\n]*\n/gm, '');
 const html = readFileSync(join(root, 'briefs.html'), 'utf8');
 const $ = (selector: string) => document.querySelector(selector)!;
-type Job = { id: string; status: string; created_at: string; progress?: { step: number; events: { at: string; message: string }[] }; error?: string };
+type Job = { id: string; status: string; created_at: string; next_attempt_at?: string; progress?: { step: number; events: { at: string; message: string }[] }; error?: string };
 const issue = (number = 1) => ({
   id: 'turnover', label: '换手率', category: 'turnover', issue_date: '2026-10-15',
   version: number, confirmed_version: null, jobs: [] as Job[],
@@ -55,6 +55,16 @@ beforeEach(() => {
 afterEach(() => { document.body.replaceChildren(); vi.restoreAllMocks(); });
 
 describe('fixed brief image refresh', () => {
+  it('shows a waiting job as scheduled and lets an editor retry immediately', async () => {
+    rows[0]!.jobs = [{ id: 'job-wait', status: 'waiting', created_at: '2026-10-30T00:00:00Z',
+      next_attempt_at: '2026-10-30T01:20:00Z', error: 'PE来源缺少历史交易日：2026-10-29' }];
+    await page();
+    expect(document.querySelector('.job-indicator.spinning')).toBeNull();
+    expect($('.brief-card-body').textContent).toContain('下次重试：2026-10-30T01:20:00Z');
+    const retry = $('.brief-card-body .toolbar button:last-child') as HTMLButtonElement;
+    expect(retry.textContent).toBe('立即重试');
+    expect(retry.disabled).toBe(false);
+  });
   it('shows the current processing stage and keeps the spinner node stable during polling', async () => {
     rows[0]!.jobs = [{ id: 'job-1', status: 'running', created_at: '2026-10-15T01:00:00Z', progress: { step: 2, events: [{ at: '2026-10-15T01:00:05Z', message: '正在读取PE原始来源' }] } }];
     const ui = await page(); await ui.open(issue());

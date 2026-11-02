@@ -290,7 +290,7 @@ def valuation(day,out,state,refresh=False):
     if not bond_history.exists():shutil.copy2(HERE/'seed/bond-history.json',bond_history)
     buffett_path=state/'buffett-history.json'
     if not buffett_path.exists():shutil.copy2(HERE/'seed/buffett-history.json',buffett_path)
-    from .valuation_repair import available_pe,repair_buffett,repair_erp
+    from .valuation_repair import available_pe,repair_buffett,repair_erp,gdp_catalog
     # Capture the fleeting daily PE detail before slow historical work. Even if
     # both target sessions already exist, a newly published daily value is saved.
     pe_values=None
@@ -299,7 +299,7 @@ def valuation(day,out,state,refresh=False):
     if (state/'pe-published-history.json').exists():
         shutil.copy2(state/'pe-published-history.json',out/'pe-published-history.json')
     if os.getenv('DATA_COLLECTION_ONLY')=='1':
-        try:repair_buffett(buffett_path,day,out/'buffett-history-repair',read(HERE/'seed/gdp.json'),max_requests=2)
+        try:repair_buffett(buffett_path,day,out/'buffett-history-repair',gdp_catalog(HERE/'seed'),max_requests=2)
         except (OSError,ValueError,RuntimeError) as exc:save(out/'buffett-history-repair-error.json',{'error':str(exc)})
     save(out/'buffett-plot-data.json',[row for row in read(buffett_path) if row['date']<=day])
     if (state/'all-a-history.json').exists():shutil.copy2(state/'all-a-history.json',out/'all-a-history.json')

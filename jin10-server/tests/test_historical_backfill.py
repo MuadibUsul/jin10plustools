@@ -103,3 +103,34 @@ def test_valuation_working_history_is_restored_from_durable_observations(db_fact
         restore_working_history(db,team,'valuation',tmp_path)
         rows=json.loads((tmp_path/'buffett-history.json').read_text())
         assert rows[0]['date']=='2024-01-03' and rows[0]['gdp_available_on_observation_date'] is False
+def test_background_gdp_catalog_keeps_current_override_and_historical_versions(tmp_path):
+    from app.briefs.valuation_repair import gdp_catalog
+    from app.briefs.sources import save
+    save(tmp_path/'gdp-historical.json',{'2024':{'value_yi':'99','published_on':'2025-01-17'},'2025':{'value_yi':'1'}})
+    save(tmp_path/'gdp.json',{'2025':{'value_yi':'100'}})
+    assert gdp_catalog(tmp_path)=={'2024':{'value_yi':'99','published_on':'2025-01-17'},'2025':{'value_yi':'100'}}
+
+
+def test_background_backfill_never_uses_gdp_before_publication_or_blocks_later_days(tmp_path):
+    from app.briefs.valuation_repair import repair_buffett
+    from app.briefs.sources import save,read
+    history=tmp_path/'buffett-history.json'
+    save(history,[{'date':'2026-10-27','marketCap':'99','gdp':'100','close':'4000','source':'original'}])
+    calls=[]
+    def cap(day,previous,out):
+        calls.append(day)
+        return {'source':'fixture','rows':[{'date':d,'market_cap_yi':'101'} for d in (previous,day)]}
+    def close(day,previous,out,**kwargs):
+        return {'rows':[{'date':d,'close':'4001'} for d in (previous,day)]}
+    gdp={'2025':{'value_yi':'100','published_on':'2026-10-29'}}
+    first=repair_buffett(history,'2026-10-29',tmp_path/'first',gdp,cap_fetcher=cap,close_fetcher=close)
+    assert first['restored_dates']==['2026-10-29']
+    assert first['remaining_dates']==['2026-10-28']
+    assert first['unpublished_gdp_dates']==['2026-10-28']
+    assert read(history)[-1]['gdp_available_on_observation_date'] is True
+    assert {r['date'] for r in read(tmp_path/'all-a-history.json')}=={'2026-10-28','2026-10-29'}
+    calls.clear()
+    repair_buffett(history,'2026-10-29',tmp_path/'second',gdp,cap_fetcher=cap,close_fetcher=close)
+    assert calls==['2026-10-29']
+
+

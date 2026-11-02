@@ -7,6 +7,19 @@ import hashlib
 from .trading_calendar import sessions
 
 
+def gdp_catalog(seed):
+    """Keep dated historical GDP publications separate from the current year."""
+    from .sources import read
+    seed=Path(seed)
+    historical=read(seed/'gdp-historical.json') if (seed/'gdp-historical.json').exists() else {}
+    return {**historical,**read(seed/'gdp.json')}
+
+
+def _available_gdp(table,stamp):
+    row=table.get(str(date.fromisoformat(stamp).year-1))
+    return row if row and row.get('published_on',stamp)<=stamp else None
+
+
 def available_pe(output,*,history_path=None):
     from .engines.valuation.fetch_free_pe import _download,_parse_json,_timestamp_day,_number,HISTORY_URL,DETAIL_URL
     from .sources import read,save
@@ -98,9 +111,11 @@ def repair_buffett(history_path,day,out,gdp_table,*,cap_fetcher=None,close_fetch
     raw_path=Path(history_path).parent/'all-a-history.json'
     inputs={row['date']:row for row in read(raw_path)} if raw_path.exists() else {}
     pending=list(dict.fromkeys([day,*[stamp for stamp in missing if stamp not in inputs
-        or gdp_table.get(str(date.fromisoformat(stamp).year-1))]]))[:max_requests]
+        or _available_gdp(gdp_table,stamp)]]))[:max_requests]
     report={'missing_before':missing,'restored_dates':[],'raw_restored_dates':[],
-            'requests':0,'unavailable_gdp_years':[]}
+            'requests':0,'unavailable_gdp_years':[],
+            'unpublished_gdp_dates':[stamp for stamp in missing
+                if gdp_table.get(str(date.fromisoformat(stamp).year-1)) and not _available_gdp(gdp_table,stamp)]}
     out=Path(out);out.mkdir(parents=True,exist_ok=True)
     if not pending:return report
     closing={}
@@ -122,7 +137,7 @@ def repair_buffett(history_path,day,out,gdp_table,*,cap_fetcher=None,close_fetch
         save(out/'all-a-history.json',[inputs[key] for key in sorted(inputs)])
         years={str(date.fromisoformat(row['date']).year-1) for row in cap['rows'] if row['date']<=day}
         report['unavailable_gdp_years'].extend(year for year in years if not gdp_table.get(year))
-        if not any(gdp_table.get(year) for year in years):continue
+        if not any(_available_gdp(gdp_table,row['date']) for row in cap['rows'] if row['date']<=day):continue
         try:
             closes=(close_fetcher or fetch_close)(stamp,previous,out/('close-'+stamp),all_between=True)
             closing.update({row['date']:row['close'] for row in closes['rows']})
@@ -132,10 +147,16 @@ def repair_buffett(history_path,day,out,gdp_table,*,cap_fetcher=None,close_fetch
             source_day=row['date']
             if source_day>day:continue
             if source_day not in closing:continue
-            year=str(date.fromisoformat(source_day).year-1);gdp=gdp_table.get(year)
-            if not gdp:report['unavailable_gdp_years'].append(year);continue
+            year=str(date.fromisoformat(source_day).year-1);gdp=_available_gdp(gdp_table,source_day)
+            if not gdp:
+                if year not in gdp_table:report['unavailable_gdp_years'].append(year)
+                continue
             candidate={'date':source_day,'marketCap':row['market_cap_yi'],
                 'gdp':gdp['value_yi'],'close':closing[source_day],'source':cap['source']}
+            if gdp.get('published_on'):
+                candidate.update(gdp_vintage=gdp,gdp_available_on_observation_date=True,
+                    source_status='verified_published_inputs_historical_recalculation',
+                    original_source_equivalence='not_asserted')
             # Retain original provider/category duplicates; replace only an exact
             # date in the same newly fetched source definition.
             same_source=any(old['date']==source_day and old.get('source')==cap['source'] for old in history)

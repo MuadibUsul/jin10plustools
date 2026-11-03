@@ -53,7 +53,7 @@ def dependencies(here,category):
         for path in sorted(folder.rglob('*')):
             if path.is_file() and '__pycache__' not in path.parts and path.suffix!='.pyc':yield path.relative_to(here).as_posix(),path.read_bytes()
     from .skill_ai import asset_dir
-    for relative in ('SKILL.md','references/history.md','production/style-pack.json'):
+    for relative in ('SKILL.md','production/SKILL.md','references/history.md','production/style-pack.json'):
         path=asset_dir(category)/relative
         if path.is_file():yield 'skill/'+relative,path.read_bytes()
     if category in ('us_barometer','us_structure'):

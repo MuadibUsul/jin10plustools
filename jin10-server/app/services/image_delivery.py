@@ -241,7 +241,12 @@ def store_image(source, destination, *, notes='', dark=False, remove_valuation_s
     destination.parent.mkdir(parents=True, exist_ok=True)
     # Atomic publication also tolerates two readers preparing the same version.
     import uuid
-    temporary = destination.with_name(destination.name + '.' + uuid.uuid4().hex + '.tmp')
-    temporary.write_bytes(content)
-    temporary.replace(destination)
+    # Keep the atomic temporary name short: appending another UUID to a
+    # 64-character cache key can exceed Windows' path limit in a workspace.
+    temporary = destination.with_name('.image-' + uuid.uuid4().hex + '.tmp')
+    try:
+        temporary.write_bytes(content)
+        temporary.replace(destination)
+    finally:
+        temporary.unlink(missing_ok=True)
     return destination, media_type

@@ -1,5 +1,6 @@
 """The observed PBC overnight switch must not erase operations or cross tenors."""
 import pytest
+from types import SimpleNamespace
 from app.briefs.central_bank import parse_article
 from app.briefs.editorial_cn import build_context
 
@@ -15,6 +16,8 @@ def test_actual_operation_tenor_drives_rule_and_sample_copy(tmp_path,monkeypatch
     from app.briefs.engines.liquidity import render
     from app.briefs.editorial_authorization import adoption
     from app.briefs.skill_production import apply_skill_copy
+    from app.briefs.skill_library import effective
+    assert '隔夜操作只与DR001比较' in effective(SimpleNamespace(settings={}), 'liquidity')['instructions']
     bank=parse_article(article([[term,'1.25%','5,410亿元','5,410亿元']]),'2026-10-30')
     assert bank['term_days']==days and bank['awarded_yi']=='5410'
     snapshot={'quotes':{'updated_at':'2026-10-30 17:00','quote_date':'2026-10-30','rows':[

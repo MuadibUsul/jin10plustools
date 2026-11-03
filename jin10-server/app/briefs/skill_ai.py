@@ -97,6 +97,13 @@ def _history(category: str, limit: int = 20) -> str:
     return "".join(entries[-limit:])
 
 
+def instructions_path(category: str) -> Path:
+    """Current production instructions, without mutating pinned legacy assets."""
+    base=asset_dir(category)
+    versioned=base/'production'/'SKILL.md'
+    return versioned if versioned.is_file() else base/'SKILL.md'
+
+
 def validate_answer(source_title: str, source_body: str, answer: dict) -> tuple[str, str]:
     if not isinstance(answer, dict) or set(answer) != {"title", "body"}:
         raise ValueError("AI 结果必须只包含 title/body")
@@ -135,7 +142,7 @@ def polish(team, category: str, source_title: str, source_body: str) -> dict:
     if saved.get("enabled") is False:
         return {"status": "disabled", "reason": "skill_disabled"}
     try:
-        skill_md = saved.get("instructions") or (asset_dir(category) / "SKILL.md").read_text(encoding="utf-8")
+        skill_md = saved.get("instructions") or instructions_path(category).read_text(encoding="utf-8")
         examples = _history(category)
     except (OSError, ValueError):
         return {"status": "failed", "reason": "skill_asset_missing"}

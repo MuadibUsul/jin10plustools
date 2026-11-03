@@ -15,7 +15,7 @@ from typing import Any
 from app.db.models import utcnow
 
 from .policy import CATEGORIES
-from .skill_ai import SKILL_NAMES, asset_dir, sample_label
+from .skill_ai import SKILL_NAMES, asset_dir, sample_label, instructions_path
 
 MAX_INSTRUCTIONS = 8000
 MAX_HISTORY = 20
@@ -60,7 +60,7 @@ def _bundled(category: str) -> str:
             if path.is_file():
                 return path.read_text(encoding="utf-8")
         raise ValueError("文字质量 Skill 规范文件未安装")
-    return (asset_dir(category) / "SKILL.md").read_text(encoding="utf-8")
+    return instructions_path(category).read_text(encoding="utf-8")
 
 
 def _description(text: str) -> str:

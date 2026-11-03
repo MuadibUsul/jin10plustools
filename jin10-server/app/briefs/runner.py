@@ -120,7 +120,7 @@ def generate(category,day,root,run_id,action='produce',render_input=None):
     out=root/'runs'/run_id;out.mkdir(parents=True,exist_ok=True)
     record(out,1,'正在检查同日期的数据与图片快照')
     cache=root/'cache'/category/f'{day}.json'
-    previous=read(cache) if cache.exists() else None
+    previous=read(cache) if cache.exists() and not (action=='render' and render_input is not None) else None
     if action=='render' and render_input is not None:
         selected=Path(render_input)
         if selected.is_symlink() or selected.resolve().parent!=out.resolve():

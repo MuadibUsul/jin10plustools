@@ -64,7 +64,7 @@ def test_render_binds_the_current_edition_and_preserves_style_without_replacing_
     run=tmp_path/'runs'/'redraw-edition';run.mkdir()
     selected_path=run/'render-input.json';selected_path.write_text(json.dumps(selected),encoding='utf-8')
     cache=tmp_path/'cache'/'volume'/(days[-1]+'.json');cache.parent.mkdir(parents=True)
-    cache.write_text(json.dumps({'title':'另一次取数的缓存，不应覆盖编辑稿'}),encoding='utf-8')
+    cache.write_text('invalid date cache must not affect the selected edition',encoding='utf-8')
     before=cache.read_bytes()
     def forbidden(*a,**kw):raise AssertionError('A redraw cannot fetch new data')
     monkeypatch.setattr('app.briefs.sources.urlopen',forbidden)

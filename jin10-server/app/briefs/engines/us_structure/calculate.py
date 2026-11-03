@@ -88,9 +88,11 @@ def structure(day, data):
     if rut_index is None:
         raise ValueError('罗素2000目标日期尚未更新')
     today = rut[rut_index]
-    lower = [row for row in rut[:rut_index] if row['low'] < today['low']]
+    # Durable observations preserve numeric text; a new fetch supplies floats.
+    # Compare the values, never their JSON representation or lexical order.
+    lower = [row for row in rut[:rut_index] if Decimal(str(row['low'])) < Decimal(str(today['low']))]
     low_clause = f'，一度刷新{int(lower[-1]["date"][5:7])}月以来新低' if lower else '，维持在阶段高位'
-    peak = max(row['close'] for row in rut[:rut_index + 1])
+    peak = max(Decimal(str(row['close'])) for row in rut[:rut_index + 1])
     drawdown = (Decimal(str(today['close'])) / Decimal(str(peak)) - 1) * 100
     drawdown_clause = (f'，从历史高点已经回调了{abs(drawdown):.0f}%' if drawdown < 0
                        else '，仍处于历史高点附近')

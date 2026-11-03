@@ -84,6 +84,16 @@ def test_previous_session_changes_are_recomputed_from_each_fetch():
     assert result['facts']['dji_change'] == '0.00'
 
 
+def test_database_numeric_text_and_new_float_closes_produce_identical_metrics():
+    original=fixtures();expected=structure(DAY,original)
+    import copy
+    restored=copy.deepcopy(original)
+    for rows in restored.values():
+        for row in rows[:-1]:
+            row['close']=str(row['close']);row['low']=str(row['low'])
+    assert structure(DAY,restored)==expected
+
+
 @pytest.mark.parametrize('rut_close,expected', [(2800.0, '收涨'), (2600.0, '收跌')])
 def test_small_cap_direction_drives_the_second_item(rut_close, expected):
     data = fixtures()

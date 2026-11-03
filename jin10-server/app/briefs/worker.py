@@ -340,7 +340,9 @@ def execute(factory,id):
         from .skill_production import apply_skill_copy
         apply_body_template(payload,category,team_settings)
         apply_skill_copy(payload,category,team_settings)
-        if payload.get('skill'):
+        if (payload.get('editorial') or {}).get('status')=='active':
+            record(out,4,'样本风格文案已采用：'+('AI选择表达模块' if payload['editorial'].get('selection_status')=='model_selected' else '完整固定组合'))
+        elif payload.get('skill'):
             record(out,4,'Skill AI 文案已采用' if payload['skill'].get('status')=='ok'
                    else 'Skill AI 未完成，已保留固定组合文案')
     if payload and payload.get('valid') and category in PUBLIC_COMPUTE_CATEGORIES:

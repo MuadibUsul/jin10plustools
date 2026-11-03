@@ -174,7 +174,8 @@ def apply_editorial(payload: dict, category: str, team_settings: dict | None, *,
     trace = {'mode': mode, 'baseline': baseline}
     try:
         settings = get_settings()
-        selected_mode = mode or settings.briefs_editorial_mode
+        from .editorial_authorization import effective_mode,review_basis
+        selected_mode = effective_mode(team_settings,settings.briefs_editorial_mode,mode)
         if category == 'gpu_rental':
             from .gpu_editorial import apply_gpu_editorial
             # An explicit per-call mode wins. A configured off at either scope
@@ -198,12 +199,12 @@ def apply_editorial(payload: dict, category: str, team_settings: dict | None, *,
             trace.update(status='skipped', reason=reason)
             return payload
         pack = load_pack(category)
-        reviewed = (pack['status'] == 'approved'
-                    and bool((pack.get('review') or {}).get('approved_by'))
-                    and bool((pack.get('review') or {}).get('reviewed_at')))
+        authorization=review_basis(pack,category,team_settings)
+        reviewed=bool(authorization)
         if selected_mode == 'active' and not reviewed:
             trace.update(mode='shadow', requested_mode='active', reason='pack_not_reviewed')
         candidate = build_candidate(category, payload, pack=pack)
+        trace['authorization']=authorization
         if trace['mode'] == 'active':
             from .gpu_editorial_ai import select_plan
             context = _context(category, payload)
@@ -221,6 +222,7 @@ def apply_editorial(payload: dict, category: str, team_settings: dict | None, *,
                                          else 'deterministic_fallback')
         trace.update(status='shadow' if trace['mode'] == 'shadow' else 'active', candidate=candidate)
         if trace['mode'] == 'active':
+            candidate['style_review']=authorization
             payload['title'], payload['dynamic_body'] = candidate['title'], candidate['body']
     except (OSError, ValueError, TypeError, KeyError, ArithmeticError) as exc:
         trace.update(status='fallback', reason=str(exc) if isinstance(exc, ValueError)

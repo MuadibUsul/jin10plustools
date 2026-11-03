@@ -84,7 +84,7 @@ def extract(category,folder,payload=None,*,only_file=None):
                     add(series,[{'date':raw['quotes']['quote_date'],'weighted_rate':row['weighted_rate']}], 'cfets_dr_close_v1')
     elif category=='oil_etf' and payload:
         for fund in payload.get('facts',{}).get('funds',[]):
-            add(fund['ticker'],[{'date':payload['data_date'],**fund}],'issuer_futures_and_swap_estimate_v1')
+            add(fund['ticker'],[{'date':fund.get('data_date') or payload['data_date'],**fund}],'issuer_futures_and_swap_estimate_v1')
     elif category=='us_barometer':
         raw=load('us-collected.json') or load('us-snapshot.json') or {}
         add('wilshire',raw.get('wilshire',[]),'yahoo_w5000_v1')
@@ -225,6 +225,9 @@ def record_run(db,job,folder,payload,error=None):
     current={(item['series'],item['method'],item['date']):item for item in points if item['date']<=target.isoformat()}
     if current:report['publication_digest']=digest([current[key] for key in sorted(current)])
     report['current_data_valid']=bool(payload and payload.get('valid'))
+    if job.category=='oil_etf' and payload and payload.get('data_date_policy')=='latest_available':
+        report.update(data_date_policy='latest_available',fund_data_dates=payload.get('fund_data_dates',{}),
+            requested_data_date=payload.get('requested_data_date'),history_required_for_production=False)
     if not report['current_data_valid']:
         report['status']='failed';report['error']=str(error or '本次未取得完整且通过校验的数据')[:500]
     if payload:

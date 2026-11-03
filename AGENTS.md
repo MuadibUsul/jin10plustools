@@ -1,5 +1,8 @@
 # Project requirements
 
+- As requested on 2026-11-03, 原油ETF持仓 publishes each fund's latest valid issuer observation using its actual date; do not block on a calendar target, historical gaps or missing comparison snapshots. Omit unverified changes. Keep different fund dates distinct in copy, storage and templates; do not apply this policy to other columns.
+- As explicitly selected on 2026-11-03, the production team's fixed briefs use the uploaded sample style automatically, including a complete styled fallback when AI is unavailable. Preserve saved custom templates for switching. Record activation per team and exact pack digest from the user's instruction; do not fabricate global/editor blind-review approval or change other teams' settings.
+
 - As requested on 2026-11-02, diagnose fixed-brief gaps against the existing production database, history files and original capture archives before fetching replacements. Use the established programmatic capture rules; do not open interactive browser pages as an alternative data collection workflow. Do not treat a coverage warning as proof that the server lacks history.
 
 - As requested on 2026-11-02, PLUS deployments must not create backups or automatic rollback images/actions. After a successful scoped update, delete unused PLUS image tags only; retain every image used by any running container, existing database/storage volumes and other websites. Do not infer permission to delete existing backup files from this instruction.

@@ -92,9 +92,18 @@ def data_status(db:DbSession,user:CurrentUser,date:date|None=None):
         try:target=expected_date(category,day)
         except ValueError as exc:
             items.append({'category':category,'label':label,'status':'blocked','error':str(exc)});continue
-        latest=db.scalar(select(BriefDataCheck).where(BriefDataCheck.team_id==user.team_id,
-            BriefDataCheck.category==category,BriefDataCheck.data_date==target).order_by(
-            BriefDataCheck.created_at.desc()).limit(1))
+        if category=='oil_etf':
+            # This column publishes the issuer's latest observation. Its actual
+            # source day may precede the calendar target without being a failure.
+            latest=db.scalar(select(BriefDataCheck).join(BriefJob,BriefDataCheck.job_id==BriefJob.id).where(
+                BriefDataCheck.team_id==user.team_id,BriefDataCheck.category==category,
+                BriefJob.team_id==user.team_id,BriefJob.issue_date==day).order_by(
+                BriefDataCheck.created_at.desc()).limit(1))
+            if latest and latest.report.get('current_data_valid'):target=latest.data_date
+        else:
+            latest=db.scalar(select(BriefDataCheck).where(BriefDataCheck.team_id==user.team_id,
+                BriefDataCheck.category==category,BriefDataCheck.data_date==target).order_by(
+                BriefDataCheck.created_at.desc()).limit(1))
         items.append({'category':category,'label':label,'target_date':target.isoformat(),
             'status':latest.status if latest else 'not_collected',
             'checked_at':latest.created_at.isoformat() if latest else None,

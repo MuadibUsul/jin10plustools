@@ -332,7 +332,8 @@ def apply_gpu_editorial(payload: dict, team_settings: dict | None, *, mode=None)
     baseline = {'title': payload.get('title', ''), 'body': payload.get('dynamic_body', '')}
     trace = {'mode': mode, 'baseline': baseline}
     try:
-        mode = mode or get_settings().briefs_gpu_editorial_mode
+        from .editorial_authorization import effective_mode,review_basis
+        mode = effective_mode(team_settings,get_settings().briefs_gpu_editorial_mode,mode)
         if mode == 'off':
             return payload
         trace['mode'] = mode
@@ -347,12 +348,12 @@ def apply_gpu_editorial(payload: dict, team_settings: dict | None, *, mode=None)
         if mode not in {'shadow', 'active'}:
             raise ValueError('invalid_mode')
         pack = load_pack()
-        reviewed = (pack['status'] == 'approved'
-                    and bool((pack.get('review') or {}).get('approved_by'))
-                    and bool((pack.get('review') or {}).get('reviewed_at')))
+        authorization=review_basis(pack,'gpu_rental',team_settings)
+        reviewed=bool(authorization)
         if mode == 'active' and not reviewed:
             trace.update(mode='shadow', requested_mode='active', reason='pack_not_reviewed')
         candidate = build_candidate(payload, pack=pack)
+        trace['authorization']=authorization
         if trace['mode'] == 'active':
             from .gpu_editorial_ai import select_plan
             result = select_plan(team_settings, selection_context(payload, pack))
@@ -363,6 +364,7 @@ def apply_gpu_editorial(payload: dict, team_settings: dict | None, *, mode=None)
                                          else 'deterministic_fallback')
         trace.update(status='shadow' if trace['mode'] == 'shadow' else 'active', candidate=candidate)
         if trace['mode'] == 'active':
+            candidate['style_review']=authorization
             payload['title'], payload['dynamic_body'] = candidate['title'], candidate['body']
     except (OSError, ValueError, TypeError, KeyError, ArithmeticError) as exc:
         trace.update(status='fallback', reason=str(exc) if isinstance(exc, ValueError)

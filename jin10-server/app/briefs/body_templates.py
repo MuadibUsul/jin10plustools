@@ -109,6 +109,7 @@ def _values(category: str, payload: dict) -> dict[str, Any]:
         previous = facts.get("previous_source") or {}
         for ticker, prefix in (("USO", "uso"), ("BNO", "bno")):
             fund = funds.get(ticker) or {}
+            values[f"{prefix}_date"] = fund.get('data_date') or payload.get('data_date','')
             try:
                 values[f"{prefix}_wan_barrels"] = f"{float(fund.get('barrels'))/10000:.2f}"
             except (TypeError, ValueError):
@@ -171,6 +172,10 @@ def render(category: str, template: str, payload: dict) -> str:
     except ValueError as exc:
         raise TemplateError("正文模板格式不正确") from exc
     values = _values(category, payload)
+    if category=='oil_etf' and values['uso_date']!=values['bno_date']:
+        fields={field for _,field,_,_ in formatter.parse(template) if field}
+        if not {'uso_date','bno_date'}<=fields:
+            raise TemplateError('两基金数据日不同，模板需分别显示uso_date和bno_date')
     missing = sorted({field for _, field, _, _ in formatter.parse(template)
                       if field and field not in values})
     if missing:
@@ -187,6 +192,7 @@ def render(category: str, template: str, payload: dict) -> str:
 
 
 def apply(payload: dict, category: str, team_settings: dict | None) -> dict:
+    payload.pop('body_template_custom',None)
     config = ((team_settings or {}).get("brief_templates") or {}).get(category) or {}
     if config.get("use_builtin", True) is not False:
         return payload

@@ -13,8 +13,30 @@ from .skill_ai import SKILL_NAMES, polish
 
 
 def apply_skill_copy(payload: dict, category: str, team_settings: dict | None) -> dict:
+    from app.config import get_settings
+    from .editorial_authorization import effective_mode
+    from .editorial_suite import apply_editorial
+    if effective_mode(team_settings,get_settings().briefs_editorial_mode)=='active':
+        baseline={'title':payload['title'],'body':payload['dynamic_body']}
+        previous_trace=payload.get('editorial')
+        apply_editorial(payload,category,team_settings)
+        trace=payload.get('editorial') or {}
+        if trace is not previous_trace and trace.get('status')=='active':
+            payload['rule_copy']=baseline
+            selector=trace.get('selector') or {}
+            payload['skill']={**selector,'mode':'bounded_editorial','style_status':'active',
+                'selection_status':trace.get('selection_status')}
+            payload['warnings']=[w for w in payload.get('warnings',[]) if not
+                w.startswith(('AI 额度不足，已自动回退固定组合文案','Skill AI 未完成（'))]
+            if selector.get('http_status') in (402,429):
+                payload['warnings'].append('AI额度不足，已采用样本风格固定组合文案')
+            elif trace.get('selection_status')=='deterministic_fallback':
+                payload['warnings'].append('AI表达选择未完成，已采用样本风格固定组合文案')
+            if category in ('token_cost','gpu_rental','liquidity'):
+                from .delivery import complete_body
+                payload['dynamic_body']=complete_body(category,payload['dynamic_body'],payload.get('fixed_notes'))
+            return payload
     if category not in SKILL_NAMES:
-        from .editorial_suite import apply_editorial
         return apply_editorial(payload, category, team_settings)
     if category in ('token_cost', 'gpu_rental') and not payload.get('body_template_custom'):
         from .ai_compute_style import apply_compute_style

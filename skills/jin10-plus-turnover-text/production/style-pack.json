@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "pack_id": "turnover-editorial",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "category": "turnover",
   "status": "draft_pending_editor_review",
   "review": {
@@ -46,7 +46,7 @@
     "headlines": [
       {
         "id": "cooling_1",
-        "text": "【A股温度计】低换手占比不降、高换手占比不升",
+        "text": "【A股温度计】A股交易活跃度回落",
         "scenarios": [
           "cooling"
         ],
@@ -54,7 +54,7 @@
       },
       {
         "id": "cooling_2",
-        "text": "【A股温度计】两项换手率占比均线呈降温组合",
+        "text": "【A股温度计】换手率分布呈现降温迹象",
         "scenarios": [
           "cooling"
         ],
@@ -62,7 +62,7 @@
       },
       {
         "id": "warming_1",
-        "text": "【A股温度计】低换手占比不升、高换手占比不降",
+        "text": "【A股温度计】A股交易活跃度回升",
         "scenarios": [
           "warming"
         ],
@@ -70,7 +70,7 @@
       },
       {
         "id": "warming_2",
-        "text": "【A股温度计】两项换手率占比均线呈升温组合",
+        "text": "【A股温度计】换手率分布呈现回暖迹象",
         "scenarios": [
           "warming"
         ],

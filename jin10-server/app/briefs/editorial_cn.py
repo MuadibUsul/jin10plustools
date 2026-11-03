@@ -141,7 +141,7 @@ def _valuation(payload, actual, facts):
     change = erp - previous
     scenario = 'higher' if change > 0 else 'lower' if change < 0 else 'unchanged'
     main = (f'巴菲特指数（A股总市值/上年度全年GDP）为{_two(buffett)}%；'
-            f'沪深300指数股权风险溢价（ERP）为{_two(erp)}%，较{prior["date"]}')
+            f'沪深300指数股权风险溢价（ERP）为{_two(erp)}%，前值为{_two(previous)}%，较{prior["date"]}')
     main += f'{"上升" if change > 0 else "下降"}{_two(abs(change))}个百分点。' if change else f'持平（变动{_two(change)}个百分点）。'
     side = '高于' if erp > 6 else '低于' if erp < 6 else '等于'
     comparison = f'当前ERP{side}6%参考线。'
@@ -218,7 +218,6 @@ def _liquidity(payload, actual, facts):
 
 
 def _oil(payload, actual, facts):
-    previous = _prior(facts, actual)
     funds = facts.get('funds')
     if not isinstance(funds, list):
         raise ValueError('incomplete_facts')
@@ -228,6 +227,11 @@ def _oil(payload, actual, facts):
         if len(matched) != 1:
             raise ValueError('incomplete_facts')
         fund = matched[0]
+        fund_day=_day(fund.get('data_date') or actual.isoformat())
+        if fund_day>actual:raise ValueError('inconsistent_oil_date')
+        prior_day=fund.get('previous_date') or (facts.get('previous_dates') or {}).get(ticker) or facts.get('previous_date')
+        previous=_day(prior_day) if prior_day else None
+        if previous and previous>=fund_day:raise ValueError('invalid_previous_date')
         barrels = _number(fund.get('barrels'), positive=True)
         futures = _number(fund.get('futures_barrels'))
         if futures < 0:
@@ -247,16 +251,20 @@ def _oil(payload, actual, facts):
         if ticker == 'BNO' and barrels != futures:
             raise ValueError('inconsistent_oil_metric')
         text = f'{label}（{ticker}）{name}约{_two(barrels / 10000)}万桶'
+        if len({f.get('data_date') or actual.isoformat() for f in funds})>1:
+            text=f'{fund_day.isoformat()}，'+text
         if ticker == 'USO':
             text += f'，其中期货持仓{_two(futures / 10000)}万桶'
         if change is not None:
+            if previous is None:raise ValueError('invalid_previous_date')
             text += f'，期货持仓较{previous.isoformat()}'
             text += f'{"增加" if change > 0 else "减少"}{_two(abs(change) / 10000)}万桶' if change else '持平（变动0.00万桶）'
         changes.append(change)
         fragments.append(text + '。')
         bindings[ticker] = {'value_barrels': str(barrels), 'display_wan_barrels': _two(barrels / 10000),
                             'metric': name, 'change_barrels': str(change) if change is not None else None,
-                            'change_basis': fund.get('change_basis'), 'previous_date': previous.isoformat()}
+                            'change_basis': fund.get('change_basis'), 'previous_date': previous.isoformat() if previous else None,
+                            'data_date':fund_day.isoformat()}
     scenario = ('missing_change' if any(value is None for value in changes) else
                 'both_up' if all(value > 0 for value in changes) else
                 'both_down' if all(value < 0 for value in changes) else

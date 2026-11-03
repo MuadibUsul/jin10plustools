@@ -120,7 +120,7 @@ def request(url,token=None,opener=urlopen):
     except (URLError,TimeoutError,OSError):raise DataError('network_error','Source request failed') from None
 
 
-def fetch(out,expected=None):
+def fetch(out,expected=None,*,latest_per_fund=False):
     # Same public visitor configuration used by the official page. Never save/log token.
     config=request(CONFIG).decode('utf-8')
     match=re.search(r'var token\s*=\s*[\x22\x27]([^\x22\x27]+)[\x22\x27]',config)
@@ -132,10 +132,12 @@ def fetch(out,expected=None):
             raw=request(API+path,token);name=path.replace('/','-')+'.json'
             (out/name).write_bytes(raw);hashes[name]=hashlib.sha256(raw).hexdigest();data.append(raw)
         funds.append(normalize(ticker,*data,expected))
-    if len({r['data_date'] for r in funds})!=1:raise DataError('pending_update','Fund dates differ')
+    dates={r['data_date'] for r in funds}
+    if len(dates)!=1 and not latest_per_fund:raise DataError('pending_update','Fund dates differ')
     return {'provider':'USCF official public holdings','fetched_at':datetime.now(CHINA).isoformat(),
-        'data_date':funds[0]['data_date'],'expected_data_date':expected,
-        'status':'date_verified' if expected else 'latest_available_date_not_calendar_verified',
+        'data_date':max(dates),'expected_data_date':expected,
+        'fund_data_dates':{fund['ticker']:fund['data_date'] for fund in funds},
+        'status':'date_verified' if expected else 'latest_available_per_fund' if latest_per_fund else 'latest_available_date_not_calendar_verified',
         'funds':funds,'raw_sha256':hashes,'requests_per_successful_collection':5,
         'images_generated':False,'ai_used':False,'published':False}
 

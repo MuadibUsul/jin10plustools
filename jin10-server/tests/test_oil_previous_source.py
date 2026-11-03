@@ -26,7 +26,7 @@ def test_secondary_holdings_require_matching_date_and_contract():
 def test_oil_report_matches_screenshot_futures_changes(tmp_path, monkeypatch):
     sample = Path(__file__).parents[1] / 'app/briefs/samples/oil_etf/result.json'
     official = json.loads(sample.read_text(encoding='utf-8'))['facts']['official_source']
-    monkeypatch.setattr('app.briefs.engines.oil_etf.run.fetch', lambda out, day: official)
+    monkeypatch.setattr('app.briefs.engines.oil_etf.run.fetch', lambda out, day, **kwargs: official)
     prior = {'data_date': '2026-10-13', 'provider': 'CompaniesMarketCap public holdings',
              'funds': {'USO': {'futures_barrels': '16325000', 'source_url': 'https://example.test/uso', 'raw_sha256': 'a'},
                        'BNO': {'futures_barrels': '6962000', 'source_url': 'https://example.test/bno', 'raw_sha256': 'b'}}}
@@ -35,6 +35,8 @@ def test_oil_report_matches_screenshot_futures_changes(tmp_path, monkeypatch):
     out.mkdir()
     state = tmp_path / 'state'
     state.mkdir()
+    archived=state/'source-archive'/'2026-10-13';archived.mkdir(parents=True)
+    (archived/'manifest.json').write_text('{}')
     result = sources.oil_etf('2026-10-14', out, state)
     uso, bno = result['facts']['funds']
     assert uso['change_barrels'] == '-489000.0000'

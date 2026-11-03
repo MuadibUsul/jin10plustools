@@ -11,12 +11,18 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  checks:
+    uses: ./.github/workflows/test.yml
   deploy:
+    needs: checks
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
 
       - name: Check deploy credentials
         env:
@@ -39,9 +45,12 @@ jobs:
           npm run build
           python3 - <<'PY'
           from pathlib import Path
+          import json
           from zipfile import ZIP_DEFLATED, ZipFile
 
           dist = Path('dist')
+          version=json.loads((dist/'manifest.json').read_text())['version']
+          Path('../jin10-server/app/web/extension-version.json').write_text(json.dumps({'version':version}))
           target = Path('../jin10-server/app/web/plus-research-extension.zip')
           with ZipFile(target, 'w', ZIP_DEFLATED) as archive:
               for source in sorted(dist.rglob('*')):
@@ -52,7 +61,7 @@ jobs:
       - name: Package committed PLUS source
         run: |
           tar -czf "$RUNNER_TEMP/plus-release-${GITHUB_SHA}.tar.gz" \
-            jin10-server skills .dockerignore
+            jin10-server skills .dockerignore deploy/Dockerfile.release deploy/drain-worker.py
 
       - name: Deploy only the PLUS API and worker
         env:
@@ -65,8 +74,9 @@ jobs:
           remote_archive="/tmp/plus-release-${GITHUB_SHA}.tar.gz"
           scp "${ssh_options[@]}" "$RUNNER_TEMP/plus-release-${GITHUB_SHA}.tar.gz" \
             "$SSH_USER@$SSH_HOST:$remote_archive"
-          ssh "${ssh_options[@]}" "$SSH_USER@$SSH_HOST" \
-            bash -s -- "$GITHUB_SHA" "$remote_archive" < deploy/actions-release.sh
+          scp "${ssh_options[@]}" deploy/actions-release.sh "$SSH_USER@$SSH_HOST:/tmp/plus-release-${GITHUB_SHA}.sh"
+          ssh -n "${ssh_options[@]}" "$SSH_USER@$SSH_HOST" \
+            bash "/tmp/plus-release-${GITHUB_SHA}.sh" "$GITHUB_SHA" "$remote_archive"
 
       - name: Verify public health endpoint
         run: curl --fail --silent --show-error --retry 5 --retry-delay 3 https://plus.tlines.tech/api/health

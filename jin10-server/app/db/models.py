@@ -14,6 +14,18 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy.types import TypeDecorator
+import zlib
+
+
+class CompressedEvidence(TypeDecorator):
+    """Lossless storage encoding; evidence consumers always receive original bytes."""
+    impl = LargeBinary
+    cache_ok = True
+    def process_bind_param(self, value, dialect):
+        return b'PLUSZ1\0'+zlib.compress(value,6) if value is not None else None
+    def process_result_value(self, value, dialect):
+        return zlib.decompress(value[7:]) if value is not None and value.startswith(b'PLUSZ1\0') else value
 
 #: PostgreSQL 用 JSONB，测试用的 SQLite 退回 JSON
 JsonType = JSON().with_variant(JSONB(), "postgresql")
@@ -270,8 +282,20 @@ class BriefJob(Base):
     lease_until: Mapped[dt.datetime | None]
     error: Mapped[str | None] = mapped_column(Text)
     created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey('users.id', ondelete='SET NULL'))
+    schedule_origin: Mapped[bool | None] = mapped_column(Boolean)
     created_at: Mapped[dt.datetime] = mapped_column(default=utcnow)
     updated_at: Mapped[dt.datetime] = mapped_column(default=utcnow)
+
+
+class BriefSourceBlob(Base):
+    __tablename__ = 'brief_source_blobs'
+    __table_args__ = (Index('uq_brief_source_blob_team_sha','team_id','sha256',unique=True),)
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True,default=uuid.uuid4)
+    team_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('teams.id',ondelete='CASCADE'))
+    sha256: Mapped[str] = mapped_column(String(64))
+    byte_count: Mapped[int] = mapped_column(Integer)
+    content: Mapped[bytes] = mapped_column(CompressedEvidence)
+    created_at: Mapped[dt.datetime] = mapped_column(default=utcnow)
 
 
 class BriefSourceSnapshot(Base):
@@ -288,8 +312,18 @@ class BriefSourceSnapshot(Base):
     relative_path: Mapped[str] = mapped_column(String(1024))
     sha256: Mapped[str] = mapped_column(String(64))
     byte_count: Mapped[int] = mapped_column(Integer)
-    content: Mapped[bytes] = mapped_column(LargeBinary)
+    _content: Mapped[bytes] = mapped_column('content',LargeBinary,default=b'')
+    blob_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey('brief_source_blobs.id',ondelete='RESTRICT'),index=True)
+    blob: Mapped[BriefSourceBlob | None] = relationship()
     captured_at: Mapped[dt.datetime] = mapped_column(default=utcnow)
+
+    @property
+    def content(self):
+        return self.blob.content if self.blob_id is not None or self.blob is not None else self._content
+
+    @content.setter
+    def content(self,value):
+        self._content=value
 
 
 class ValuationObservation(Base):
@@ -315,6 +349,7 @@ class BriefAudit(Base):
     action: Mapped[str] = mapped_column(String(30))
     version: Mapped[int] = mapped_column(Integer)
     user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey('users.id', ondelete='SET NULL'))
+    details: Mapped[dict | None] = mapped_column(JsonType)
     created_at: Mapped[dt.datetime] = mapped_column(default=utcnow)
 
 

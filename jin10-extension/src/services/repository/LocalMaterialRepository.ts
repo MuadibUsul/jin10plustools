@@ -3,6 +3,7 @@ import { createSerialQueue } from '@/shared/async';
 import { STORAGE_KEYS } from '@/shared/constants';
 import { AppException } from '@/shared/errors';
 import type { MaterialRepository } from './MaterialRepository';
+import { acknowledgedMaterial } from './syncAcknowledgement';
 
 type DedupeIndex = Record<string, string>;
 
@@ -58,6 +59,20 @@ export class LocalMaterialRepository implements MaterialRepository {
 
   replace(oldId: string, material: NewsMaterial, dedupeKeys: string[]): Promise<void> {
     return this.serial(() => this.write(oldId, material, dedupeKeys));
+  }
+
+  acknowledge(sent: NewsMaterial, received: NewsMaterial | null, dedupeKeys: string[]): Promise<void> {
+    return this.serial(async () => {
+      const current = await this.get(sent.id);
+      const next = acknowledgedMaterial(sent, current, received);
+      if (next) await this.write(sent.id, next, dedupeKeys);
+      else if (current) {
+        const [ids, index] = await this.readIndexes();
+        await chrome.storage.local.set({ [STORAGE_KEYS.materialIndex]: ids.filter(id => id !== sent.id),
+          [STORAGE_KEYS.materialDedupe]: Object.fromEntries(Object.entries(index).filter(([,id]) => id !== sent.id)) });
+        await chrome.storage.local.remove(STORAGE_KEYS.material(sent.id));
+      }
+    });
   }
 
   remove(id: string): Promise<void> {

@@ -92,5 +92,8 @@ def test_only_two_deliverable_versions_and_latest_visible(db_factory,seed):
         versions=list(db.scalars(select(BriefVersion).where(BriefVersion.issue_id==issue.id).order_by(BriefVersion.number.desc())))
         assert [v.number for v in versions]==[4,3]
         assert [v['number'] for v in issue_out(db,issue)['versions']]==[4,3]
-        archived=db.get(Team,issue.team_id).settings['retired_issue_notes']
-        assert [v['notes'] for v in archived]==['注释0','注释1']
+        from app.db.models import BriefAudit
+        archived=list(db.scalars(select(BriefAudit).where(BriefAudit.issue_id==issue.id,
+            BriefAudit.action=='retired_notes').order_by(BriefAudit.version)))
+        assert [v.details['fixed_notes'] for v in archived]==['注释0','注释1']
+        assert not db.get(Team,issue.team_id).settings.get('retired_issue_notes')

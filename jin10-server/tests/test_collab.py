@@ -49,7 +49,7 @@ class TestParseReports:
 
 
 class TestRetention:
-    def test_purges_materials_older_than_retention(
+    def test_preserves_materials_older_than_workspace_retention(
         self, client: TestClient, db_factory: sessionmaker[Session]
     ) -> None:
         h = login(client, "editor@plus.test")
@@ -58,6 +58,6 @@ class TestRetention:
         push(client, h, old, fresh)
         with db_factory() as db:
             result = purge(db, 7, now=dt.datetime(2026, 9, 22, tzinfo=dt.UTC))
-            assert result["materials"] == 1
-            assert db.get(Material, uuid.UUID(old["id"])) is None
+            assert result["materials"] == 0 and result['archive_preserved']
+            assert db.get(Material, uuid.UUID(old["id"])) is not None
             assert db.get(Material, uuid.UUID(fresh["id"])) is not None

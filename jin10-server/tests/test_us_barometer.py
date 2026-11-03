@@ -121,7 +121,7 @@ def test_stale_cached_product_is_rebuilt_from_its_snapshot(tmp_path):
 
     assert payload['images'] == ['美股晴雨表.png']
     assert '（图）' not in payload['dynamic_body']
-    assert payload['pipeline'] == runner.pipeline_signature()
+    assert payload['pipeline'] == runner.pipeline_signature('us_barometer')
     assert (tmp_path / payload['artifact_dir'] / '美股晴雨表.png').is_file()
     # Same pipeline again: the freshly produced product is reused as-is.
     again = runner.generate('us_barometer', day.isoformat(), tmp_path, 'second-run')

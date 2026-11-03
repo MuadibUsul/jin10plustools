@@ -44,7 +44,7 @@ def fetch(day, out,*,allow_gap_repair=False,on_series=None):
             'erp': window(erp_rows, day), 'sources': dict(SOURCES)}
 
 
-def render(snapshot, out):
+def render(snapshot, out,*,draw=True):
     day = snapshot['target']
     buffett = buffett_series(snapshot['wilshire'], snapshot['gdp'])
     erp = erp_series(snapshot['erp'])
@@ -56,10 +56,10 @@ def render(snapshot, out):
     quarter = gdp_asof(snapshot['gdp'], day)
     from app.briefs.charts import us_barometer_chart
     record(out, 3, '指标与分级已校验，正在绘制双面板合成图')
-    chart = us_barometer_chart(buffett, erp, out)
+    chart = us_barometer_chart(buffett, erp, out) if draw else None
     return {
         'title': copy['title'], 'dynamic_body': copy['body'],
-        'images': [chart.name], 'data_date': day,
+        'images': [chart.name] if chart else [], 'data_date': day,
         'facts': {
             'buffett_pct': str(today_buffett['pct']), 'buffett_grade': copy['buffett']['grade'],
             'erp_pct': str(today_erp['pct']), 'erp_grade': copy['erp']['grade'],

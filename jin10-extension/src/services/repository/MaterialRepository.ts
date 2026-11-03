@@ -19,6 +19,8 @@ export interface MaterialRepository {
   listAll(): Promise<NewsMaterial[]>;
   /** 用服务端版本替换本地记录；ID 可能变化（同事已收藏过同一条时，采用团队既有 ID） */
   replace(oldId: string, material: NewsMaterial, dedupeKeys: string[]): Promise<void>;
+  /** Atomically acknowledge the sent snapshot while preserving newer local changes. */
+  acknowledge(sent: NewsMaterial, received: NewsMaterial | null, dedupeKeys: string[]): Promise<void>;
   /** 彻底移除本地记录 */
   remove(id: string): Promise<void>;
 }

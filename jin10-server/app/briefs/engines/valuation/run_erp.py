@@ -309,7 +309,7 @@ def _completed_run(output, expected, mode, input_hash, bond_input_hash, window_y
         return None
 
 
-def run_erp(workbook, out_dir, *, mode, expected_date, bond_history=None, force_refresh=False, window_years=10, progress=None):
+def run_erp(workbook, out_dir, *, mode, expected_date, bond_history=None, force_refresh=False, window_years=10, progress=None,data_only=False):
     notify = progress or (lambda message: None)
     expected = _day(expected_date)
     if isinstance(window_years, bool) or not isinstance(window_years, int) or window_years < 1:
@@ -467,6 +467,10 @@ def run_erp(workbook, out_dir, *, mode, expected_date, bond_history=None, force_
         _write_json(output / 'verification.json', metadata)
         return metadata
     # Rule text is produced without any model call; AI enhancement can run later.
+    if data_only:
+        metadata.update(status='data_complete',data_ready=True,image_generated=False,release_ready=False)
+        _write_json(output/'verification.json',metadata)
+        return metadata
     (output / '快讯文案_规则.md').write_text(rule_copy(rows, mode), encoding='utf-8')
     try:
         image_path, chart_audit = _render(rows, output, window_years=window_years)

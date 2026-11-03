@@ -208,7 +208,7 @@ def test_export_registers_news_tables_and_keeps_team_scope(client, db_factory, m
     for key in ("news_events", "news_event_revisions", "news_event_claims", "news_drafts",
                 "news_skill_versions", "news_workflow_runs", "news_audit_events"):
         assert key in keys
-    assert len(keys) == 31
+    assert len(keys) == 32 and 'brief_source_blobs' in keys
     assert {'brief_data_points','brief_data_checks'} <= set(keys)
     body = client.get("/api/export/news_events", headers=editor,
                       params={"start": "2026-10-20", "end": "2026-10-20", "format": "json"}).json()

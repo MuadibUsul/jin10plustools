@@ -13,13 +13,28 @@ from pathlib import Path
 
 from sqlalchemy import select,or_
 
-from app.db.models import BriefSourceSnapshot
+from app.db.models import BriefSourceSnapshot,BriefSourceBlob
+from sqlalchemy.exc import IntegrityError
 from .policy import expected_date
 
 DATA_EXTENSIONS = frozenset({'.json', '.csv', '.tsv', '.html', '.xml', '.txt',
                              '.md', '.xls', '.xlsx', '.parquet'})
 MAX_FILE_BYTES = 10_000_000
 MAX_RUN_BYTES = 100_000_000
+
+
+def evidence_blob(db,team_id,digest,content):
+    blob=db.scalar(select(BriefSourceBlob).where(BriefSourceBlob.team_id==team_id,BriefSourceBlob.sha256==digest))
+    if blob is None:
+        try:
+            with db.begin_nested():
+                blob=BriefSourceBlob(team_id=team_id,sha256=digest,byte_count=len(content),content=content)
+                db.add(blob);db.flush()
+        except IntegrityError:
+            blob=db.scalar(select(BriefSourceBlob).where(BriefSourceBlob.team_id==team_id,BriefSourceBlob.sha256==digest))
+    if blob is None or blob.byte_count!=len(content) or blob.content!=content:
+        raise ValueError('来源证据内容寻址核验失败')
+    return blob
 
 
 def restore_all_a_capture(db,job,folder,expected,previous,*,limit=128):
@@ -170,7 +185,7 @@ def archive_run(db, job, folder: Path, *, history_dir: Path | None = None,
                     attempt=job.attempts, category=job.category,
                     data_date=date.fromisoformat(data_date) if data_date else expected_date(job.category, job.issue_date),
                     relative_path=name, sha256=digest, byte_count=len(content),
-                    content=content))
+                    blob=evidence_blob(db,job.team_id,digest,content)))
             count += 1
     db.flush()
     return {'storage': 'postgresql', 'job_id': str(job.id), 'attempt': job.attempts,

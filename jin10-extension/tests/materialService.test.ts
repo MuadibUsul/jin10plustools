@@ -3,6 +3,7 @@ import { createMaterialService, dedupeKeys } from '@/services/materialService';
 import type { MaterialRepository } from '@/services/repository/MaterialRepository';
 import type { NewsMaterial, NewsMaterialDraft, PlusInterpretation } from '@/types/material';
 import type { SaveMaterialRequest } from '@/types/messages';
+import { acknowledgedMaterial } from '@/services/repository/syncAcknowledgement';
 
 class MemoryRepository implements MaterialRepository {
   items = new Map<string, NewsMaterial>();
@@ -31,6 +32,11 @@ class MemoryRepository implements MaterialRepository {
   async replace(oldId: string, m: NewsMaterial, keys: string[]) {
     this.items.delete(oldId);
     await this.save(m, keys);
+  }
+  async acknowledge(sent: NewsMaterial, received: NewsMaterial | null, keys: string[]) {
+    const next = acknowledgedMaterial(sent, await this.get(sent.id), received);
+    this.items.delete(sent.id);
+    if (next) await this.save(next, keys);
   }
   async remove(id: string) {
     this.items.delete(id);

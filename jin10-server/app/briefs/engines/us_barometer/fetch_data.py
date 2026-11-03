@@ -9,6 +9,7 @@ from __future__ import annotations
 import csv
 import io
 import json
+import os
 from datetime import date
 from urllib.parse import urlencode
 
@@ -28,8 +29,10 @@ def get(url, headers=None):
     merged = {'Connection': 'close', **(headers or {})}
     last = None
     for attempt in range(3):
+        remaining=float(os.getenv('SOURCE_DEADLINE_MONOTONIC','inf'))-time.monotonic()
+        if remaining<=0:raise ValueError('本次来源读取预算已用完；已保存完成的真实数据，等待下一次重试')
         try:
-            with httpx.Client(timeout=30, follow_redirects=True) as client:
+            with httpx.Client(timeout=min(30,max(.1,remaining)), follow_redirects=True) as client:
                 response = client.get(url, headers=merged)
             response.raise_for_status()
             raw = response.content
@@ -38,7 +41,7 @@ def get(url, headers=None):
             return raw
         except (httpx.TimeoutException, httpx.TransportError) as error:
             last = error
-            time.sleep(1.5 * (attempt + 1))
+            time.sleep(min(1.5 * (attempt + 1),max(0,float(os.getenv('SOURCE_DEADLINE_MONOTONIC','inf'))-time.monotonic())))
     raise ValueError('来源连接超时，请稍后重试') from last
 
 

@@ -11,7 +11,7 @@ function badge(item) {
   return node('span', item.enabled ? '已启用' : '已停用', `badge ${item.enabled ? 'ready' : 'warning'}`);
 }
 function meta(item) {
-  const sampleInfo = item.category === 'editorial_quality' ? '适用于新鲜事与注解辅助' : `${item.samples} 条历史样本`;
+  const sampleInfo = item.category === 'editorial_quality' ? '适用于新鲜事与注解辅助' : `${item.samples} 条${item.sample_origin === 'verified_sample_reproduction' ? '经需求核对的复现参考' : '历史样本'}`;
   return `${item.skill_id}@${item.version} · ${item.customized ? '团队规范' : '内置规范'} · ${sampleInfo}`;
 }
 

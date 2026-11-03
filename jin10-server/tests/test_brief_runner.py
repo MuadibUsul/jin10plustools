@@ -107,7 +107,7 @@ def test_cached_valuation_copy_uses_a_share_label(tmp_path):
         'title':'估值','dynamic_body':body,'data_date':'2026-10-14',
         'images':['chart.png'],'image_sha256':{'chart.png':hashlib.sha256(b'chart').hexdigest()},
         'artifact_dir':'runs/original','deepseek':{'status':'ok','body':body},
-        'pipeline':pipeline_signature()})
+        'pipeline':pipeline_signature('valuation')})
     with patch.dict('app.briefs.runner.ADAPTERS',{'valuation':lambda *a,**k:pytest.fail('unexpected fetch')}):
         result=generate('valuation','2026-10-14',tmp_path,'updated')
     assert result['dynamic_body']=='巴菲特指数（A股总市值/上年度全年GDP）为87.21%。'
@@ -122,7 +122,7 @@ def test_default_notes_change_prevents_cache_reuse(tmp_path, monkeypatch):
         'title':'标题','dynamic_body':'正文','data_date':'2026-10-14','fixed_notes':'旧注释',
         'images':['image.png'],'image_sha256':{'image.png':hashlib.sha256(b'old-image').hexdigest()},
         'artifact_dir':'runs/original','deepseek':{'status':'not_configured'},
-        'pipeline':pipeline_signature()})
+        'pipeline':pipeline_signature('volume')})
     monkeypatch.setenv('CATEGORY_NOTES','新注释')
     def rendered(rows,out):
         (out/'image.png').write_bytes(b'new-image')

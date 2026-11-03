@@ -52,6 +52,7 @@ def enqueue(db,team_id,day,category,*,action='produce',preview=False,user_id=Non
     if active:
         # A manual click takes a queued automatic retry out of the morning schedule.
         if user_id is not None and (active.status=='waiting' or active.created_by is None and active.status=='queued'):
+            if active.schedule_origin is None:active.schedule_origin=active.created_by is None and not active.preview
             active.created_by=user_id;active.preview=preview
             active.status='queued';active.next_attempt_at=utcnow()
             db.flush()
@@ -63,6 +64,7 @@ def enqueue(db,team_id,day,category,*,action='produce',preview=False,user_id=Non
         with db.begin_nested():
             item=BriefJob(team_id=team_id,issue_date=day,category=category,action=action,
                           preview=preview,dedupe_key=key,active_key=active_key,created_by=user_id,
+                          schedule_origin=user_id is None and not preview and action!='reconcile',
                           manual_capture=manual_capture)
             db.add(item);db.flush()
         ensure_issue(db,team_id,day,category)
@@ -74,15 +76,25 @@ def enqueue(db,team_id,day,category,*,action='produce',preview=False,user_id=Non
 def append_version(db,issue,payload,*,user_id=None,kind='generated',title=None,body=None):
     # Lock is always acquired by caller before allocating a revision number.
     payload=dict(payload)
+    payload['title']=copy_dates(title if title is not None else payload['title'])
+    payload['dynamic_body']=copy_dates(body if body is not None else payload['dynamic_body'])
     if 'fixed_notes' not in payload:
         config=db.get(BriefConfig,issue.team_id)
         payload['fixed_notes']=(config.notes or {}).get(issue.category,default_notes(issue.category)) if config else default_notes(issue.category)
     issue.version+=1;issue.updated_at=utcnow()
     item=BriefVersion(issue_id=issue.id,number=issue.version,kind=kind,
-        title=copy_dates(title or payload['title']),dynamic_body=copy_dates(body if body is not None else payload['dynamic_body']),
+        title=payload['title'],dynamic_body=payload['dynamic_body'],
         payload=payload,created_by=user_id)
     db.add(item);db.add(BriefAudit(issue_id=issue.id,action=kind,version=issue.version,user_id=user_id))
     db.flush();prune_versions(db,issue);return item
+
+
+def edition_payload(version):
+    """The stored editorial columns are authoritative, including legacy edits."""
+    from copy import deepcopy
+    payload=deepcopy(version.payload or {})
+    payload.update(title=copy_dates(version.title),dynamic_body=copy_dates(version.dynamic_body))
+    return payload
 
 
 def prepare_chart_notes_revision(issue, previous, notes):
@@ -114,7 +126,7 @@ def prepare_chart_notes_revision(issue, previous, notes):
             image, _, _ = render_poster(rows, folder, logo_path=logo, notes=notes)
         else:
             raise ValueError('该栏目暂不支持重绘图内注释')
-        payload = dict(previous.payload)
+        payload = edition_payload(previous)
         payload['fixed_notes'] = payload['chart_notes'] = notes
         payload['artifact_dir'] = folder.relative_to(root).as_posix()
         payload['image_sha256'] = {image.name: hashlib.sha256(image.read_bytes()).hexdigest()}
@@ -129,26 +141,28 @@ def prune_versions(db,issue):
     versions=list(db.scalars(select(BriefVersion).where(BriefVersion.issue_id==issue.id).order_by(BriefVersion.number.desc())))
     keep={version.number for version in versions[:2]}
     if issue.confirmed_version: keep.add(issue.confirmed_version)
+    retired={v.id for v in versions if v.number not in keep}
+    root=root_for(issue.team_id).resolve();delivery_root=(root/'delivery').resolve()
+    retained=list(db.scalars(select(BriefVersion).join(BriefIssue).where(
+        BriefIssue.team_id==issue.team_id,BriefVersion.id.not_in(retired)))) if retired else []
+    referenced={(root/(v.payload or {}).get('artifact_dir','')).resolve() for v in retained}
+    pending=db.info.get('derived_directory_cleanup',set())
+    for folder in referenced:pending.discard((folder,delivery_root))
     for old in versions:
         if old.number in keep: continue
-        # Notes remain reproducible without retaining extra downloadable editions.
-        team=db.get(Team,issue.team_id,with_for_update=True)
-        saved=dict(team.settings or {})
-        notes=list(saved.get('retired_issue_notes',[]))
-        notes.append({'issue_id':str(issue.id),'version':old.number,'notes':(old.payload or {}).get('fixed_notes',''),'created_at':old.created_at.isoformat()})
-        team.settings={**saved,'retired_issue_notes':notes}
-        from app.services.business_history import record
-        record(db,team)
-        db.add(BriefAudit(issue_id=issue.id,action='retired_notes',version=old.number,user_id=old.created_by))
+        db.add(BriefAudit(issue_id=issue.id,action='retired_notes',version=old.number,user_id=old.created_by,
+            details={'title':old.title,'dynamic_body':old.dynamic_body,
+                **{key:(old.payload or {}).get(key) for key in ('data_date','fixed_notes','facts','editorial')},
+                'created_at':old.created_at.isoformat()}))
         db.execute(update(BriefSourceSnapshot).where(BriefSourceSnapshot.version_id==old.id).values(version_id=None))
         if issue.confirmed_version==old.number:
             issue.confirmed_version=None;issue.confirmed_by=None;issue.confirmed_at=None
-        delivery_root=(root_for(issue.team_id)/'delivery').resolve()
-        delivery=(root_for(issue.team_id)/(old.payload or {}).get('artifact_dir','')).resolve()
-        if delivery.is_relative_to(delivery_root) and delivery.is_dir():
-            shutil.rmtree(delivery, ignore_errors=True)
+        from app.services.file_cleanup import after_commit_directory
+        delivery=(root/(old.payload or {}).get('artifact_dir','')).resolve()
+        if delivery!=delivery_root and delivery.is_relative_to(delivery_root) and delivery not in referenced:
+            after_commit_directory(db,delivery,delivery_root)
         legacy=delivery_root/str(old.id)
-        if legacy!=delivery and legacy.is_dir(): shutil.rmtree(legacy, ignore_errors=True)
+        if legacy!=delivery and legacy not in referenced:after_commit_directory(db,legacy,delivery_root)
         db.delete(old)
 
 
@@ -173,6 +187,10 @@ def version_out(issue,version):
         'data_date':data.get('data_date'),'warnings':data.get('warnings',[]),
         'data_reliability':data.get('data_reliability'),
         'facts':data.get('facts',{}),'deepseek':ai,
+        'editorial':{key:(data.get('editorial') or {}).get(key) for key in
+            ('status','mode','reason','writer','selection_status','sample_count','pending_pack_version')},
+        'editorial_quality':((data.get('editorial') or {}).get('candidate') or {}).get('style_quality'),
+        'skill':{key:(data.get('skill') or {}).get(key) for key in ('status','reason','provider','model','style_status')},
         'images':[{'name':x,'url':f'/api/briefs/issues/{issue.id}/files/{version.number}/{x}'} for x in data.get('images',[])],
         'preview':data.get('preview',True),'valid':data.get('valid',False)}
 

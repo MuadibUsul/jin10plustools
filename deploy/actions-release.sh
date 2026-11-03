@@ -55,8 +55,28 @@ release_dir="$(mktemp -d "$root/releases/$revision.XXXXXX")"
 tar -xzf "$archive" -C "$release_dir"
 rm -f -- "$archive"
 
+# Keep a bounded inventory of every running service outside the two PLUS
+# application containers, including the existing PLUS database. Never inspect
+# environment variables or modify these containers.
+inventory="$release_dir/protected-containers.json"
+python3 - "$inventory" <<'PY'
+import json,subprocess,sys
+ids=subprocess.check_output(['docker','ps','-q'],text=True).split()
+rows=json.loads(subprocess.check_output(['docker','inspect',*ids],text=True)) if ids else []
+protected={}
+for row in rows:
+    labels=row['Config'].get('Labels') or {}
+    if labels.get('plus.validation')=='true':continue
+    if labels.get('com.docker.compose.project')=='plus' and labels.get('com.docker.compose.service') in ('api','brief-worker'):continue
+    protected[row['Id']]={'name':row['Name'],'image':row['Image'],'started':row['State']['StartedAt']}
+with open(sys.argv[1],'w') as stream:json.dump(protected,stream)
+print('Protected running containers:',len(protected))
+PY
+
 echo "Building PLUS image $release_image"
-docker build -f "$release_dir/jin10-server/Dockerfile" -t "$release_image" "$release_dir"
+base_image="$(docker inspect -f '{{.Config.Image}}' plus-api)"
+docker build --network=none --build-arg "BASE_IMAGE=$base_image" -f "$release_dir/deploy/Dockerfile.release" -t "$release_image" "$release_dir"
+python3 "$release_dir/deploy/drain-worker.py" --worker "$worker_id"
 
 # Requested 2026-11-02: no deployment backups or automatic rollback.
 # Existing database/storage stay in place; only unused PLUS images are removed.
@@ -76,6 +96,8 @@ if [[ "$api_healthy" != true ]]; then
   echo 'PLUS API did not become healthy' >&2
   exit 1
 fi
+docker exec plus-api python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/ready',timeout=10)"
+docker exec plus-api python -c "from alembic.config import Config; from alembic.script import ScriptDirectory; from alembic.runtime.migration import MigrationContext; from app.db.session import get_engine; c=get_engine().connect(); assert MigrationContext.configure(c).get_current_revision()==ScriptDirectory.from_config(Config('/srv/alembic.ini')).get_current_head(); c.close()"
 
 if ! PLUS_RELEASE_IMAGE="$release_image" "${compose_cmd[@]}" up -d --no-deps --no-build brief-worker; then
   exit 1
@@ -105,6 +127,25 @@ try:
     os.replace(name,path)
 finally:
     if os.path.exists(name):os.unlink(name)
+PY
+
+docker exec plus-api python -c "from app.config import get_settings; (get_settings().storage_dir/'.brief-worker-drain').unlink(missing_ok=True)"
+worker_ready=false
+for _ in $(seq 1 12); do
+  if docker exec plus-api python -c "import json; from datetime import datetime,timezone; from app.config import get_settings; p=json.loads((get_settings().storage_dir/'.brief-worker-heartbeat.json').read_text()); assert (datetime.now(timezone.utc)-datetime.fromisoformat(p['at'])).total_seconds()<20 and not p.get('draining')" 2>/dev/null; then
+    worker_ready=true; break
+  fi
+  sleep 3
+done
+[[ "$worker_ready" == true ]] || { echo 'Worker heartbeat did not become ready; no rollback performed' >&2; exit 1; }
+
+python3 - "$inventory" <<'PY'
+import json,subprocess,sys
+with open(sys.argv[1]) as stream:protected=json.load(stream)
+for key,before in protected.items():
+    row=json.loads(subprocess.check_output(['docker','inspect',key],text=True))[0]
+    assert row['State']['Running'] and row['Image']==before['image'] and row['State']['StartedAt']==before['started'], 'Protected service changed: '+before['name']
+print('All protected containers remain running without a restart:',len(protected))
 PY
 
 while IFS= read -r image; do

@@ -30,13 +30,13 @@ def fetch(day, out,*,allow_gap_repair=False,on_series=None):
             'sources': {'yahoo': 'https://query1.finance.yahoo.com/v8/finance/chart/'}}
 
 
-def render(snapshot, out):
+def render(snapshot, out,*,draw=True):
     day = snapshot['target']
     result = structure(day, snapshot['data'])
     from app.briefs.charts import us_structure_chart
     record(out, 3, '指数涨跌与宽度差值已校验，正在绘制市场结构图表')
-    chart = us_structure_chart(result['gap_rows'], out)
+    chart = us_structure_chart(result['gap_rows'], out) if draw else None
     return {
-        'title': result['title'], 'dynamic_body': result['body'], 'images': [chart.name],
+        'title': result['title'], 'dynamic_body': result['body'], 'images': [chart.name] if chart else [],
         'data_date': day, 'facts': {**result['facts'], 'sources': snapshot['sources']}, 'warnings': [],
     }

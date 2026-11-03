@@ -23,7 +23,7 @@ from sqlalchemy.orm import Session
 
 from app.briefs.policy import CHINA
 from app.db.models import (
-    AIComputeObservation, AIComputeRevision, TeamBusinessRevision, Asset, Board, BriefAudit, BriefIssue, BriefJob, BriefSourceSnapshot, BriefVersion, BriefDataPoint, BriefDataCheck,
+    AIComputeObservation, AIComputeRevision, TeamBusinessRevision, Asset, Board, BriefAudit, BriefIssue, BriefJob, BriefSourceSnapshot, BriefSourceBlob, BriefVersion, BriefDataPoint, BriefDataCheck,
     Feedback, Issue, Material, NewsAuditEvent, NewsDraft, NewsDraftRevision, NewsEvent,
     NewsEventAnalysis, NewsEventClaim, NewsEventClaimEvidence, NewsEventEvidence,
     NewsEventRevision, NewsSkillVersion, NewsWorkflowNode, NewsWorkflowRun,
@@ -223,7 +223,7 @@ BRIEF_JOBS = build_dataset(
         ('id', '任务ID', 'text'), ('issue_date', '生产日期', 'date'), ('category', '栏目', 'text'),
         ('action', '动作', 'text'), ('preview', '测试运行', 'bool'), ('status', '状态', 'text'),
         ('attempts', '尝试次数', 'int'), ('error', '错误', 'text'),
-        ('created_by', '发起人', 'user'), ('next_attempt_at', '下次尝试', 'datetime'),
+        ('created_by', '发起人', 'user'), ('schedule_origin','原自动排期','bool'), ('next_attempt_at', '下次尝试', 'datetime'),
         ('created_at', '创建时间', 'datetime'), ('updated_at', '更新时间', 'datetime'),
     ),
 )
@@ -263,7 +263,7 @@ BRIEF_AUDITS = build_dataset(
     order_column=BriefAudit.created_at,
     columns=_columns(
         ('id', '记录ID', 'text'), ('issue_id', '期次ID', 'text'), ('action', '操作', 'text'),
-        ('version', '版本号', 'int'), ('user_id', '操作人', 'user'),
+        ('version', '版本号', 'int'), ('user_id', '操作人', 'user'), ('details','操作及退休稿件归档','json'),
         ('created_at', '操作时间', 'datetime'),
     ),
 )
@@ -556,6 +556,12 @@ BRIEF_DATA_CHECKS = build_dataset(
     columns=_columns(('id','检查ID','text'),('category','栏目','text'),('data_date','目标日期','date'),
         ('status','状态','text'),('report','覆盖报告','json'),('created_at','检查时间','datetime')))
 
+BRIEF_BLOBS = build_dataset(
+    key='brief_source_blobs',label='快讯证据内容清单',date_label='首次归档时间',
+    description='团队内去重的原始证据清单，仅导出哈希、原始大小与时间，不导出证据二进制。',
+    model=BriefSourceBlob,team_column=BriefSourceBlob.team_id,date_column=BriefSourceBlob.created_at,
+    columns=_columns(('id','证据ID','text'),('sha256','SHA-256','text'),('byte_count','原始字节数','int'),('created_at','首次归档时间','datetime')))
+
 DATASETS: dict[str, Dataset] = {dataset.key: dataset for dataset in (
     MATERIALS, ASSETS, ISSUES, BOARDS, PARSE_REPORTS,
     BRIEF_ISSUES, BRIEF_VERSIONS, BRIEF_JOBS, BRIEF_SNAPSHOTS, VALUATION_OBSERVATIONS,
@@ -564,7 +570,7 @@ DATASETS: dict[str, Dataset] = {dataset.key: dataset for dataset in (
     NEWS_EVENT_LINKS, NEWS_EVENT_ANALYSES, NEWS_DRAFTS, NEWS_DRAFT_REVISIONS,
     NEWS_SKILL_VERSIONS, NEWS_WORKFLOW_RUNS, NEWS_WORKFLOW_NODES, NEWS_AUDIT,
     AI_COMPUTE_REVISIONS, BUSINESS_REVISIONS, AI_COMPUTE, TOKEN_COST, GPU_RENTAL,
-    BRIEF_DATA_POINTS, BRIEF_DATA_CHECKS,
+    BRIEF_DATA_POINTS, BRIEF_DATA_CHECKS, BRIEF_BLOBS,
 )}
 
 

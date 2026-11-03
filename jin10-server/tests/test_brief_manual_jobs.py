@@ -13,6 +13,11 @@ from tests.conftest import login
 def freeze(monkeypatch, now):
     class FrozenDatetime(datetime):
         @classmethod
+        def __get_pydantic_core_schema__(cls, source, handler):
+            # FastAPI lazily resolves route annotations; the frozen clock must
+            # retain datetime's request schema even when this file runs first.
+            return handler.generate_schema(datetime)
+        @classmethod
         def now(cls, tz=None):
             return now.astimezone(tz) if tz else now.replace(tzinfo=None)
     monkeypatch.setattr('app.api.briefs.datetime', FrozenDatetime)

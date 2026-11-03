@@ -92,6 +92,15 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@app.get('/api/ready',tags=['system'])
+def ready():
+    from sqlalchemy import text
+    try:
+        with get_session_factory()() as db:db.execute(text('SELECT 1'))
+    except Exception:return JSONResponse(status_code=503,content={'status':'unavailable'})
+    return {'status':'ready'}
+
+
 class _WebFiles(StaticFiles):
     """选稿网页静态文件：每次都向服务端确认是否有新版本（未变化时返回 304，不影响速度），
     避免部署后浏览器继续使用缓存的旧脚本 / 样式"""
@@ -104,7 +113,7 @@ class _WebFiles(StaticFiles):
 
 # Explicit workspace routes precede the legacy static-file mount.
 _WEB=Path(__file__).parent/'web'
-_SKILL_CATEGORIES=frozenset({'volume','turnover','valuation','liquidity','oil_etf','token_cost','gpu_rental','editorial_quality'})
+_SKILL_CATEGORIES=frozenset({'volume','turnover','valuation','liquidity','oil_etf','us_barometer','us_structure','token_cost','gpu_rental','editorial_quality'})
 
 
 @app.get('/',include_in_schema=False)

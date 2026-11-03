@@ -26,6 +26,19 @@ function message(text, error = false) { const target = $('#settings-message'); t
 function field(label, input) { const row = node('label', label, 'field'); row.append(input); return row; }
 async function load() {
   data = await api('/api/settings');
+  if (!$('#editorial-mode')) {
+    const group = node('div', undefined, 'ai-setting');
+    const mode = node('select'); mode.id = 'editorial-mode';
+    for (const [value,label] of [['sample','按样本风格自动写稿'],['rules','规则事实稿']]) { const option=node('option',label); option.value=value; mode.append(option); }
+    const adopt=node('input'); adopt.type='checkbox'; adopt.id='adopt-current-style';
+    const label=node('label',' 采用当前风格版本','check-row');label.prepend(adopt);
+    const status=node('p','','muted');status.id='editorial-status';
+    group.append(field('固定快讯正文方式',mode),label,status,node('p','样本模式同时使用完整范文、栏目规范和本期事实；AI不可用时保留完整风格稿。自定义正文模板启用时优先采用模板。','muted'));
+    $('#ai-fields').before(group);
+  }
+  $('#editorial-mode').value=data.editorial?.mode || 'rules';$('#editorial-mode').disabled=!data.can_admin;
+  $('#adopt-current-style').checked=false;$('#adopt-current-style').disabled=!data.can_admin;
+  $('#editorial-status').textContent=(data.editorial?.packs || []).map(p=>`${p.label}：${p.status==='adopted'?'已采用 '+p.version:'尚未采用'}${p.pending_version?'，有待采用的新版本':''} · ${p.samples}则参考`).join('；');
   $('#live-url').value = data.live_url || ''; $('#live-url').readOnly = !data.can_edit;
   $('#live-channel-fields').replaceChildren();
   for (const category of data.live_catalog.categories) {
@@ -60,7 +73,7 @@ async function load() {
     const group = node('details'); group.open = category.id === 'volume';
     const toggle = node('input'); toggle.type = 'checkbox'; toggle.id = `template-builtin-${category.id}`;
     toggle.checked = config.use_builtin !== false; toggle.disabled = !data.can_edit;
-    const toggleLabel = node('label', ' 使用内置硬编码正文', 'check-row'); toggleLabel.prepend(toggle);
+    const toggleLabel = node('label', ' 使用自动正文（遵循团队正文方式）', 'check-row'); toggleLabel.prepend(toggle);
     const area = node('textarea'); area.id = `template-${category.id}`; area.value = config.template || '';
     area.rows = 5; area.maxLength = 4000; area.readOnly = !data.can_edit; area.disabled = toggle.checked;
     toggle.onchange = () => {
@@ -416,7 +429,11 @@ $('#settings-form').onsubmit = async (event) => {
       }
       if (Object.keys(changes).length) body.ai = changes;
     }
-    if (data.can_admin) body.schedule_enabled = $('#schedule-enabled').checked;
+    if (data.can_admin) {
+      body.schedule_enabled = $('#schedule-enabled').checked;
+      if ($('#editorial-mode').value !== data.editorial?.mode) body.editorial_mode=$('#editorial-mode').value;
+      if ($('#adopt-current-style').checked) body.adopt_current_style=true;
+    }
     if (data.can_admin) body.data_collection_enabled = $('#data-collection-enabled').checked;
     await api('/api/settings', { method: 'PUT', json: body });
     for (const name of Object.keys(providers)) if ($(`#key-${name}`)) $(`#key-${name}`).value = '';

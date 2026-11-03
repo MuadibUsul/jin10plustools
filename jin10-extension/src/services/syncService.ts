@@ -45,12 +45,12 @@ async function push(repo: MaterialRepository, pending: NewsMaterial[], session: 
     const batch = pending.slice(i, i + PUSH_BATCH);
     const results = await pushMaterials(batch, session);
     for (const r of results) {
-      if (r.material) {
-        const m = fromServer(r.material);
-        await repo.replace(r.client_id, m, dedupeKeys(m.source_item_id, m.fingerprint));
-      } else {
-        await repo.remove(r.client_id); // 本地删除了从未上传过的素材
-      }
+      const currentSession = await getSession();
+      if (currentSession?.team.id !== session.team.id || currentSession.api_base_url !== session.api_base_url) break;
+      const sent = batch.find(m => m.id === r.client_id);
+      if (!sent) throw new Error('服务端同步回包包含未发送的素材');
+      const m = r.material ? fromServer(r.material) : null;
+      await repo.acknowledge(sent, m, dedupeKeys((m || sent).source_item_id, (m || sent).fingerprint));
     }
   }
   return pending.length;

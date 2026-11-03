@@ -6,8 +6,10 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 from datetime import date
 from functools import lru_cache
+from functools import wraps
 from pathlib import Path
 
 from .sources import ADAPTERS, read, save
@@ -19,8 +21,8 @@ HERE = Path(__file__).parent
 SNAPSHOT_REBUILDS = {'volume', 'liquidity', 'us_barometer', 'us_structure'}
 
 
-@lru_cache(maxsize=1)
-def pipeline_signature():
+@lru_cache(maxsize=16)
+def pipeline_signature(category=None):
     """Content hash of every rule, chart and asset that shapes a brief.
 
     A cached payload is reused only when its stored signature matches this one, so
@@ -28,6 +30,13 @@ def pipeline_signature():
     new issue. Nothing needs to be bumped by hand.
     """
     digest = hashlib.sha256()
+    if category is not None:
+        from .policy import CATEGORIES
+        from .pipeline_dependencies import dependencies
+        if category not in CATEGORIES:raise ValueError('Unknown pipeline category')
+        digest.update(category.encode())
+        for name,content in dependencies(HERE,category):digest.update(name.encode());digest.update(content)
+        return digest.hexdigest()[:16]
     for path in sorted(HERE.rglob('*')):
         if (not path.is_file() or '__pycache__' in path.parts or path.suffix == '.pyc'
                 or path.relative_to(HERE).parts[:1] == ('samples',)):
@@ -115,12 +124,28 @@ def explain_result(out, category, payload):
         record(out,4,'计算核对：'+calculation)
 
 
+def _source_budget(fn):
+    @wraps(fn)
+    def bounded(*args,**kwargs):
+        prior=os.environ.get('SOURCE_DEADLINE_MONOTONIC')
+        os.environ['SOURCE_DEADLINE_MONOTONIC']=str(time.monotonic()+180)
+        try:return fn(*args,**kwargs)
+        finally:
+            if prior is None:os.environ.pop('SOURCE_DEADLINE_MONOTONIC',None)
+            else:os.environ['SOURCE_DEADLINE_MONOTONIC']=prior
+    return bounded
+
+
+@_source_budget
 def generate(category,day,root,run_id,action='produce',render_input=None):
     root=Path(root);state=root/'history'/category;state.mkdir(parents=True,exist_ok=True)
     out=root/'runs'/run_id;out.mkdir(parents=True,exist_ok=True)
     record(out,1,'正在检查同日期的数据与图片快照')
     cache=root/'cache'/category/f'{day}.json'
-    previous=read(cache) if cache.exists() and not (action=='render' and render_input is not None) else None
+    ignore_cache=(action=='refresh' or os.getenv('DATA_COLLECTION_ONLY')=='1'
+        or action=='produce' and os.getenv('MANUAL_GENERATION')=='1'
+        or action=='render' and render_input is not None)
+    previous=read(cache) if cache.exists() and not ignore_cache else None
     if action=='render' and render_input is not None:
         selected=Path(render_input)
         if selected.is_symlink() or selected.resolve().parent!=out.resolve():
@@ -148,7 +173,7 @@ def generate(category,day,root,run_id,action='produce',render_input=None):
             if (source/name).is_file():shutil.copy2(source/name,out/name)
         if action in ('produce','ai'):
             payload=dict(previous)
-            signature=pipeline_signature()
+            signature=pipeline_signature(category)
             current_notes=os.getenv('CATEGORY_NOTES')
             notes_changed=current_notes is not None and previous.get('fixed_notes','')!=current_notes
             if previous.get('pipeline')!=signature or notes_changed:
@@ -186,15 +211,25 @@ def generate(category,day,root,run_id,action='produce',render_input=None):
             if key in previous:payload[key]=previous[key]
         payload['pipeline']=previous.get('pipeline','')
     else:
-        payload['pipeline']=pipeline_signature()
+        payload['pipeline']=pipeline_signature(category)
+        payload['pipeline_category']=category
+        from .editorial_features import attach
+        if payload.get('facts'):
+            try:attach(payload,category,out)
+            except (ValueError,KeyError,TypeError,ArithmeticError):
+                payload.setdefault('warnings',[]).append('历史连续性特征未能核验，本期不写连续涨跌结论')
     record(out,4,'来源日期、标题、正文及图片已完成基础校验')
     explain_result(out,category,payload)
     if payload['data_date']!=day and not (latest_manual or latest_available):raise ValueError('来源数据日与目标日期不符')
     if not payload['title'].strip() or not payload['dynamic_body'].strip():raise ValueError('标题或正文缺失')
-    if category!='oil_etf' and not payload['images']:raise ValueError('栏目缺少配图')
+    if category!='oil_etf' and not payload['images'] and os.getenv('DATA_COLLECTION_ONLY')!='1':raise ValueError('栏目缺少配图')
     payload['artifact_dir']=out.relative_to(root).as_posix()
     payload['image_sha256']={name:hashlib.sha256((out/name).read_bytes()).hexdigest() for name in payload['images']}
     payload['valid']=True
+    if os.getenv('DATA_COLLECTION_ONLY')=='1':
+        payload['collection_only']=True;payload['deepseek']={'status':'disabled','reason':'collection_only'}
+        save(out/'result.json',payload)
+        return payload
     if action=='render':
         payload['deepseek']=previous.get('deepseek',{'status':'not_configured'})
         save(out/'result.json',payload)

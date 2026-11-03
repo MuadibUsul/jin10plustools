@@ -15,8 +15,8 @@ RUN fc-cache -f
 WORKDIR /srv
 
 # 先装依赖（利用镜像层缓存）
-COPY jin10-server/pyproject.toml ./
-RUN mkdir app && touch app/__init__.py && pip install -e . && python -m playwright install --with-deps chromium && rm -rf app
+COPY jin10-server/pyproject.toml jin10-server/requirements.lock ./
+RUN mkdir app && touch app/__init__.py && pip install -r requirements.lock && pip install --no-deps -e . && python -m playwright install --with-deps chromium && rm -rf app
 
 COPY jin10-server/app ./app
 COPY jin10-server/alembic.ini ./

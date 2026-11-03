@@ -47,6 +47,13 @@ async function refresh() {
   }
   if (day !== $('#day').value) return;
   if (status) { dataStates = status.items || []; dataStatusDay = day; dataStatusAt = Date.now(); }
+  if (status && canEdit()) {
+    const health = await api('/api/briefs/health');
+    let banner=$('#production-health');
+    if (!banner) { banner=node('div',undefined,'warning');banner.id='production-health';banner.setAttribute('role','status');$('#cards').before(banner); }
+    banner.textContent=(health.alerts || []).map(a=>a.message).join('；');banner.hidden=!(health.alerts || []).length;
+  }
+  if (day !== $('#day').value) return;
   items = data.items; renderCards();
   if (selected && !dirty) {
     const fresh = items.find((x) => x.id === selected.id);
@@ -96,18 +103,24 @@ function renderCards() {
     if (job) body.append(node('p', `${job.status === 'failed' && version ? '最近一次任务失败；已有预览图可查看' : labels[job.status] || job.status}${job.error ? '：' + job.error : ''}`, job.status === 'failed' ? 'error' : 'muted'));
     if (job?.status === 'waiting' && job.next_attempt_at) body.append(node('p', `下次重试：${displayTime(job.next_attempt_at)}`, 'muted'));
     if (version?.warnings.length) body.append(node('p', '有来源或口径说明，请核对', 'warning'));
+    if (version && dataState?.report?.current_data_valid && dataState.target_date > version.data_date) {
+      body.append(node('p',`来源已更新至 ${copyDate(dataState.target_date)}，请生成并核对新稿`,'warning'));
+    }
     if (version?.data_date === dataState?.target_date && version?.data_reliability?.publication_digest && dataState?.report?.publication_digest &&
+        (version.data_reliability.publication_digest_version || 1) === (dataState.report.publication_digest_version || 1) &&
         version.data_reliability.publication_digest !== dataState.report.publication_digest) {
       body.append(node('p', '来源数据已修订，请重新生成并核对稿件', 'error'));
     }
     if (dataState) {
       const missing = Object.values(dataState.report?.metrics || {}).reduce((sum, x) => sum + (x.missing_dates?.length || 0), 0);
       const metrics = Object.values(dataState.report?.metrics || {});
-      const datesCovered = metrics.length > 0 && metrics.every(x => x.complete === true || x.frequency === 'quarterly' && x.observed_days > 0);
-      const text = dataState.status === 'complete' ? '历史数据已覆盖' : missing ? `历史仍缺 ${missing} 项` : datesCovered ? '历史日期已覆盖，有来源或版本说明' : dataState.error || dataState.report?.error || '历史数据正在恢复或待更新';
+      const datesCovered = metrics.length > 0 && metrics.every(x => (x.date_coverage_complete ?? x.complete) === true || x.frequency === 'quarterly' && x.observed_days > 0);
+      const text = dataState.status === 'complete' ? '检查区间内日期与必要字段已覆盖' : missing ? `历史仍缺 ${missing} 项` : datesCovered ? '检查区间日期已覆盖，字段或来源口径仍需核对' : dataState.error || dataState.report?.error || '历史数据正在恢复或待更新';
       const details = node('details'); details.append(node('summary', text, dataState.status === 'complete' ? 'muted' : 'warning'));
       for (const [name, metric] of Object.entries(dataState.report?.metrics || {})) {
         details.append(node('p', `${name}：${metric.first_date || '无'} 至 ${metric.last_date || '无'}；缺失 ${metric.missing_dates?.length || 0} 天`, 'muted'));
+        details.append(node('p', `检查范围 ${metric.requested_start || '未记录'} 至 ${metric.requested_end || '未记录'}；必要字段${metric.required_fields_valid === true ? '已核验' : '尚未全部核验'}；历史同口径${metric.comparable_history ? '已确认' : '未确认'}`, 'muted'));
+        if (metric.invalid_dates?.length) details.append(node('p', `字段未通过日期：${metric.invalid_dates.join('、')}`, 'warning'));
         if (metric.missing_dates?.length) details.append(node('p', metric.missing_dates.join('、'), 'muted'));
       }
       for (const limitation of dataState.report?.limitations || []) details.append(node('p', limitation, 'warning'));
@@ -265,6 +278,8 @@ async function showVersion() {
     ? '注释（显示在图片页脚，不进正文）'
     : v.notes_placement === 'image' ? '注释（保存后显示在图片底部）' : '注释（自动加入完整正文）';
   $('#detail-status').textContent = `数据日 ${copyDate(v.data_date)}`;
+  if (v.editorial?.status === 'active') $('#detail-status').textContent += ` · ${v.editorial.writer === 'sample_story_v2' ? '样本规范写稿' : '风格模块'} · ${v.editorial.selection_status === 'model_selected' ? 'AI组织表达' : '完整规则回退'} · 待编辑审核`;
+  else if (v.editorial?.reason) $('#detail-status').textContent += ` · 样本风格未采用：${v.editorial.reason}`;
   const warnings = [...(v.warnings || [])];
   $('#warnings').replaceChildren(...warnings.map((s) => node('p', s)));
   $('#facts').textContent = JSON.stringify(v.facts, null, 2);

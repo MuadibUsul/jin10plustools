@@ -30,18 +30,18 @@ def series(symbol,start=None,end=None,*,require_low=True):
     return checked(rows, symbol)
 
 
-def repair(name,rows,day,*,checkpoint=None,attempt_path=None):
+def repair(name,rows,day,*,checkpoint=None,attempt_path=None,start=None,max_requests=12):
     from app.briefs.trading_calendar import sessions
     from app.briefs.repair import repair_ranges
     target=datetime.strptime(day,'%Y-%m-%d').date()
-    start=max(target-timedelta(days=3653),datetime(2015,1,1).date())
+    start=start or max(target-timedelta(days=3653),datetime(2015,1,1).date())
     wanted=sessions('xnys',start,target)
     symbol='%5EW5000' if name=='wilshire' else SYMBOLS[name]
     from app.briefs.sources import read,save
     attempts=read(attempt_path) if attempt_path and attempt_path.exists() else {}
     repaired,report=repair_ranges(rows,wanted,
         lambda first,last:series(symbol,first,last,**({'require_low':False} if name=='wilshire' else {})),
-        checkpoint=checkpoint,attempts=attempts,
+        checkpoint=checkpoint,attempts=attempts,max_requests=max_requests,
         attempt_checkpoint=(lambda entries:save(attempt_path,entries)) if attempt_path else None)
     return repaired,report
 

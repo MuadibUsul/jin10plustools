@@ -129,8 +129,8 @@ def render_volume(rows,out):
           f"{'增加' if change>=0 else '减少'}{abs(change):.2f}亿元，变动{percent:+.2f}%；"
           f"连续{streak}条有效交易日{side}20日均线（{current['ma20']/10000:.2f}万亿元）。"
           f"成交活跃度较前日{'回升' if change>0 else '回落' if change<0 else '持平'}。")
-    image=volume_chart([r for r in rows if r['ma20'] is not None],out)
-    return {'title':title,'dynamic_body':body,'images':[image.name],'data_date':current['date'],
+    image=volume_chart([r for r in rows if r['ma20'] is not None],out) if os.getenv('DATA_COLLECTION_ONLY')!='1' else None
+    return {'title':title,'dynamic_body':body,'images':[image.name] if image else [],'data_date':current['date'],
             'facts':{'amount_yi':str(current['turn']),'amount_wan_yi':f"{current['turn']/10000:.2f}",'change_yi':f'{change:.2f}','change_pct':f'{percent:+.2f}','streak':streak,'side':side,'activity':'回升' if change>0 else '回落' if change<0 else '持平','ma20_yi':str(current['ma20']),'ma20_wan_yi':f"{current['ma20']/10000:.2f}",'previous_date':prior['date'],'source':url_source()},'warnings':[]}
 
 
@@ -154,6 +154,14 @@ def turnover(day,out,state,refresh=False):
     from .trading_calendar import sessions
     save(out/'turnover-calendar.json',{'sessions':sessions('xshg',wanted[0]['date'],day)})
     save(out/'turnover-config.json',{'calendar_file':str((out/'turnover-calendar.json').resolve())})
+    if os.getenv('DATA_COLLECTION_ONLY')=='1':
+        from .engines.turnover.build_turnover import load_and_calculate
+        from .engines.turnover.copy_tracks import build_facts,generate_rule_copy
+        calculated=load_and_calculate(out/'source.json',session_dates=sessions('xshg',wanted[0]['date'],day))
+        current,previous=calculated[-2:][1],calculated[-2:][0]
+        if current['date']!=day or previous['date']!=previous_session('xshg',day).isoformat():raise ValueError('换手率目标日或比较日缺失')
+        facts=build_facts(current,previous);rule=generate_rule_copy(facts)
+        return {'title':rule['title'],'dynamic_body':rule['body'],'facts':facts,'images':[],'data_date':day,'warnings':[]}
     command=[sys.executable,str(engine/'run.py'),'--expected-date',day,'--input',str(out/'turnover-merged.json'),
              '--data-dir',str(out/'turnover-state'),'--config',str(out/'turnover-config.json'),'--no-ai']
     result=subprocess.run(command,capture_output=True,text=True,encoding='utf-8',timeout=150)
@@ -202,7 +210,8 @@ def render_liquidity(snapshot,out,notes=None):
     from .engines.liquidity.render import render_poster
     from .engines.liquidity.copy_tracks import build_copy
     notes=os.getenv('CATEGORY_NOTES',default_notes('liquidity')) if notes is None else notes
-    png,svg,audit=render_poster(snapshot,out,logo_path=HERE/'engines/liquidity/assets/plus-original.png',notes=notes)
+    png,svg,audit=(render_poster(snapshot,out,logo_path=HERE/'engines/liquidity/assets/plus-original.png',notes=notes)
+        if os.getenv('DATA_COLLECTION_ONLY')!='1' else (None,None,{'collection_only':True}))
     rule=build_copy(snapshot);bank=snapshot.get('central_bank');warning=[]
     if bank:
         dr=next(r for r in snapshot['quotes']['rows'] if r['product']=='DR007')
@@ -219,7 +228,7 @@ def render_liquidity(snapshot,out,notes=None):
                       if row['date'] < snapshot['quotes']['quote_date'] and row.get(product) is not None), None)
         if prior:
             previous_close[product] = {'date': prior['date'], 'weighted_rate': str(prior[product])}
-    return {'title':'【流动性指标】质押式回购利率走势与最新行情','dynamic_body':rule['body'],'images':[png.name],'data_date':snapshot['quotes']['quote_date'],
+    return {'title':'【流动性指标】质押式回购利率走势与最新行情','dynamic_body':rule['body'],'images':[png.name] if png else [],'data_date':snapshot['quotes']['quote_date'],
             'fixed_notes':notes,'chart_notes':notes,
             'facts':{'quotes':snapshot['quotes'],'central_bank':bank,'history_range':[snapshot['history']['start'],snapshot['history']['end']],
                      'previous_close':previous_close},'warnings':warning}
@@ -337,13 +346,14 @@ def valuation(day,out,state,refresh=False):
     erp_out=out/'erp';updated_bond=erp_out/'raw/bond/official-rolling-normalized.json'
     try:
         result=run_erp(erp_history,erp_out,mode='free-official',expected_date=day,bond_history=bond_history,
+                       data_only=os.getenv('DATA_COLLECTION_ONLY')=='1',
                        force_refresh=refresh or os.getenv('MANUAL_GENERATION')=='1',
                        progress=lambda message:record(out,2,message))
     finally:
         # Keep the bond correction even if a later PE/close step fails; the next
         # successful valuation build must start from the corrected treasury series.
         if updated_bond.exists():shutil.copy2(updated_bond,bond_history)
-    if not result.get('release_ready'):raise ValueError('ERP当前数据不足或制图失败')
+    if not (result.get('release_ready') or os.getenv('DATA_COLLECTION_ONLY')=='1' and result.get('data_ready')):raise ValueError('ERP当前数据不足或制图失败')
     rows=read(erp_out/'数据快照.json');current,prior=rows[-1],rows[-2]
     # Preserve the full growing history; never restart daily updates from a fixed seed.
     for row in rows:row.pop('erp_cached',None)
@@ -378,7 +388,7 @@ def valuation(day,out,state,refresh=False):
     save(out/'buffett-plot-data.json',visible);save(out/'erp-plot-data.json',rows)
     erp_image=Path(result['image_path']);shutil.copy2(erp_image,out/erp_image.name)
     record(out,3,'估值输入数据已核验，正在按冻结模板绘制双面板')
-    valuation_chart(visible,rows,out)
+    if os.getenv('DATA_COLLECTION_ONLY')!='1':valuation_chart(visible,rows,out)
     ratio=Decimal(updated[day]['market_cap_yi'])/Decimal(gdp['value_yi'])*100
     erp=Decimal(current['erp_percent']);change=erp-Decimal(prior['erp_percent'])
     title=f"【A股温度计】股债性价比指标更新，沪深300ERP报{erp:.2f}%"
@@ -393,7 +403,7 @@ def valuation(day,out,state,refresh=False):
     if corrections:
         detail='、'.join(f"{item['date']} {item['old_yield']}→{item['new_yield']}" for item in corrections)
         warnings.append(f'中债十年期国债收益率历史数据已按官方来源修正：{detail}。')
-    return {'title':title,'dynamic_body':body,'images':['股债性价比.png'],'data_date':day,
+    return {'title':title,'dynamic_body':body,'images':['股债性价比.png'] if os.getenv('DATA_COLLECTION_ONLY')!='1' else [],'data_date':day,
         'unified_valuation':True,
         'facts':{'buffett_percent':str(ratio),'gdp':gdp,'market_cap':cap,'erp_latest':current,'erp_previous':prior,
                  'bond_revision_check':revision},
@@ -420,17 +430,20 @@ def us_barometer(day,out,state,refresh=False):
     for series in ('wilshire','erp','gdp'):
         snapshot[series]=captured(series,snapshot[series])
     from .engines.us_structure.fetch_data import repair as repair_us_series
-    snapshot['wilshire'],repair_report=repair_us_series('wilshire',snapshot['wilshire'],day,
-        checkpoint=lambda rows:captured('wilshire',rows),attempt_path=state/'wilshire-gap-attempts.json')
-    snapshot['wilshire']=captured('wilshire',snapshot['wilshire'])
-    save(out/'wilshire-repair.json',repair_report)
+    collecting=os.getenv('DATA_COLLECTION_ONLY')=='1'
+    if collecting or not any(row['date']==day for row in snapshot['wilshire']):
+        snapshot['wilshire'],repair_report=repair_us_series('wilshire',snapshot['wilshire'],day,
+            checkpoint=lambda rows:captured('wilshire',rows),attempt_path=state/'wilshire-gap-attempts.json',
+            **({} if collecting else {'start':date.fromisoformat(day)-timedelta(days=7),'max_requests':1}))
+        snapshot['wilshire']=captured('wilshire',snapshot['wilshire'])
+        save(out/'wilshire-repair.json',repair_report)
     from .engines.us_barometer.run import window
     for name in ('wilshire','erp'):snapshot[name]=window(snapshot[name],day)
     save(out/SNAPSHOT,snapshot)
-    if snapshot.get('historical_vintage_unverified'):
+    if snapshot.get('historical_vintage_unverified') and not collecting:
         raise ValueError('历史GDP公布版本未核验：已保留来源数据，不生成冒充当时可得数据的历史稿')
-    payload=render(snapshot,out)
-    record(out,3,'三项指标与分级已核对，两张图表已生成')
+    payload=render(snapshot,out,draw=not collecting)
+    record(out,3,'三项指标与分级已核对，来源数据已保存')
     return payload
 
 
@@ -451,17 +464,22 @@ def us_structure(day,out,state,refresh=False):
         return partial[name]
     snapshot=fetch(day,out,allow_gap_repair=True,on_series=captured)
     from .engines.us_structure.fetch_data import repair as repair_us_series
+    collecting=os.getenv('DATA_COLLECTION_ONLY')=='1'
     for series,rows in snapshot['data'].items():
         snapshot['data'][series]=captured(series,rows)
-        snapshot['data'][series],repair_report=repair_us_series(series,snapshot['data'][series],day,
-            checkpoint=lambda repaired,name=series:captured(name,repaired),attempt_path=state/(series+'-gap-attempts.json'))
-        snapshot['data'][series]=captured(series,snapshot['data'][series])
-        save(out/(series+'-repair.json'),repair_report)
+        required_start=date.fromisoformat(day)-timedelta(days=365 if series in ('spx','spxew') else 7)
+        missing=set(sessions('xnys',required_start,day))-{row['date'] for row in snapshot['data'][series]}
+        if collecting or missing:
+            snapshot['data'][series],repair_report=repair_us_series(series,snapshot['data'][series],day,
+                checkpoint=lambda repaired,name=series:captured(name,repaired),attempt_path=state/(series+'-gap-attempts.json'),
+                **({} if collecting else {'start':required_start,'max_requests':2}))
+            snapshot['data'][series]=captured(series,snapshot['data'][series])
+            save(out/(series+'-repair.json'),repair_report)
     from .engines.us_structure.run import window
     snapshot['data']={name:window(rows,day) for name,rows in snapshot['data'].items()}
     save(out/SNAPSHOT,snapshot)
-    payload=render(snapshot,out)
-    record(out,3,'市场结构与小盘股数据已核对，图表已生成')
+    payload=render(snapshot,out,draw=not collecting)
+    record(out,3,'市场结构与小盘股数据已核对，来源数据已保存')
     return payload
 
 

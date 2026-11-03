@@ -181,6 +181,25 @@ def read_series(db,team_id,category,series,start,end,*,as_of=None,limit=5000):
         'job_id':str(row.job_id) if row.job_id else None} for row in rows[:limit]],'truncated':len(rows)>limit}
 
 
+def fields_valid(category,series,values):
+    required={
+        'volume':('turn','vol'),'turnover':('totalCompany','belowPercent3','belowPercent5','close'),
+        'valuation':('marketCap','gdp','close') if series=='buffett' else ('erp_percent','close'),
+        'liquidity':('weighted_rate',),'oil_etf':('barrels',),
+        'us_barometer':('value',) if series=='gdp' else ('erp',) if series=='erp' else ('close',),
+        'us_structure':('close','low'),'token_cost':('price',),'gpu_rental':('price',)}[category]
+    try:
+        if any(isinstance(values.get(k),bool) or values.get(k) is None for k in required):return False
+        numbers={k:Decimal(str(values[k])) for k in required}
+        if any(not v.is_finite() for v in numbers.values()):return False
+        if any(v<=0 for k,v in numbers.items() if k not in ('erp_percent','erp','belowPercent3','belowPercent5')):return False
+        if category=='turnover':
+            return (all(numbers[k]==numbers[k].to_integral_value() for k in ('totalCompany','belowPercent3','belowPercent5'))
+                and 0<=numbers['belowPercent3']<=numbers['belowPercent5']<=numbers['totalCompany'])
+        return True
+    except (ValueError,TypeError,ArithmeticError,KeyError):return False
+
+
 def coverage(db,team_id,category,target):
     target=date.fromisoformat(target) if isinstance(target,str) else target
     start=target-timedelta(days=HORIZON[category]); market=market_for(category)
@@ -189,21 +208,30 @@ def coverage(db,team_id,category,target):
     except CalendarUnavailable as exc:
         wanted=None;limitations.append(str(exc))
     rows=list(db.scalars(select(BriefDataPoint).where(BriefDataPoint.team_id==team_id,
-        BriefDataPoint.category==category,BriefDataPoint.data_date>=start,BriefDataPoint.data_date<=target)))
+        BriefDataPoint.category==category,BriefDataPoint.data_date>=start,BriefDataPoint.data_date<=target).order_by(
+        BriefDataPoint.collected_at.desc(),BriefDataPoint.revision.desc())))
+    latest={}
+    for row in rows:latest.setdefault((row.series,row.method,row.data_date),row)
+    rows=list(latest.values())
     for series in EXPECTED[category]:
         chosen=[row for row in rows if row.series==series]
         days={row.data_date.isoformat() for row in chosen};methods=sorted({row.method for row in chosen})
         missing=sorted(wanted-days) if wanted is not None and series!='gdp' else []
+        invalid=sorted({r.data_date.isoformat() for r in chosen if not fields_valid(category,series,r.values)})
         metrics[series]={'requested_start':start.isoformat(),'requested_end':target.isoformat(),
             'first_date':min(days) if days else None,'last_date':max(days) if days else None,
             'observed_days':len(days),'missing_dates':missing,'methods':methods,
-            'complete':bool(days) and not missing and wanted is not None,
+            'date_coverage_complete':bool(days) and not missing and wanted is not None,
+            'required_fields_valid':bool(days) and not invalid,'invalid_dates':invalid,
+            'point_in_time_verified':False if any('current_revised' in r.method or r.values.get('gdp_available_on_observation_date') is False for r in chosen) else None,
+            'complete':bool(days) and not missing and not invalid and wanted is not None,
             'comparable_history':len(methods)==1 and not any('unverified' in method for method in methods)}
         if series=='gdp':
             metrics[series]['frequency']='quarterly'
             metrics[series]['complete']=None
             limitations.append('GDP为当前修订序列，不能证明历史时点已公布的原始版本')
         if len(methods)>1:limitations.append(f'{series}存在多种来源/方法，未认定历史同口径')
+        if invalid:limitations.append(f'{series}有{len(invalid)}个日期的必要字段尚未通过核验')
         if any(row.values.get('gdp_available_on_observation_date') is False for row in chosen):
             limitations.append('部分估值为事后回算，GDP公布日晚于市场日期；不可作为当时已知数据')
         if any(row.values.get('source_status')=='user_supplied_published_archive' for row in chosen):
@@ -226,8 +254,11 @@ def record_run(db,job,folder,payload,error=None):
     report=coverage(db,job.team_id,job.category,target)
     # Compare source business values, not images or wording. Corrections found
     # by a later repair do not silently leave a stale draft confirmable.
-    current={(item['series'],item['method'],item['date']):item for item in points if item['date']<=target.isoformat()}
-    if current:report['publication_digest']=digest([current[key] for key in sorted(current)])
+    from .product_inputs import publication_digest
+    publication=publication_digest(job.category,folder,payload) if payload else None
+    if publication:
+        report['publication_digest']=publication;report['publication_digest_version']=2
+    report['archive_digest']=digest(points)
     report['current_data_valid']=bool(payload and payload.get('valid'))
     if job.category=='oil_etf' and payload and payload.get('data_date_policy')=='latest_available':
         report.update(data_date_policy='latest_available',fund_data_dates=payload.get('fund_data_dates',{}),

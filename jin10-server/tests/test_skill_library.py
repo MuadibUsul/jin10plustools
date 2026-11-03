@@ -24,7 +24,7 @@ def test_every_member_sees_only_production_text_skills(client):
         assert all(item["instructions"] and item["bundled_instructions"] == item["instructions"] for item in skills[:5])
         assert skills[0]["skill_id"] == "news.fixed-volume"
         assert skills[0]["group"] == "A股温度计" and skills[3]["group"] == "流动性"
-        assert len(skills) == 8
+        assert len(skills) == 10
         assert all(item["editable"] is True for item in skills)
         assert skills[-1]["category"] == "editorial_quality"
         assert skills[-1]["group"] == "内容质量" and skills[-1]["samples"] == 0

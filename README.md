@@ -31,7 +31,7 @@ docker build -f jin10-server/Dockerfile -t plus-api .
 
 根目录及 `deploy/` 中的 Compose 配置都使用这一构建方式。部署脚本为 `deploy/deploy.sh`；现有运行时的增量发布可使用 `deploy/Dockerfile.release`。API 与 brief-worker 必须使用同一发布镜像。升级使用 Alembic 增量迁移，保留生产数据库、存储卷和环境设置。
 
-GitHub Actions 的 **Deploy PLUS** 工作流只允许在 `main` 分支手动触发。首次使用须在仓库 Actions secrets 配置 `PLUS_DEPLOY_SSH_KEY`（具有 `/home/deploy/plus` 与 Docker 权限的 `deploy` 用户私钥）和 `PLUS_DEPLOY_KNOWN_HOSTS`（核对过的服务器 SSH host key 行）。工作流先检查现有 PLUS Compose 项目，构建带提交 SHA 的镜像并备份数据库，然后仅更新 `api` 和 `brief-worker`；不会重建 `db`、共享 Caddy 或其他站点，也不会覆盖服务器的 `.env`、Compose 文件与数据卷。健康检查失败时回退到先前镜像。
+GitHub Actions 的 **Deploy PLUS** 工作流只允许在 `main` 分支手动触发，先完成服务端、隔离 PostgreSQL、实际 PDF 渲染及扩展检查。首次使用须配置 `PLUS_DEPLOY_SSH_KEY` 和经核对的 `PLUS_DEPLOY_KNOWN_HOSTS`。本地 `deploy/deploy.sh` 和 Actions 使用同一发布过程：复用并核验已锁定的运行时，等待任务结束并通过数据库屏障停止空闲 worker，再仅更新 `api` 和 `brief-worker`，执行增量迁移及就绪、心跳检查。保留生产数据库、存储卷、服务器 Compose 和环境设置。不创建备份，不自动回退；成功后仅清理未被任何运行容器使用的 PLUS 镜像标签。
 
 ## 生产约束
 

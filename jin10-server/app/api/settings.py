@@ -40,6 +40,8 @@ class Update(BaseModel):
     ai: dict[Literal['jev', 'deepseek', 'chat2api', 'openai'], AIConfig] | None = None
     ai_provider: Literal['deepseek', 'chat2api', 'openai'] | None = None
     brief_templates: dict[Literal[*CATEGORIES], TemplateConfig] | None = None
+    editorial_mode: Literal['sample','rules'] | None = None
+    adopt_current_style: bool = False
     live_url: str | None = Field(default=None, max_length=2048)
     live_urls: dict[str,str] | None = None
 
@@ -76,7 +78,7 @@ def output(db, team, user):
                            for key, label in CATEGORIES.items()],
             'note_revisions': saved.get('brief_note_revisions', []), 'ai': ai,
             'ai_provider': saved.get('ai_provider', 'deepseek'),
-            'brief_templates': body_templates(team),
+            'brief_templates': body_templates(team), 'editorial':editorial_output(team),
             'live_url': saved.get('live_url', ''), 'live_catalog': catalog(team),
             'live_urls':saved.get('live_urls',{})}
 
@@ -89,6 +91,8 @@ def read(db: DbSession, user: CurrentUser):
 @router.put('')
 def update(body: Update, db: DbSession, user: Editor):
     if user.role != Role.ADMIN:
+        if body.editorial_mode is not None or body.adopt_current_style:
+            raise HTTPException(403,'仅管理员可切换团队正文方式或采用风格版本')
         if body.schedule_enabled is not None or body.data_collection_enabled is not None:
             raise HTTPException(403, '仅管理员可修改排期')
         for change in (body.ai or {}).values():
@@ -110,6 +114,12 @@ def update(body: Update, db: DbSession, user: Editor):
         if body.data_collection_enabled is not None:config.data_enabled=body.data_collection_enabled
         config.updated_at = utcnow()
     saved = dict(team.settings or {})
+    if body.editorial_mode is not None or body.adopt_current_style:
+        mode=body.editorial_mode or (saved.get('brief_editorial') or {}).get('mode','sample')
+        if mode=='sample' and (body.adopt_current_style or (saved.get('brief_editorial') or {}).get('mode')!='sample'):
+            from app.briefs.editorial_authorization import adoption
+            saved['brief_editorial']=adoption(user.id)
+        elif mode=='rules':saved['brief_editorial']={**saved.get('brief_editorial',{}),'mode':'rules'}
     if body.brief_templates is not None:
         templates = dict(saved.get('brief_templates') or {})
         for category, config in body.brief_templates.items():
@@ -158,6 +168,22 @@ def update(body: Update, db: DbSession, user: Editor):
     record(db,team,user.id)
     db.commit()
     return output(db, team, user)
+
+
+def editorial_output(team):
+    from app.briefs.editorial_authorization import resolve_pack,effective_mode
+    from app.briefs.skill_library import history_samples
+    from app.config import get_settings
+    saved=team.settings or {};choice=saved.get('brief_editorial') or {};items=[]
+    for category in CATEGORIES:
+        item={'category':category,'label':CATEGORIES[category]}
+        try:
+            pack,pending=resolve_pack(category,saved)
+            item.update(status='adopted',version=pack['version'],digest=pack['digest'],pending_version=pending)
+        except (ValueError,OSError,KeyError):item.update(status='not_adopted')
+        item['samples']=len(history_samples(category));items.append(item)
+    return {'mode':choice.get('mode','rules'),'effective_mode':effective_mode(saved,get_settings().briefs_editorial_mode),
+        'writer':'sample_story_v2','packs':items,'template_priority':'custom_template_then_sample'}
 
 
 class SkillUpdate(BaseModel):

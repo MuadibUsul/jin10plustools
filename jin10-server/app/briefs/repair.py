@@ -126,25 +126,50 @@ def restore_working_history(db,team_id,category,state):
                 point=points.setdefault(row.data_date.isoformat(),{'date':row.data_date.isoformat()})
                 point.setdefault(row.series,row.values['weighted_rate'])
         path=state/'dr-history.json';existing=read(path)['rows'] if path.exists() else []
-        for row in existing:points.setdefault(row['date'],{}).update(row)
+        for row in existing:
+            points[row['date']]={**row,**points.get(row['date'],{})}
         if points:save(path,{'method':'cfets_dr_close_v1','rows':[points[day] for day in sorted(points)]})
     if category=='oil_etf':
         path=state/'oil-history.json';history=read(path) if path.exists() else {}
+        chosen={}
         for row in rows:
             if row.method=='issuer_futures_and_swap_estimate_v1':ticker=row.series
             elif row.method=='companiesmarketcap_dated_futures_v1':
                 ticker='USO' if row.series=='USO_futures' else row.series
             else:continue
-            history.setdefault(row.data_date.isoformat(),{}).setdefault(ticker,row.values)
+            # Issuer observations outrank futures-only secondary archives. Within
+            # each method the database query already orders newest revisions first.
+            key=(row.data_date.isoformat(),ticker)
+            prior=chosen.get(key)
+            if prior is None or row.method=='issuer_futures_and_swap_estimate_v1' and prior.method!=row.method:
+                chosen[key]=row
+        for (day,ticker),row in chosen.items():history.setdefault(day,{})[ticker]=dict(row.values)
         if history:save(path,history)
     if category=='valuation':
+        method_conflicts=[]
         for series,filename in (('buffett','buffett-history.json'),('erp','erp-history.json')):
             path=state/filename;history=read(path) if path.exists() else []
-            dates={row['date'] for row in history}
+            candidates={}
             for row in rows:
-                if row.series==series and row.data_date.isoformat() not in dates:
-                    history.append(dict(row.values));dates.add(row.data_date.isoformat());count+=1
-            if history:save(path,sorted(history,key=lambda row:row['date']))
+                if row.series==series:candidates.setdefault(row.data_date.isoformat(),{}).setdefault(row.method,row)
+            previous={row['date']:row for row in history}
+            chosen={}
+            for day,methods in candidates.items():
+                old=previous.get(day,{})
+                declared=(old.get('source') or 'legacy_buffett_method_unverified') if series=='buffett' else (
+                    str(old['pe_source'])+'|'+str(old['bond_source']) if old.get('pe_source') and old.get('bond_source') else 'legacy_erp_method_unverified')
+                if declared in methods:selected=methods[declared]
+                elif len(methods)==1 and not old.get('source') and not old.get('pe_source'):selected=next(iter(methods.values()))
+                elif not old and series=='buffett' and 'eastmoney_public_all_a_company_total_capitalization' in methods:
+                    selected=methods['eastmoney_public_all_a_company_total_capitalization']
+                else:
+                    method_conflicts.append({'series':series,'date':day,'declared':declared,'database_methods':sorted(methods)})
+                    continue
+                chosen[day]=dict(selected.values)
+            count+=len(set(chosen)-set(previous))
+            previous.update(chosen)
+            if previous:save(path,[previous[day] for day in sorted(previous)])
+        save(state/'source-method-conflicts.json',method_conflicts)
         raw_path=state/'all-a-history.json';raw_values={}
         for row in rows:
             if row.series=='all_a_market_cap':raw_values.setdefault(row.data_date.isoformat(),dict(row.values))

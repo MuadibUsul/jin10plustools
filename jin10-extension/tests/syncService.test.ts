@@ -3,6 +3,7 @@ import type { NewsMaterial } from '@/types/material';
 import type { AuthSession, SyncState } from '@/types/settings';
 import type * as ServerApi from '@/services/api/serverApi';
 import type { ServerMaterial, SyncResult } from '@/services/api/serverApi';
+import { acknowledgedMaterial } from '@/services/repository/syncAcknowledgement';
 
 // ---- 模拟服务端接口与本地设置 ----
 const api = {
@@ -54,6 +55,11 @@ class Repo {
   async replace(oldId: string, m: NewsMaterial) {
     this.items.delete(oldId);
     this.items.set(m.id, m);
+  }
+  async acknowledge(sent: NewsMaterial, received: NewsMaterial | null) {
+    const next = acknowledgedMaterial(sent, await this.get(sent.id), received);
+    this.items.delete(sent.id);
+    if (next) this.items.set(next.id, next);
   }
   async remove(id: string) {
     this.items.delete(id);
@@ -130,6 +136,16 @@ beforeEach(() => {
 });
 
 describe('syncService', () => {
+  it('preserves a local deletion made while push is in flight', async () => {
+    await repo.save(local('a'));
+    api.pushMaterials.mockImplementation(async () => {
+      await repo.save(local('a', { deleted_at: '2026-11-03T01:00:00Z' }));
+      return [{client_id:'a',outcome:'created',material:server('a')}];
+    });
+    await createSyncService(repo).sync();
+    expect(repo.items.get('a')?.deleted_at).toBe('2026-11-03T01:00:00Z');
+    expect(repo.items.get('a')?.sync_status).toBe('local');
+  });
   it('未登录时跳过', async () => {
     session = null;
     const report = await createSyncService(repo).sync();

@@ -7,6 +7,7 @@ import signal
 import subprocess
 import sys
 import time
+from pathlib import Path
 from datetime import date,datetime,timedelta,time as clock
 
 from sqlalchemy import case,select,text,update,func
@@ -17,13 +18,23 @@ from app.services.team_settings import briefs_ai
 from .delivery import default_notes
 from app.db.session import get_session_factory,get_engine
 from .policy import AUTO_CATEGORIES,CATEGORIES,CHINA,expected_date,first_run,production_window,next_slot
-from .service import enqueue,ensure_issue,owned,append_version,root_for,find_issue
+from .service import enqueue,ensure_issue,owned,append_version,root_for,find_issue,edition_payload
 from .source_archive import archive_run,restore_pe_capture
 from .progress import record,read
 
 log=logging.getLogger('plus.briefs')
 
 PUBLIC_COMPUTE_CATEGORIES = frozenset({'token_cost', 'gpu_rental'})
+
+
+def drain_requested():
+    return (get_settings().storage_dir/'.brief-worker-drain').exists()
+
+
+def heartbeat(state='idle',job_id=None):
+    from .sources import save
+    save(get_settings().storage_dir/'.brief-worker-heartbeat.json',
+         {'at':utcnow().isoformat(),'state':state,'job_id':str(job_id) if job_id else None,'draining':drain_requested()})
 
 
 def public_read_requested(job) -> bool:
@@ -98,6 +109,7 @@ def capture_manual_for_job(factory, job_id, out):
 
 
 def schedule(factory,now=None):
+    if drain_requested():return 0
     now=now or datetime.now(CHINA)
     if not production_window(now):return 0
     local=now.astimezone(CHINA);count=0
@@ -109,7 +121,18 @@ def schedule(factory,now=None):
                 try:target=expected_date(category,local.date())
                 except CalendarUnavailable:continue
                 issue=find_issue(db,config.team_id,local.date(),category)
-                if issue and issue.version:continue
+                if issue and issue.version:
+                    if category!='oil_etf':continue
+                    current=db.scalar(select(BriefVersion).where(BriefVersion.issue_id==issue.id,BriefVersion.number==issue.version))
+                    if current is None or current.kind=='edited':continue
+                    # The issuer can update after the first successful latest-value
+                    # run. Recheck once per 20-minute slot without duplicate drafts.
+                    cycle='latest-'+local.strftime('%H')+'-'+str(local.minute//20)
+                    existing=db.scalar(select(BriefJob.id).where(BriefJob.team_id==config.team_id,
+                        BriefJob.issue_date==local.date(),BriefJob.category==category,BriefJob.dedupe_key.endswith(':'+cycle)))
+                    if not existing:
+                        enqueue(db,config.team_id,local.date(),category,action='refresh',cycle=cycle);count+=1
+                    continue
                 delivered=db.scalar(select(BriefVersion.id).join(BriefIssue,BriefVersion.issue_id==BriefIssue.id).where(
                     BriefIssue.team_id==config.team_id,BriefIssue.category==category,
                     BriefVersion.number==BriefIssue.version,
@@ -121,6 +144,7 @@ def schedule(factory,now=None):
 
 
 def claim(factory,now=None):
+    if drain_requested():return None
     now=now or utcnow()
     with factory() as db:
         # Main loop has one advisory-locked runner; expired jobs survive restarts.
@@ -176,6 +200,7 @@ def schedule_reconciliation(factory,now=None):
 
 
 def execute(factory,id):
+    heartbeat('running',id)
     settings=get_settings()
     with factory() as db:
         job=db.get(BriefJob,id)
@@ -183,6 +208,7 @@ def execute(factory,id):
         team_id=job.team_id;category=job.category;preview=job.preview;day=job.issue_date;action=job.action
         # Scheduled jobs have no requesting user; manual jobs keep their editor id.
         automatic=job.created_by is None and not preview
+        scheduled_retry=job.schedule_origin if job.schedule_origin is not None else automatic
         requested_public_read=public_read_requested(job)
         requested_manual_read=(category in PUBLIC_COMPUTE_CATEGORIES and action=='produce'
                                and job.manual_capture is not None)
@@ -190,14 +216,28 @@ def execute(factory,id):
         ai=briefs_ai(team)
         team_settings=dict(team.settings or {})
         render_source_id=None;render_payload=None
+        followup=category=='oil_etf' and ':latest-' in job.dedupe_key and scheduled_retry
+        generation_base=None;generation_payload=None
+        if followup:
+            issue=find_issue(db,team_id,day,category)
+            current=db.scalar(select(BriefVersion).where(BriefVersion.issue_id==issue.id,BriefVersion.number==issue.version)) if issue else None
+            if current:generation_base=current.id;generation_payload=edition_payload(current)
         if action=='render':
             issue=find_issue(db,team_id,day,category)
             if issue and issue.version:
                 selected=db.scalar(select(BriefVersion).where(BriefVersion.issue_id==issue.id,BriefVersion.number==issue.version))
                 if selected:
-                    render_source_id=selected.id;render_payload=dict(selected.payload)
+                    render_source_id=selected.id;render_payload=edition_payload(selected)
         config=db.get(BriefConfig,team_id)
         category_notes=(config.notes or {}).get(category,default_notes(category)) if config else default_notes(category)
+        # A refresh keeps this edition's editable notes. Pass the same notes to
+        # the renderer now, rather than restoring only the payload after drawing.
+        if action in ('refresh','ai'):
+            note_issue=find_issue(db,team_id,day,category)
+            note_version=db.scalar(select(BriefVersion).where(BriefVersion.issue_id==note_issue.id,
+                BriefVersion.number==note_issue.version)) if note_issue else None
+            if note_version and 'fixed_notes' in note_version.payload:
+                category_notes=note_version.payload['fixed_notes']
         if category in PUBLIC_COMPUTE_CATEGORIES | {'liquidity'} and not str(category_notes or '').strip():
             category_notes=default_notes(category)
     root=root_for(team_id);out=root/'runs'/str(id);out.mkdir(parents=True,exist_ok=True)
@@ -329,6 +369,7 @@ def execute(factory,id):
     cutoff=time.monotonic()+360
     error=None;retryable=True
     while process.poll() is None:
+        heartbeat('running',id)
         if time.monotonic()>cutoff or (automatic and action!='reconcile' and not production_window(datetime.now(CHINA))):
             if os.name!='nt':os.killpg(process.pid,signal.SIGKILL)
             else:process.kill()
@@ -354,7 +395,13 @@ def execute(factory,id):
                 payload.setdefault('warnings',[]).append('chat2api 号池为空，本次 AI 可能使用匿名降级模型')
         except Exception:
             pass
-    if payload and payload.get('valid') and action not in ('render','reconcile'):
+    duplicate_current=False
+    if followup and payload and payload.get('valid') and generation_payload:
+        from .product_inputs import publication_digest
+        previous_folder=root/generation_payload['artifact_dir']
+        current_digest=publication_digest(category,out,payload)
+        duplicate_current=bool(current_digest and current_digest==publication_digest(category,previous_folder,generation_payload))
+    if payload and payload.get('valid') and action not in ('render','reconcile') and not duplicate_current:
         from .body_templates import apply as apply_body_template
         from .skill_production import apply_skill_copy
         apply_body_template(payload,category,team_settings)
@@ -415,7 +462,7 @@ def execute(factory,id):
                 source_dir=(root/payload['artifact_dir']).resolve()
                 if not source_dir.is_relative_to(root.resolve()):
                     raise ValueError('被复用的来源快照路径不安全')
-            source_archive=archive_run(db,job,out,history_dir=None if action=='render' else root/'history'/category,
+            source_archive=archive_run(db,job,out,
                                        source_dir=source_dir,
                                        data_date=payload.get('data_date') if payload else None)
             from .data_reliability import link_sources
@@ -438,6 +485,14 @@ def execute(factory,id):
             job.active_key=None;db.commit()
             record(out,6,'数据补查完成；未覆盖已编辑或已确认稿件' if job.status=='succeeded' else job.error)
             return
+        if followup and payload and payload.get('valid'):
+            current_issue=find_issue(db,team_id,day,category)
+            locked=owned(db,team_id,current_issue.id,True) if current_issue else None
+            current=db.scalar(select(BriefVersion).where(BriefVersion.issue_id==locked.id,BriefVersion.number==locked.version)) if locked else None
+            if duplicate_current or current is None or current.id!=generation_base or current.kind=='edited':
+                job.status='succeeded';job.active_key=None;job.error=None;db.commit()
+                record(out,6,'发行方数据复查完成；保留当前稿件，未覆盖编辑成果' if not duplicate_current else '发行方数据未变化，保留当前稿件')
+                return
         if payload and payload.get('valid'):
             if automatic and not production_window(datetime.now(CHINA)):
                 job.status='skipped';job.active_key=None;job.error='超过10:00，快照保留但未生成当天稿';db.commit();record(out,5,job.error);return
@@ -455,7 +510,7 @@ def execute(factory,id):
             job.status='succeeded';job.active_key=None;job.error=None
         else:
             job.error=error or '未生成完整结果，来源可能尚未更新'
-            slot=next_slot(category,datetime.now(CHINA)) if automatic and retryable else None
+            slot=next_slot(category,datetime.now(CHINA)) if scheduled_retry and retryable else None
             if slot and job.attempts<6:
                 job.status='waiting';job.next_attempt_at=slot
             else:job.status='failed';job.active_key=None
@@ -474,6 +529,8 @@ def main():
                 raise SystemExit('Another brief worker is active')
         while True:
             try:
+                heartbeat('idle')
+                if drain_requested():time.sleep(5);continue
                 schedule(factory);schedule_reconciliation(factory);id=claim(factory)
                 if id:execute(factory,id);continue
             except Exception:log.exception('Brief worker iteration failed')

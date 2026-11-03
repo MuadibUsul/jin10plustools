@@ -118,7 +118,13 @@ def valuation_chart(buffett_rows,erp_rows,out):
         other=ax.twinx()
         x=[date.fromisoformat(r['date']).toordinal() for r in rows]
         line1,=ax.plot(x,[float(r['close']) for r in rows],color=gray,lw=1.8,label='沪深300')
-        line2,=other.plot(x,secondary,color=blue,lw=1.8,label=secondary_label)
+        # Different provider/method definitions must never imply a continuous
+        # comparable price series. Keep the approved geometry and typography.
+        methods=[r.get('source') or '|'.join(str(r.get(k) or '') for k in ('pe_source','bond_source')) or 'legacy_unverified' for r in rows]
+        cuts=[0]+[i for i in range(1,len(rows)) if methods[i]!=methods[i-1]]+[len(rows)]
+        for begin,finish in zip(cuts,cuts[1:]):
+            other.plot(x[begin:finish],secondary[begin:finish],color=blue,lw=1.8,
+                marker='.' if finish-begin==1 else None,label=secondary_label if begin==0 else None)
         for value,color,_ in thresholds:other.axhline(value,color=color,lw=1.25,ls=(0,(5,4)))
         ax.set_xlim(start.toordinal(),end.toordinal());ax.set_ylim(*left_limits)
         other.set_ylim(*limits);other.set_yticks(right_ticks)

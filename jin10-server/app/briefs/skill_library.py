@@ -19,7 +19,7 @@ from .skill_ai import SKILL_NAMES, asset_dir, sample_label
 
 MAX_INSTRUCTIONS = 8000
 MAX_HISTORY = 20
-CATEGORY_ORDER = ("volume", "turnover", "valuation", "liquidity", "oil_etf", "token_cost", "gpu_rental", "editorial_quality")
+CATEGORY_ORDER = ("volume", "turnover", "valuation", "liquidity", "oil_etf", "us_barometer", "us_structure", "token_cost", "gpu_rental", "editorial_quality")
 QUALITY_CATEGORY = "editorial_quality"
 SKILL_IDS = {
     "volume": "news.fixed-volume",
@@ -29,6 +29,8 @@ SKILL_IDS = {
     "oil_etf": "news.fixed-oil-etf",
     "token_cost": "news.fixed-token-cost",
     "gpu_rental": "news.fixed-gpu-rental",
+    "us_barometer": "news.fixed-us-barometer",
+    "us_structure": "news.fixed-us-structure",
     QUALITY_CATEGORY: "news.editorial-quality",
 }
 CATEGORY_GROUPS = {
@@ -39,6 +41,8 @@ CATEGORY_GROUPS = {
     "oil_etf": "原油ETF",
     "token_cost": "AI算力",
     "gpu_rental": "AI算力",
+    "us_barometer": "美股晴雨表",
+    "us_structure": "美股晴雨表",
     QUALITY_CATEGORY: "内容质量",
 }
 class SkillNotFound(ValueError):
@@ -90,6 +94,7 @@ def history_samples(category: str) -> list[dict[str, str]]:
     def flush():
         if current_date and body:
             samples.append({"date": current_date, "title": current_title,
+                            'origin':'verified_sample_reproduction' if category in ('us_barometer','us_structure') else 'user_provided_style_archive',
                             "body": re.sub(r"\s+", " ", " ".join(body)).strip()})
 
     for line in text.splitlines():
@@ -135,6 +140,7 @@ def effective(team, category: str, *, include_history: bool = False) -> dict[str
         "editable": True,
         "kind": "text",
         "customized": bool(saved.get("instructions")),
+        'sample_origin':'verified_sample_reproduction' if category in ('us_barometer','us_structure') else 'user_provided_style_archive',
         "instructions": instructions,
         "bundled_instructions": bundled,
         "description": _description(instructions),

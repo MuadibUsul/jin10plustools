@@ -11,7 +11,7 @@ def record(db, team, user_id=None):
     config=db.get(BriefConfig,team.id)
     # Explicit allowlist: never copy the Team.settings dictionary containing AI keys.
     snapshot={key:copy.deepcopy(saved.get(key,{} if key in ('skills','brief_templates') else []))
-              for key in ('skills','brief_templates','brief_note_revisions','retired_issue_notes')}
+              for key in ('skills','brief_templates','brief_editorial','brief_note_revisions','retired_issue_notes')}
     snapshot['notes']=dict(config.notes or {}) if config else {}
     snapshot['schedule_enabled']=bool(config and config.enabled)
     snapshot['data_collection_enabled']=bool(config and config.data_enabled)

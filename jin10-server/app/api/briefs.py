@@ -13,7 +13,7 @@ from app.db.models import BriefAudit, BriefConfig, BriefIssue, BriefJob, BriefVe
 from app.services.team_settings import update_notes
 from app.deps import CurrentUser, DbSession, Editor
 from app.briefs.policy import CATEGORIES, CHINA
-from app.briefs.service import owned, enqueue, issue_out, job_out, append_version, artifact_path, delivered_image, prepare_chart_notes_revision
+from app.briefs.service import owned, enqueue, issue_out, job_out, append_version, artifact_path, delivered_image, prepare_chart_notes_revision, edition_payload
 from app.briefs.delivery import complete_body
 from app.services.image_delivery import download_name
 
@@ -110,6 +110,12 @@ def data_status(db:DbSession,user:CurrentUser,date:date|None=None):
             'report':latest.report if latest else {'target_date':target.isoformat(),'metrics':{},'limitations':[]},
             'manual_only':category in ('token_cost','gpu_rental')})
     return {'items':items}
+
+
+@router.get('/health')
+def production_health(db:DbSession,user:CurrentUser):
+    from app.services.production_health import production_status
+    return production_status(db,user.team_id)
 
 
 @router.get('/data-series')
@@ -227,7 +233,7 @@ def edit(id:uuid.UUID,body:EditRequest,db:DbSession,user:Editor):
     if not body.title.strip() or not body.dynamic_body.strip() or '\n' in body.title:
         raise HTTPException(422,'标题须为单行，标题和正文不能为空')
     previous=db.scalars(select(BriefVersion).where(BriefVersion.issue_id==id,BriefVersion.number==body.base_version)).one()
-    payload=dict(previous.payload)
+    payload=edition_payload(previous)
     edited_notes=body.fixed_notes.strip() if body.fixed_notes is not None else payload.get('fixed_notes','')
     if issue.category in ('token_cost','gpu_rental','liquidity') and body.fixed_notes is not None and not edited_notes:
         raise HTTPException(422,'图片注释不能为空')
@@ -271,8 +277,16 @@ def confirm(id:uuid.UUID,body:ConfirmRequest,db:DbSession,user:Editor):
         latest=db.scalar(select(BriefDataCheck).where(BriefDataCheck.team_id==user.team_id,
             BriefDataCheck.category==issue.category,BriefDataCheck.data_date==source_day).order_by(
             BriefDataCheck.created_at.desc()).limit(1))
+        saved_digest=reliability['publication_digest']
+        if latest and latest.report.get('publication_digest_version')==2 and reliability.get('publication_digest_version')!=2:
+            from app.briefs.product_inputs import publication_digest
+            from app.briefs.service import root_for
+            folder=(root_for(user.team_id)/version.payload.get('artifact_dir','')).resolve()
+            if not folder.is_relative_to(root_for(user.team_id).resolve()):raise HTTPException(409,'稿件来源路径无效')
+            saved_digest=publication_digest(issue.category,folder,edition_payload(version))
+            if not saved_digest:raise HTTPException(409,'旧稿缺少可复核的成品输入，请重新生成')
         if (latest and latest.report.get('current_data_valid') and latest.report.get('publication_digest')
-                and latest.report['publication_digest']!=reliability['publication_digest']):
+                and latest.report['publication_digest']!=saved_digest):
             raise HTTPException(409,'来源数据已有修订，请重新生成并核对后确认')
     for name in version.payload.get('images',[]):
         try:artifact_path(issue,version,name)

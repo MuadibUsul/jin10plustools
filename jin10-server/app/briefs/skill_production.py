@@ -16,6 +16,13 @@ def apply_skill_copy(payload: dict, category: str, team_settings: dict | None) -
     from app.config import get_settings
     from .editorial_authorization import effective_mode
     from .editorial_suite import apply_editorial
+    choice=(team_settings or {}).get('brief_editorial') or {}
+    if choice.get('mode')=='rules':
+        payload['skill']={'status':'disabled','reason':'team_rules_mode'}
+        return payload
+    if choice.get('mode')=='sample' and effective_mode(team_settings,get_settings().briefs_editorial_mode)=='active':
+        from .sample_story import apply_sample_story
+        if apply_sample_story(payload,category,team_settings):return payload
     if effective_mode(team_settings,get_settings().briefs_editorial_mode)=='active':
         baseline={'title':payload['title'],'body':payload['dynamic_body']}
         previous_trace=payload.get('editorial')

@@ -10,7 +10,7 @@ from threading import Barrier
 import pytest
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import create_engine, inspect, select, text
+from sqlalchemy import create_engine, inspect, select, text,Table,MetaData
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import sessionmaker
 
@@ -59,8 +59,12 @@ def test_history_migration_preserves_existing_values_without_secrets(postgres):
         team = db.get(Team, team_id)
         team.settings = {'brief_templates': {'volume': {'template': '{date}'}},
                          'ai': {'deepseek': {'model': 'deepseek-chat', 'key': 'secret-do-not-export'}}}
-        db.add(AIComputeObservation(team_id=team_id, kind='token', date=date(2026,10,20),
-                                   token_price='0.125000', revision=3))
+        # Insert the actual pre-upgrade schema, not a current ORM with columns
+        # which have deliberately not been migrated yet.
+        observations=Table('ai_compute_observations',MetaData(),autoload_with=db.connection())
+        stamp=datetime.now(timezone.utc)
+        db.execute(observations.insert().values(id=uuid.uuid4(),team_id=team_id,kind='token',date=date(2026,10,20),
+            token_price='0.125000',source='Silicon Data',revision=3,created_at=stamp,updated_at=stamp))
         db.commit()
     command.upgrade(Config('alembic.ini'), 'head')
     with factory() as db:
@@ -79,6 +83,30 @@ def test_migration_preserves_existing_daily_cover(postgres):
     assert {'brief_configs', 'brief_issues', 'brief_versions', 'brief_jobs', 'brief_audits',
             'brief_source_snapshots'} <= set(inspect(engine).get_table_names())
     assert 'notes' in {column['name'] for column in inspect(engine).get_columns('brief_configs')}
+
+
+@pytest.mark.parametrize('postgres',['0018'],indirect=True)
+def test_production_boundary_migration_preserves_legacy_evidence_and_retry(postgres):
+    import hashlib
+    from app.db.models import BriefSourceSnapshot
+    from app.briefs.evidence_compaction import compact
+    engine,factory,team_id=postgres;stamp=datetime.now(timezone.utc);job_id=uuid.uuid4();snapshot_id=uuid.uuid4()
+    raw=b'original evidence before migration'
+    with engine.begin() as connection:
+        jobs=Table('brief_jobs',MetaData(),autoload_with=connection)
+        snapshots=Table('brief_source_snapshots',MetaData(),autoload_with=connection)
+        connection.execute(jobs.insert().values(id=job_id,team_id=team_id,issue_date=date(2026,11,3),
+            category='oil_etf',action='produce',preview=False,status='waiting',attempts=1,dedupe_key='before-0019',
+            next_attempt_at=stamp,created_at=stamp,updated_at=stamp))
+        connection.execute(snapshots.insert().values(id=snapshot_id,team_id=team_id,job_id=job_id,
+            attempt=1,category='oil_etf',data_date=date(2026,11,2),relative_path='raw.html',
+            sha256=hashlib.sha256(raw).hexdigest(),byte_count=len(raw),content=raw,captured_at=stamp))
+    command.upgrade(Config('alembic.ini'),'head')
+    with factory() as db:
+        assert db.get(BriefJob,job_id).schedule_origin is True
+        row=db.get(BriefSourceSnapshot,snapshot_id);assert row.content==raw and row.blob_id is None
+        compact(db,team_id);db.commit();db.expire_all()
+        assert row.content==raw and row.blob_id is not None and row._content==b''
 
 
 def test_concurrent_enqueue_creates_one_active_job(postgres):

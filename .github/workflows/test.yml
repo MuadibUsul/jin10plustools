@@ -1,0 +1,56 @@
+name: Production checks
+on:
+  push:
+  pull_request:
+  workflow_call:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: plus_test
+          POSTGRES_PASSWORD: isolated-test-only
+          POSTGRES_DB: plus_test
+        ports:
+          - 5432:5432
+        options: --health-cmd="pg_isready -U plus_test" --health-interval=5s --health-retries=10
+    env:
+      PLUS_TEST_POSTGRES_URL: postgresql+psycopg://plus_test:isolated-test-only@localhost:5432/plus_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: jin10-extension/package-lock.json
+      - name: Install verified Python dependencies
+        run: |
+          pip install -r jin10-server/requirements.lock 'pytest==9.1.1'
+          pip install --no-deps -e ./jin10-server
+      - name: Install actual PDF renderer
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libreoffice-impress python3-uno fonts-noto-cjk fonts-noto-cjk-extra fontconfig
+          sudo cp jin10-server/docker/fonts.conf /etc/fonts/conf.d/60-plus-template-fonts.conf
+          sudo fc-cache -f
+      - name: Server and isolated PostgreSQL regressions
+        working-directory: jin10-server
+        run: pytest -q
+      - name: Extension checks and build
+        working-directory: jin10-extension
+        run: |
+          npm ci
+          npm run typecheck
+          npm test
+          npm run build
+      - name: Web module syntax
+        run: |
+          while IFS= read -r source; do node --check "$source"; done < <(rg --files jin10-server/app/web -g '*.js')

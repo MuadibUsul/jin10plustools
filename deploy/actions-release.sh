@@ -61,6 +61,7 @@ rm -f -- "$archive"
 inventory="$release_dir/protected-containers.json"
 python3 - "$inventory" <<'PY'
 import json,subprocess,sys
+from datetime import datetime,timezone
 ids=subprocess.check_output(['docker','ps','-q'],text=True).split()
 rows=json.loads(subprocess.check_output(['docker','inspect',*ids],text=True)) if ids else []
 protected={}
@@ -68,7 +69,12 @@ for row in rows:
     labels=row['Config'].get('Labels') or {}
     if labels.get('plus.validation')=='true':continue
     if labels.get('com.docker.compose.project')=='plus' and labels.get('com.docker.compose.service') in ('api','brief-worker'):continue
-    protected[row['Id']]={'name':row['Name'],'image':row['Image'],'started':row['State']['StartedAt']}
+    state=row['State']
+    started=datetime.fromisoformat(state['StartedAt'].replace('Z','+00:00'))
+    looping=(row['RestartCount']>10 and state['ExitCode']!=0 and not state['OOMKilled']
+             and (datetime.now(timezone.utc)-started).total_seconds()<120)
+    protected[row['Id']]={'name':row['Name'],'image':row['Image'],'started':state['StartedAt'],
+                         'restart_count':row['RestartCount'],'already_restarting':looping}
 with open(sys.argv[1],'w') as stream:json.dump(protected,stream)
 print('Protected running containers:',len(protected))
 PY
@@ -144,8 +150,14 @@ import json,subprocess,sys
 with open(sys.argv[1]) as stream:protected=json.load(stream)
 for key,before in protected.items():
     row=json.loads(subprocess.check_output(['docker','inspect',key],text=True))[0]
-    assert row['State']['Running'] and row['Image']==before['image'] and row['State']['StartedAt']==before['started'], 'Protected service changed: '+before['name']
-print('All protected containers remain running without a restart:',len(protected))
+    assert row['Image']==before['image'] and not row['State']['OOMKilled'], 'Protected service changed: '+before['name']
+    if before.get('already_restarting'):
+        assert row['State']['Running'] or row['State']['Restarting'], 'Previously unstable service stopped: '+before['name']
+        print('Pre-existing external restart loop remains; service was not modified:',before['name'],
+              'restarts before/after',before['restart_count'],row['RestartCount'])
+    else:
+        assert row['State']['Running'] and row['State']['StartedAt']==before['started'], 'Protected service restarted: '+before['name']
+print('Protected container identities/images verified; stable services did not restart:',len(protected))
 PY
 
 while IFS= read -r image; do

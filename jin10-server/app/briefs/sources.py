@@ -214,11 +214,13 @@ def render_liquidity(snapshot,out,notes=None):
         if os.getenv('DATA_COLLECTION_ONLY')!='1' else (None,None,{'collection_only':True}))
     rule=build_copy(snapshot);bank=snapshot.get('central_bank');warning=[]
     if bank:
-        dr=next(r for r in snapshot['quotes']['rows'] if r['product']=='DR007')
+        product='DR001' if bank['term_days']==1 else 'DR007'
+        term='隔夜' if bank['term_days']==1 else '7天期'
+        dr=next(r for r in snapshot['quotes']['rows'] if r['product']==product)
         spread=(Decimal(dr['weighted_rate'])-Decimal(bank['rate_percent']))*100
-        rule['body']+=(f"较当日7天期逆回购操作利率{bank['rate_percent']}%{'低' if spread<0 else '高' if spread>0 else '持平'}"
+        rule['body']+=(f"{product}较当日{term}逆回购操作利率{bank['rate_percent']}%{'低' if spread<0 else '高' if spread>0 else '持平'}"
                        +(f'{abs(spread):.2f}个基点。' if spread else '。')+
-                       f"央行当日开展{bank['awarded_yi']}亿元7天期逆回购，投标量{bank['bid_yi']}亿元，中标量{bank['awarded_yi']}亿元。")
+                       f"央行当日开展{bank['awarded_yi']}亿元{term}逆回购，投标量{bank['bid_yi']}亿元，中标量{bank['awarded_yi']}亿元。")
     else:warning.append('未取得对应日期央行操作信息，仅描述DR行情')
     save(out/'chart-audit.json',audit)
     # Additive evidence for editorial copy; no history is inferred from prose.

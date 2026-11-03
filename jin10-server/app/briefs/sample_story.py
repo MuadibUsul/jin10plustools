@@ -105,6 +105,10 @@ def fact_bank(category,payload,context,candidate):
     elif category=='liquidity':
         quotes={r['product']:r for r in facts['quotes']['rows']}
         headlines.insert(0,f"{prefix}DR007收盘加权利率报{quotes['DR007']['weighted_rate']}%")
+        policy=context.get('bindings',{}).get('policy')
+        if policy:
+            spread=Decimal(policy['spread_bp']);term='隔夜' if policy['term_days']==1 else '7天期'
+            headlines.insert(0,f"{prefix}{policy['comparison_product']}{'高于' if spread>0 else '低于' if spread<0 else '持平于'}{term}逆回购操作利率"+(f'{abs(spread):.2f}个基点' if spread else ''))
     elif category=='oil_etf':
         fund={row['ticker']:row for row in facts['funds']}
         if all(fund.get(k,{}).get('change_barrels') is not None for k in ('USO','BNO')):

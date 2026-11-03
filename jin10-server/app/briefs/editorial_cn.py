@@ -200,20 +200,24 @@ def _liquidity(payload, actual, facts):
     scenario = 'no_policy'
     bindings = {**close_bindings, 'close_time': quotes['updated_at']}
     if bank is not None:
-        if not isinstance(bank, dict) or bank.get('date') != actual.isoformat() or bank.get('term_days') != 7:
+        if (not isinstance(bank, dict) or bank.get('date') != actual.isoformat()
+                or type(bank.get('term_days')) is not int or bank['term_days'] not in (1,7)):
             raise ValueError('inconsistent_policy_date_or_term')
         policy = _number(bank.get('rate_percent'), positive=True)
         bid, award = (_number(bank.get(key)) for key in ('bid_yi', 'awarded_yi'))
         if min(bid, award) < 0 or award > bid:
             raise ValueError('inconsistent_policy_amount')
-        spread = (rate - policy) * 100
+        product='DR001' if bank['term_days']==1 else 'DR007'
+        term='隔夜' if bank['term_days']==1 else '7天期'
+        spread = (_number(chosen[product]['weighted_rate'],positive=True) - policy) * 100
         scenario = 'below_policy' if spread < 0 else 'above_policy' if spread > 0 else 'at_policy'
-        comparison = f'较当日7天期逆回购操作利率{bank["rate_percent"]}%'
+        comparison = f'{product}较当日{term}逆回购操作利率{bank["rate_percent"]}%'
         comparison += f'{"低" if spread < 0 else "高"}{_two(abs(spread))}个基点。' if spread else '持平。'
-        comparison += (f'央行当日开展{bank["awarded_yi"]}亿元7天期逆回购，'
+        comparison += (f'央行当日开展{bank["awarded_yi"]}亿元{term}逆回购，'
                        f'投标量{bank["bid_yi"]}亿元，中标量{bank["awarded_yi"]}亿元。')
         bindings['policy'] = {'rate': str(policy), 'spread_bp': str(spread),
-                              'bid_yi': str(bid), 'awarded_yi': str(award)}
+                              'bid_yi': str(bid), 'awarded_yi': str(award),
+                              'term_days':bank['term_days'],'comparison_product':product}
     return scenario, main, comparison, bindings
 
 

@@ -61,9 +61,19 @@ def rerender(category,previous,source,out,day):
         end=date.fromisoformat(day)
         try:start=end.replace(year=end.year-10)
         except ValueError:start=end.replace(year=end.year-10,day=28)
+        calendar=out/'turnover-calendar.json'
+        if (source/'turnover-calendar.json').is_file():
+            shutil.copy2(source/'turnover-calendar.json',calendar)
+        else:
+            from .trading_calendar import sessions
+            rows=read(out/'source.json')
+            if isinstance(rows,dict):rows=rows['data']
+            save(calendar,{'sessions':sessions('xshg',rows[0]['date'],day)})
         command=[sys.executable,str(Path(__file__).parent/'engines/turnover/build_turnover.py'),
-                 '--data',str(out/'source.json'),'--out-dir',str(out),'--start',start.isoformat(),'--as-of',day]
-        done=subprocess.run(command,capture_output=True,text=True,encoding='utf-8',timeout=90)
+                 '--data',str(out/'source.json'),'--out-dir',str(out),'--start',start.isoformat(),'--as-of',day,
+                 '--calendar',str(calendar)]
+        done=subprocess.run(command,capture_output=True,text=True,encoding='utf-8',timeout=90,
+                            env={**os.environ,'PYTHONIOENCODING':'utf-8'})
         if done.returncode:raise ValueError('快照重绘失败，未请求外部数据')
         payload=dict(previous);payload['images']=[next(out.glob('换手率*.png')).name]
         payload['turnover_watermark_removed']=True
@@ -105,13 +115,19 @@ def explain_result(out, category, payload):
         record(out,4,'计算核对：'+calculation)
 
 
-def generate(category,day,root,run_id,action='produce'):
+def generate(category,day,root,run_id,action='produce',render_input=None):
     root=Path(root);state=root/'history'/category;state.mkdir(parents=True,exist_ok=True)
     out=root/'runs'/run_id;out.mkdir(parents=True,exist_ok=True)
     record(out,1,'正在检查同日期的数据与图片快照')
     cache=root/'cache'/category/f'{day}.json'
     previous=read(cache) if cache.exists() else None
-    if previous and category=='valuation':
+    if action=='render' and render_input is not None:
+        selected=Path(render_input)
+        if selected.is_symlink() or selected.resolve().parent!=out.resolve():
+            raise ValueError('重绘输入必须属于本次任务')
+        previous=read(selected)
+        day=date.fromisoformat(previous['data_date']).isoformat()
+    if previous and category=='valuation' and action!='render':
         previous['dynamic_body']=previous['dynamic_body'].replace('全A总市值/上年度全年GDP','A股总市值/上年度全年GDP')
         if previous.get('deepseek',{}).get('body'):
             previous['deepseek']['body']=previous['deepseek']['body'].replace('全A总市值/上年度全年GDP','A股总市值/上年度全年GDP')
@@ -162,9 +178,12 @@ def generate(category,day,root,run_id,action='produce'):
     else:
         record(out,2,f'正在获取并校验 {day} 的来源数据')
         payload=ADAPTERS[category](day,out,state,refresh=action=='refresh')
-    if action=='render' and category not in SNAPSHOT_REBUILDS and previous:
-        # These render branches redraw the chart but keep the stored copy; do not
-        # claim it was rebuilt by the current rules, or a later produce would reuse it.
+    if action=='render' and previous:
+        # Image-only work is bound to the chosen edition, not the date cache.
+        for key in ('title','dynamic_body','facts','fixed_notes','chart_notes','editorial','skill',
+                    'rule_copy','body_template_custom','render_source_version_id','warnings','data_reliability',
+                    'data_date_policy','requested_data_date','fund_data_dates'):
+            if key in previous:payload[key]=previous[key]
         payload['pipeline']=previous.get('pipeline','')
     else:
         payload['pipeline']=pipeline_signature()
@@ -178,7 +197,7 @@ def generate(category,day,root,run_id,action='produce'):
     payload['valid']=True
     if action=='render':
         payload['deepseek']=previous.get('deepseek',{'status':'not_configured'})
-        save(out/'result.json',payload);save(cache,payload)
+        save(out/'result.json',payload)
         return payload
     if os.getenv('SKILL_PRODUCTION')=='1':
         # The worker applies the Skill copy stage after this process exits.
@@ -214,9 +233,10 @@ def main():
     p=argparse.ArgumentParser();p.add_argument('--category',required=True);p.add_argument('--date',required=True)
     p.add_argument('--root',required=True);p.add_argument('--run-id',required=True)
     p.add_argument('--action',choices=['produce','refresh','render','ai'],default='produce')
+    p.add_argument('--render-input',type=Path)
     args=p.parse_args()
     try:
-        result=generate(args.category,args.date,args.root,args.run_id,args.action)
+        result=generate(args.category,args.date,args.root,args.run_id,args.action,render_input=args.render_input)
         save(Path(args.root)/'runs'/args.run_id/'result.json',result)
     except Exception as exc:
         # Never include request headers, model keys or raw response bodies.

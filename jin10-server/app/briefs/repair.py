@@ -4,7 +4,7 @@ import hashlib
 import json
 from pathlib import Path
 from sqlalchemy import select,or_
-from app.db.models import BriefDataPoint, BriefSourceSnapshot
+from app.db.models import BriefDataPoint, BriefSourceSnapshot,BriefJob
 from .data_reliability import extract,save_points
 
 FILES={'volume':('plot-data.json','volume-collected.json'),'turnover':('source.json','turnover-collected.json'),
@@ -68,7 +68,8 @@ def recover_snapshots(db,team_id,category,folder,*,limit=32,replay_revisions=Fal
     """Restore actual hashed captures, never synthesize a missing observation."""
     names=FILES.get(category,());found=set()
     restored=recover_oil_futures(db,team_id) if category=='oil_etf' else 0
-    rows=db.scalars(select(BriefSourceSnapshot).where(BriefSourceSnapshot.team_id==team_id,
+    rows=db.scalars(select(BriefSourceSnapshot).join(BriefJob,BriefSourceSnapshot.job_id==BriefJob.id).where(
+        BriefJob.action!='render',BriefSourceSnapshot.team_id==team_id,
         BriefSourceSnapshot.category==category,
         or_(*(BriefSourceSnapshot.relative_path.endswith('/'+name) for name in names),
             BriefSourceSnapshot.relative_path.in_(names))).order_by(

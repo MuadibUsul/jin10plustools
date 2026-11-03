@@ -80,6 +80,7 @@ def erp_index_limits(close):
     return low,high
 
 
+@matplotlib.rc_context({'path.simplify':False,'agg.path.chunksize':0})
 def valuation_chart(buffett_rows,erp_rows,out):
     """Draw both valuation panels on one canvas with identical plot geometry."""
     end=date.fromisoformat(erp_rows[-1]['date'])

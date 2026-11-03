@@ -1,5 +1,7 @@
 # Project requirements
 
+- Image-only fixed-brief rebuilds must use the current saved edition's immutable data snapshot and preserve its title, body, style, facts and notes. They must not fetch new data, overwrite the date cache or create/revert source observations. Reject publication if the edition changes while rebuilding. Turnover replay uses the archived verified trading calendar; valuation rendering must not depend on previous Matplotlib global state.
+
 - As requested on 2026-11-03, 原油ETF持仓 publishes each fund's latest valid issuer observation using its actual date; do not block on a calendar target, historical gaps or missing comparison snapshots. Omit unverified changes. Keep different fund dates distinct in copy, storage and templates; do not apply this policy to other columns.
 - As explicitly selected on 2026-11-03, the production team's fixed briefs use the uploaded sample style automatically, including a complete styled fallback when AI is unavailable. Preserve saved custom templates for switching. Record activation per team and exact pack digest from the user's instruction; do not fabricate global/editor blind-review approval or change other teams' settings.
 

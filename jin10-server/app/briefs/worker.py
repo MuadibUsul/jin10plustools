@@ -189,6 +189,13 @@ def execute(factory,id):
         team=db.get(Team,team_id)
         ai=briefs_ai(team)
         team_settings=dict(team.settings or {})
+        render_source_id=None;render_payload=None
+        if action=='render':
+            issue=find_issue(db,team_id,day,category)
+            if issue and issue.version:
+                selected=db.scalar(select(BriefVersion).where(BriefVersion.issue_id==issue.id,BriefVersion.number==issue.version))
+                if selected:
+                    render_source_id=selected.id;render_payload=dict(selected.payload)
         config=db.get(BriefConfig,team_id)
         category_notes=(config.notes or {}).get(category,default_notes(category)) if config else default_notes(category)
         if category in PUBLIC_COMPUTE_CATEGORIES | {'liquidity'} and not str(category_notes or '').strip():
@@ -200,13 +207,24 @@ def execute(factory,id):
             failed=db.get(BriefJob,id);failed.status='failed';failed.error=str(exc)
             failed.active_key=None;failed.lease_until=None;db.commit()
         record(out,1,str(exc));return
+    if action=='render':
+        if render_payload is None:
+            with factory() as db:
+                failed=db.get(BriefJob,id);failed.status='failed';failed.active_key=None
+                failed.lease_until=None;failed.error='尚无可重绘稿件，请先生成';db.commit()
+            record(out,1,'尚无可重绘稿件，请先生成');return
+        from .sources import save
+        target_day=date.fromisoformat(render_payload['data_date'])
+        render_payload['render_source_version_id']=str(render_source_id)
+        save(out/'render-input.json',render_payload)
     record(out,1,f'任务开始：生产日 {day}，目标数据日 {target_day}')
     restored=0
     try:
         with factory() as db:
             from .repair import recover_snapshots,restore_working_history
-            recover_snapshots(db,team_id,category,out/'recovered-evidence')
-            restored=restore_working_history(db,team_id,category,root/'history'/category)
+            if action!='render':
+                recover_snapshots(db,team_id,category,out/'recovered-evidence')
+                restored=restore_working_history(db,team_id,category,root/'history'/category)
             db.commit()
     except (ValueError,OSError) as exc:
         from .sources import save
@@ -306,6 +324,7 @@ def execute(factory,id):
         old_result.replace(out/f'prior-result-{job.attempts}-{time.time_ns()}.json')
     command=[sys.executable,'-m','app.briefs.runner','--category',category,'--date',expected_date(category,day).isoformat(),
              '--root',str(root),'--run-id',str(id),'--action','refresh' if action=='reconcile' or automatic and action=='produce' else action]
+    if action=='render':command.extend(['--render-input',str(out/'render-input.json')])
     process=subprocess.Popen(command,env=env,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,start_new_session=os.name!='nt')
     cutoff=time.monotonic()+360
     error=None;retryable=True
@@ -374,6 +393,15 @@ def execute(factory,id):
         save(out/'result.json',payload)
     with factory() as db:
         job=db.get(BriefJob,id);job.lease_until=None;job.updated_at=utcnow()
+        render_issue=None
+        if action=='render':
+            current=find_issue(db,team_id,day,category)
+            render_issue=owned(db,team_id,current.id,True) if current else None
+            latest=db.scalar(select(BriefVersion).where(BriefVersion.issue_id==render_issue.id,
+                BriefVersion.number==render_issue.version)) if render_issue else None
+            if latest is None or latest.id!=render_source_id:
+                job.status='failed';job.active_key=None;job.error='稿件已更新，请基于最新版本重新制图'
+                db.commit();record(out,5,job.error);return
         stopped_step=read(out).get('step',1)
         record(out,5 if payload and payload.get('valid') else stopped_step,'正在归档原始数据、图片快照与本次运行结果')
         try:
@@ -387,12 +415,12 @@ def execute(factory,id):
                 source_dir=(root/payload['artifact_dir']).resolve()
                 if not source_dir.is_relative_to(root.resolve()):
                     raise ValueError('被复用的来源快照路径不安全')
-            source_archive=archive_run(db,job,out,history_dir=root/'history'/category,
+            source_archive=archive_run(db,job,out,history_dir=None if action=='render' else root/'history'/category,
                                        source_dir=source_dir,
                                        data_date=payload.get('data_date') if payload else None)
             from .data_reliability import link_sources
             link_sources(db,job)
-            if payload and payload.get('valid') and category == 'valuation':
+            if payload and payload.get('valid') and category == 'valuation' and action!='render':
                 from .valuation_observations import save_history
                 save_history(db, team_id, id, out/'erp-plot-data.json')
         except Exception as exc:
@@ -413,14 +441,15 @@ def execute(factory,id):
         if payload and payload.get('valid'):
             if automatic and not production_window(datetime.now(CHINA)):
                 job.status='skipped';job.active_key=None;job.error='超过10:00，快照保留但未生成当天稿';db.commit();record(out,5,job.error);return
-            issue=ensure_issue(db,team_id,day,category);issue=owned(db,team_id,issue.id,True)
-            if action!='produce' and issue.version:
+            issue=render_issue or ensure_issue(db,team_id,day,category);issue=owned(db,team_id,issue.id,True)
+            if action not in ('produce','render') and issue.version:
                 previous=db.scalars(select(BriefVersion).where(BriefVersion.issue_id==issue.id,BriefVersion.number==issue.version)).first()
                 if previous and 'fixed_notes' in previous.payload:payload['fixed_notes']=previous.payload['fixed_notes']
             payload['preview']=preview
             payload['source_archive']=source_archive
             if error:payload.setdefault('warnings',[]).append('规则稿已保存；模型未完成或任务达到时限')
-            version=append_version(db,issue,payload,user_id=job.created_by)
+            version=append_version(db,issue,payload,user_id=job.created_by,
+                                   kind='rendered' if action=='render' else 'generated')
             db.execute(update(BriefSourceSnapshot).where(BriefSourceSnapshot.job_id==id,
                 BriefSourceSnapshot.attempt==job.attempts).values(version_id=version.id))
             job.status='succeeded';job.active_key=None;job.error=None

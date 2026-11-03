@@ -215,6 +215,10 @@ def coverage(db,team_id,category,target):
 
 
 def record_run(db,job,folder,payload,error=None):
+    if getattr(job,'action',None)=='render':
+        # Rendering an older edition is not a new source observation. It must
+        # neither revert later corrections nor replace the latest source check.
+        return dict((payload or {}).get('data_reliability') or {})
     from .policy import expected_date
     target=date.fromisoformat(payload['data_date']) if payload else expected_date(job.category,job.issue_date)
     points=extract(job.category,folder,payload)

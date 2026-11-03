@@ -138,8 +138,10 @@ def main() -> None:
     parser.add_argument('--start', default='2015-01-01')
     parser.add_argument('--as-of')
     parser.add_argument('--out-dir', type=Path, required=True)
+    parser.add_argument('--calendar',type=Path,help='Archived verified trading sessions used by the original production run')
     args = parser.parse_args()
-    result = build_outputs(args.data, args.out_dir, args.reference, args.start, args.as_of)
+    calendar=json.loads(args.calendar.read_text(encoding='utf-8'))['sessions'] if args.calendar else None
+    result = build_outputs(args.data, args.out_dir, args.reference, args.start, args.as_of,session_dates=calendar)
     print(json.dumps(result,ensure_ascii=False,indent=2,default=str))
 
 

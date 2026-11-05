@@ -67,6 +67,7 @@ def test_compute_digest_covers_published_weekly_change(tmp_path):
     path.write_text(json.dumps(rows));assert before!=publication_digest('token_cost',tmp_path,p)
 
 
+@pytest.mark.parametrize('db_factory',['independent_connections'],indirect=True)
 def test_concurrent_asset_upload_preserves_file_and_database_identity(client,db_factory,seed,monkeypatch):
     from PIL import Image
     from app.api import assets

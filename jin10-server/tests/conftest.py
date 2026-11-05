@@ -24,10 +24,13 @@ PASSWORD = "correct-horse-battery"
 
 
 @pytest.fixture
-def db_factory(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[sessionmaker[Session]]:
+def db_factory(tmp_path: Path, monkeypatch: pytest.MonkeyPatch,request) -> Iterator[sessionmaker[Session]]:
     monkeypatch.setenv("PLUS_STORAGE_DIR", str(tmp_path / "storage"))
     get_settings.cache_clear()
-    engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+    if getattr(request,'param',None)=='independent_connections':
+        engine=create_engine('sqlite:///'+(tmp_path/'test.sqlite').as_posix(),connect_args={'check_same_thread':False})
+    else:
+        engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
 
     @event.listens_for(engine, "connect")
     def _foreign_keys_on(dbapi_connection, _record):

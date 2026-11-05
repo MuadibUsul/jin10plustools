@@ -364,7 +364,8 @@ def test_background_ai_collection_stores_data_without_generating_content(db_fact
     def capture(factory,id,out):
         with factory() as db:
             db.add(AIComputeObservation(team_id=team,kind='token',date=date(2026,10,29),
-                token_price='0.96',revision=1,source='Verified visible card',source_status='public_visible_summary'))
+                token_price='0.96',revision=1,source='Verified visible card',source_status='public_visible_summary',
+                public_display={'readings':[{'metric':'token','date':'2026-10-29','price':'0.96','week_change_pct':None}]}))
             db.commit()
         return {'data_date':'2026-10-29'}
     monkeypatch.setattr('app.briefs.worker.capture_public_for_job',capture)

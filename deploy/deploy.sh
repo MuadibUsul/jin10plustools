@@ -6,17 +6,18 @@ git diff --quiet && git diff --cached --quiet || { echo 'Commit the verified rel
 revision="$(git rev-parse HEAD)"
 host="${PLUS_DEPLOY_HOST:-deploy@104.207.82.85}"
 key="${PLUS_DEPLOY_KEY:-$(pwd)/../plus_deploy_ed25519}"
+local_python="${PLUS_LOCAL_PYTHON:-python3}"
 ssh_options=(-i "$key" -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes)
 archive="$(mktemp /tmp/plus-source.XXXXXXXX.tar)"
 trap 'rm -f -- "$archive" "$archive.gz"' EXIT
 git archive --format=tar HEAD jin10-server skills .dockerignore deploy/Dockerfile.release deploy/drain-worker.py deploy/runtime-wheels.py > "$archive"
 (cd jin10-extension && npm run build)
-python3 - <<'ZIP'
+"$local_python" - <<'ZIP'
 import json
 from pathlib import Path
 from zipfile import ZipFile,ZIP_DEFLATED
 dist=Path('jin10-extension/dist');web=Path('jin10-server/app/web')
-(web/'extension-version.json').write_text(json.dumps({'version':json.loads((dist/'manifest.json').read_text())['version']}))
+(web/'extension-version.json').write_text(json.dumps({'version':json.loads((dist/'manifest.json').read_text(encoding='utf-8'))['version']}),encoding='utf-8')
 with ZipFile(web/'plus-research-extension.zip','w',ZIP_DEFLATED) as bundle:
     for path in sorted(dist.rglob('*')):
         if path.is_file():bundle.write(path,path.relative_to(dist))

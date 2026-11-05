@@ -149,6 +149,8 @@ def validate_plan(context,plan):
     required={f['id'] for f in context['fact_bank'] if f.get('required',True)}
     if len(facts)!=len(set(facts)) or not required<=set(facts):raise ValueError('story_fact_coverage')
     if context['category']=='us_structure' and facts[0]!='indices':raise ValueError('indices_must_open')
+    if context['category']=='gpu_rental' and facts[:3]!=['b200','h100','a100']:
+        raise ValueError('gpu_story_order')
     if context['category'] in ('us_structure','us_barometer'):
         groups=[{variants[value] for value in group} for group in paragraphs]
         expected=([{'indices','breadth'},{'small_caps','verdict'}] if context['category']=='us_structure'

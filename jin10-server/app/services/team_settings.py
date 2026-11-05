@@ -1,17 +1,64 @@
 """Team configuration; provider secrets are encrypted and never serialized to clients."""
 import base64
 import hashlib
+import os
+import secrets
+import tempfile
 
-from cryptography.fernet import Fernet
+from cryptography.fernet import Fernet,InvalidToken
 
 from app.config import get_settings
 from app.db.models import BriefConfig, utcnow
 from app.briefs.delivery import default_notes
 
 
-def cipher():
-    secret = get_settings().jwt_secret.encode()
+def cipher(secret=None):
+    settings=get_settings()
+    if secret is None:
+        secret=settings.team_key_secret
+        if not secret:
+            # This key belongs to the persistent data volume, not to login sessions.
+            path=settings.storage_dir/'.team-ai-encryption-key'
+            path.parent.mkdir(parents=True,exist_ok=True)
+            if not path.exists():
+                fd,name=tempfile.mkstemp(prefix='.team-key-',dir=path.parent)
+                try:
+                    with os.fdopen(fd,'w',encoding='ascii') as output:output.write(secrets.token_hex(32))
+                    os.chmod(name,0o600)
+                    try:os.link(name,path) # First complete writer wins across processes.
+                    except FileExistsError:pass
+                finally:os.unlink(name)
+            secret=path.read_text(encoding='ascii').strip()
+            if len(secret)!=64:raise ValueError('Invalid persistent encryption key')
+    secret=secret.encode()
     return Fernet(base64.urlsafe_b64encode(hashlib.sha256(b'plus-team-ai-v1\0' + secret).digest()))
+
+
+def decrypt_token(token):
+    try:return cipher().decrypt(token.encode()).decode()
+    except InvalidToken:
+        # Read compatibility only; deployment migrates these before a JWT rotation.
+        return cipher(get_settings().jwt_secret).decrypt(token.encode()).decode()
+
+
+def migrate_tokens(db):
+    from sqlalchemy import select
+    from app.db.models import Team
+    migrated=0;unreadable=0
+    for team in db.scalars(select(Team).with_for_update()):
+        ai={name:dict(value) for name,value in (team.settings or {}).get('ai',{}).items()}
+        changed=False
+        for value in ai.values():
+            if not value.get('token'):continue
+            try:cipher().decrypt(value['token'].encode())
+            except InvalidToken:
+                try:key=decrypt_token(value['token'])
+                except (InvalidToken,ValueError,UnicodeError):
+                    unreadable+=1;continue
+                value['token']=cipher().encrypt(key.encode()).decode();changed=True;migrated+=1
+        if changed:team.settings={**team.settings,'ai':ai}
+    db.commit()
+    return {'migrated':migrated,'unreadable':unreadable}
 
 
 AI_PROVIDERS = ('deepseek', 'chat2api', 'openai')
@@ -41,12 +88,18 @@ def provider(team, name):
         fallback_key, fallback_model = settings.openai_api_key, settings.openai_model
     else:
         fallback_key, fallback_model = settings.briefs_deepseek_api_key, settings.briefs_deepseek_model
-    key = cipher().decrypt(saved['token'].encode()).decode() if saved.get('token') else fallback_key
+    enabled=saved.get('enabled',True);error=None
+    key=''
+    if enabled:
+        try:key=decrypt_token(saved['token']) if saved.get('token') else fallback_key
+        except (InvalidToken,ValueError,OSError,UnicodeError):error='saved_key_unreadable'
     requested = saved.get('model', fallback_model)
     model = chat2api_effective(requested) if name == 'chat2api' else requested
     result = {'key': key if saved.get('enabled', True) else '',
               'model': model, 'enabled': saved.get('enabled', True),
-              'configured': bool(key), 'source': 'team' if saved.get('token') else 'server' if key else 'none'}
+              'configured': bool(saved.get('token') or fallback_key),
+              'source': 'team' if saved.get('token') else 'server' if fallback_key else 'none'}
+    if error:result['configuration_error']=error
     if name == 'chat2api':
         result.update({'requested_model': requested, 'model_supported': chat2api_supported(requested)})
     return result

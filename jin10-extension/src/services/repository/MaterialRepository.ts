@@ -21,6 +21,8 @@ export interface MaterialRepository {
   replace(oldId: string, material: NewsMaterial, dedupeKeys: string[]): Promise<void>;
   /** Atomically acknowledge the sent snapshot while preserving newer local changes. */
   acknowledge(sent: NewsMaterial, received: NewsMaterial | null, dedupeKeys: string[]): Promise<void>;
+  /** Apply a pulled record only if no local mutation is pending, in the write queue. */
+  applyRemote(material: NewsMaterial, dedupeKeys: string[]): Promise<boolean>;
   /** 彻底移除本地记录 */
   remove(id: string): Promise<void>;
 }

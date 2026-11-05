@@ -86,6 +86,7 @@ def main(src, dst):
                 office.wait(timeout=20)
             except subprocess.TimeoutExpired:
                 office.kill()
+                office.wait(timeout=10)
 
 
 if __name__ == "__main__":

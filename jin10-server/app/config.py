@@ -17,6 +17,8 @@ class Settings(BaseSettings):
     #: JWT 签名密钥，生产环境必须设置为随机长字符串
     jwt_secret: str = Field(default="dev-only-change-me", min_length=16)
     jwt_expire_hours: int = 24 * 90
+    #: Optional independently managed encryption secret; otherwise a volume-persistent key is used.
+    team_key_secret: str = ''
     #: 工作台显示窗口；业务原文、编辑和图片永久归档，不据此硬删除
     retention_days: int = 7
     #: 素材图片、生成的 PPT 等文件存放目录

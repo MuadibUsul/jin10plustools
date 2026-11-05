@@ -52,6 +52,10 @@ class Repo {
   async save(m: NewsMaterial) {
     this.items.set(m.id, m);
   }
+  async applyRemote(m: NewsMaterial) {
+    if (this.items.get(m.id)?.sync_status==='local') return false;
+    this.items.set(m.id,m);return true;
+  }
   async replace(oldId: string, m: NewsMaterial) {
     this.items.delete(oldId);
     this.items.set(m.id, m);
@@ -136,6 +140,39 @@ beforeEach(() => {
 });
 
 describe('syncService', () => {
+  it('discards an old-team response and cursor after an account change', async()=>{
+    api.fetchChanges.mockImplementation(async()=>{
+      session={...session!,user:{...session!.user,id:'u9',team_id:'t2'},team:{id:'t2',name:'other-team'}};
+      return {items:[server('private-team-one')],next_cursor:'private-cursor',has_more:false};
+    });
+    const report=await createSyncService(repo).sync();
+    expect(report.skipped).toBe('session_changed');
+    expect(repo.items.has('private-team-one')).toBe(false);
+    expect(syncState.cursor).toBeNull();
+  });
+  it('stops subsequent push batches and pull when login changes during push',async()=>{
+    for(let i=0;i<51;i++)await repo.save(local(String(i)));
+    api.pushMaterials.mockImplementation(async(batch)=>{
+      session=null;return batch.map(m=>({client_id:m.id,outcome:'created' as const,material:server(m.id)}));
+    });
+    const report=await createSyncService(repo).sync();
+    expect(report.skipped).toBe('session_changed');
+    expect(api.pushMaterials).toHaveBeenCalledTimes(1);
+    expect(api.fetchChanges).not.toHaveBeenCalled();
+    expect(repo.items.get('0')?.sync_status).toBe('local');
+  });
+  it('retains an edit queued before a pulled response is applied',async()=>{
+    await repo.save(local('race',{sync_status:'synced',team_id:'t1'}));
+    const apply=repo.applyRemote.bind(repo);
+    repo.applyRemote=async(m)=>{
+      await repo.save(local(m.id,{team_id:'t1',title:'NEW EDIT'}));
+      return apply(m);
+    };
+    api.fetchChanges.mockResolvedValue({items:[server('race',{title:'OLD'})],next_cursor:'c2',has_more:false});
+    await createSyncService(repo).sync();
+    expect(repo.items.get('race')?.title).toBe('NEW EDIT');
+    expect(repo.items.get('race')?.sync_status).toBe('local');
+  });
   it('preserves a local deletion made while push is in flight', async () => {
     await repo.save(local('a'));
     api.pushMaterials.mockImplementation(async () => {

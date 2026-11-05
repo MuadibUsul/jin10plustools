@@ -56,6 +56,7 @@ def analyze_one(factory: sessionmaker[Session], client: JevClient | None, materi
         if m is None or m.ai_status != "analyzing":
             return "skipped"
         state = build_state(m)
+        started_at=m.updated_at
         team = db.get(Team, m.team_id)
         config = provider(team, 'jev')
         override = bool((team.settings or {}).get('ai', {}).get('jev'))
@@ -82,9 +83,14 @@ def analyze_one(factory: sessionmaker[Session], client: JevClient | None, materi
             owned_client.close()
 
     with factory() as db:
-        m = db.get(Material, material_id)
-        if m is None:
+        m = db.scalar(select(Material).where(Material.id==material_id).with_for_update())
+        if m is None or m.deleted_at is not None:
             return "skipped"
+        if m.ai_status!='analyzing' or m.updated_at!=started_at or build_state(m)!=state:
+            # A newer request or input owns the row now. Never consume its retry.
+            if m.ai_status=='analyzing':
+                m.ai_status='pending';db.commit()
+            return 'stale'
         now = utcnow()
         m.ai_attempts += 1
         if answers is not None:

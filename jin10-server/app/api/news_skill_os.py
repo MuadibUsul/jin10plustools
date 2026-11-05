@@ -139,6 +139,7 @@ class DraftRevisionCreate(StrictModel):
 
 
 class DraftReview(StrictModel):
+    expected_revision: int = Field(ge=1)
     decision: Literal["approve", "reject"]
     note: str = Field(default="", max_length=2000)
 
@@ -477,7 +478,8 @@ def review_draft_route(draft_id: uuid.UUID, payload: DraftReview, db: DbSession,
     _enabled()
     with _errors():
         return _draft_out(review_draft(db, draft=get_draft(db, user.team_id, draft_id),
-                                       user=user, decision=payload.decision, note=payload.note))
+                                       user=user, decision=payload.decision, note=payload.note,
+                                       expected_revision=payload.expected_revision))
 
 
 @router.get("/audit")

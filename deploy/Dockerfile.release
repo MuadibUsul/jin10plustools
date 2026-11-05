@@ -4,11 +4,15 @@ FROM ${BASE_IMAGE}
 USER root
 COPY jin10-server/pyproject.toml /srv/pyproject.toml
 COPY jin10-server/requirements.lock /srv/requirements.lock
+COPY runtime-wheels /opt/plus-runtime-wheels
+RUN python -m pip install --no-cache-dir --no-index --no-deps --find-links=/opt/plus-runtime-wheels -r /srv/requirements.lock
 COPY jin10-server/app /srv/app
 COPY jin10-server/alembic /srv/alembic
 COPY jin10-server/alembic.ini /srv/alembic.ini
 COPY jin10-server/templates /srv/templates
 COPY skills /srv/skills
+RUN python -m pip install --no-cache-dir --no-index --find-links=/opt/plus-runtime-wheels --no-deps -e /srv && python -m pip check
 RUN chmod -R a+rX /srv
 USER plus
 RUN python -m app.services.runtime_lock /srv/requirements.lock
+RUN python -c "from cryptography.fernet import Fernet; f=Fernet(Fernet.generate_key()); assert f.decrypt(f.encrypt(b'plus-runtime-check'))==b'plus-runtime-check'"

@@ -642,27 +642,40 @@ def json_bytes(dataset: Dataset, rows: Iterable[dict], users: dict[str, str]) ->
 
 
 def xlsx_bytes(dataset: Dataset, rows: Iterable[dict], users: dict[str, str]) -> bytes:
-    from openpyxl import Workbook
-    from openpyxl.cell import WriteOnlyCell
-
-    book = Workbook(write_only=True)
-    sheet = book.create_sheet(title='数据')
-    sheet.append(headers(dataset))
-    for row in rows:
-        values = []
-        for column in dataset.columns:
-            value = text_cell(column, row.get(column.key), users)
-            if column.kind == 'decimal' and value is not None:
-                value = float(value)
-            if isinstance(value, str) and len(value) > EXCEL_CELL_LIMIT:
-                value = value[:EXCEL_CELL_LIMIT - 1] + '…'
-            if isinstance(value,str):
-                cell=WriteOnlyCell(sheet,value=value);cell.data_type='s';value=cell
-            values.append(value)
-        sheet.append(values)
+    book = xlsx_book(dataset,rows,users)
     buffer = io.BytesIO()
     book.save(buffer)
     return buffer.getvalue()
+
+
+def xlsx_book(dataset,rows,users):
+    from openpyxl import Workbook
+    from openpyxl.cell import WriteOnlyCell
+    book=Workbook(write_only=True);sheet=book.create_sheet(title='数据')
+    sheet.append(headers(dataset));overflow=None;overflow_rows=0
+    def cell(target,value):
+        if not isinstance(value,str):return value
+        result=WriteOnlyCell(target,value=value);result.data_type='s';return result
+    for number,row in enumerate(rows,2):
+        values=[]
+        for column in dataset.columns:
+            value=text_cell(column,row.get(column.key),users)
+            if column.kind=='decimal' and value is not None:value=float(value)
+            if isinstance(value,str) and len(value.encode('utf-16-le'))//2>EXCEL_CELL_LIMIT:
+                if overflow is None:
+                    overflow=book.create_sheet(title='长字段')
+                    overflow.append(['数据表行号','字段名','字段标识','分段序号','分段总数','完整内容分段（按序直接拼接）'])
+                # Each piece is safe even when every character is a surrogate pair.
+                total=(len(value)+15999)//16000
+                for index in range(total):
+                    overflow_rows+=1
+                    if overflow_rows>=1_048_576:raise ExportLimitError('长字段分段超过Excel行数上限，请缩小范围或导出JSON')
+                    overflow.append([number,cell(overflow,column.label),cell(overflow,column.key),index+1,total,
+                                     cell(overflow,value[index*16000:(index+1)*16000])])
+                value=value[:16000]+f'\n〔完整内容共{total}段，见“长字段”工作表；本单元格仅预览〕'
+            values.append(cell(sheet,value))
+        sheet.append(values)
+    return book
 
 
 def csv_safe(value):
@@ -696,17 +709,7 @@ def write_export(dataset, rows, users, fmt):
             yield row
     try:
         if fmt=='xlsx':
-            book=Workbook(write_only=True);sheet=book.create_sheet(title='数据');sheet.append(headers(dataset))
-            for row in checked():
-                values=[]
-                for column in dataset.columns:
-                    value=text_cell(column,row.get(column.key),users)
-                    if column.kind=='decimal' and value is not None:value=float(value)
-                    if isinstance(value,str):
-                        value=value[:EXCEL_CELL_LIMIT-1]+'…' if len(value)>EXCEL_CELL_LIMIT else value
-                        cell=WriteOnlyCell(sheet,value=value);cell.data_type='s';value=cell
-                    values.append(value)
-                sheet.append(values)
+            book=xlsx_book(dataset,checked(),users)
             book.save(output)
         elif fmt=='json':
             output.write(b'[');first=True

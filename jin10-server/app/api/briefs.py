@@ -275,18 +275,28 @@ def confirm(id:uuid.UUID,body:ConfirmRequest,db:DbSession,user:Editor):
     if reliability.get('publication_digest'):
         source_day=date.fromisoformat(version.payload['data_date'])
         latest=db.scalar(select(BriefDataCheck).where(BriefDataCheck.team_id==user.team_id,
-            BriefDataCheck.category==issue.category,BriefDataCheck.data_date==source_day).order_by(
+            BriefDataCheck.category==issue.category,BriefDataCheck.data_date==source_day,
+            BriefDataCheck.report['current_data_valid'].as_boolean().is_(True),
+            BriefDataCheck.report['publication_digest'].as_string().is_not(None)).order_by(
             BriefDataCheck.created_at.desc()).limit(1))
         saved_digest=reliability['publication_digest']
-        if latest and latest.report.get('publication_digest_version')==2 and reliability.get('publication_digest_version')!=2:
+        digest_version=latest.report.get('publication_digest_version',1) if latest else None
+        latest_digest=latest.report.get('publication_digest') if latest else None
+        if latest and digest_version in (1,2) and issue.category in ('liquidity','token_cost','gpu_rental'):
+            from app.briefs.product_inputs import archived_check_digest,VERSION
+            try:latest_digest=archived_check_digest(db,latest)
+            except (ValueError,OSError,KeyError,TypeError):latest_digest=None
+            if not latest_digest:raise HTTPException(409,'旧来源校验缺少可复核的成品输入，请重新补查或生成后确认')
+            digest_version=VERSION
+        if latest and digest_version in (2,3) and reliability.get('publication_digest_version')!=digest_version:
             from app.briefs.product_inputs import publication_digest
             from app.briefs.service import root_for
             folder=(root_for(user.team_id)/version.payload.get('artifact_dir','')).resolve()
             if not folder.is_relative_to(root_for(user.team_id).resolve()):raise HTTPException(409,'稿件来源路径无效')
-            saved_digest=publication_digest(issue.category,folder,edition_payload(version))
+            try:saved_digest=publication_digest(issue.category,folder,edition_payload(version),version=digest_version)
+            except (ValueError,OSError,KeyError,TypeError):raise HTTPException(409,'旧稿缺少完整成品输入，请重新生成') from None
             if not saved_digest:raise HTTPException(409,'旧稿缺少可复核的成品输入，请重新生成')
-        if (latest and latest.report.get('current_data_valid') and latest.report.get('publication_digest')
-                and latest.report['publication_digest']!=saved_digest):
+        if latest_digest and latest_digest!=saved_digest:
             raise HTTPException(409,'来源数据已有修订，请重新生成并核对后确认')
     for name in version.payload.get('images',[]):
         try:artifact_path(issue,version,name)

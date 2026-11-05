@@ -210,13 +210,13 @@ async function showDraft(item) {
     await showDraft(item); await load();
   });
   const approve = node('button', '通过', 'primary'); approve.onclick = () => safe(async () => {
-    await api(`/api/news-skill-os/drafts/${item.id}/review`, { method: 'POST', json: { decision: 'approve', note: '' } });
+    await api(`/api/news-skill-os/drafts/${item.id}/review`, { method: 'POST', json: { decision: 'approve', note: '', expected_revision:item.current_revision } });
     toast('草稿已通过人工审核。'); await showDraft(item); await load();
   });
   const reject = node('button', '驳回'); reject.onclick = () => safe(async () => {
     const note = window.prompt('驳回原因（必填）');
     if (!note) return;
-    await api(`/api/news-skill-os/drafts/${item.id}/review`, { method: 'POST', json: { decision: 'reject', note } });
+    await api(`/api/news-skill-os/drafts/${item.id}/review`, { method: 'POST', json: { decision: 'reject', note, expected_revision:item.current_revision } });
     toast('草稿已驳回。'); await showDraft(item); await load();
   });
   actions.append(submit, approve, reject); host.append(actions);

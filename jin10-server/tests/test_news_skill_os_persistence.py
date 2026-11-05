@@ -178,13 +178,13 @@ def test_draft_revision_review_and_audit(client, db_factory, monkeypatch):
     assert client.post(f"/api/news-skill-os/drafts/{draft['id']}/review", headers=editor,
                        json={"decision": "reject"}).status_code == 422
     rejected = client.post(f"/api/news-skill-os/drafts/{draft['id']}/review", headers=editor,
-                           json={"decision": "reject", "note": "金额需补来源"})
+                           json={"decision": "reject", "note": "金额需补来源", "expected_revision":2})
     assert rejected.status_code == 200 and rejected.json()["status"] == "rejected"
     approved = client.post(f"/api/news-skill-os/drafts/{draft['id']}/review", headers=editor,
-                           json={"decision": "approve", "note": "已复核"})
+                           json={"decision": "approve", "note": "已复核", "expected_revision":2})
     assert approved.status_code == 200 and approved.json()["status"] == "approved"
     assert client.post(f"/api/news-skill-os/drafts/{draft['id']}/review", headers=editor,
-                       json={"decision": "approve"}).status_code == 409
+                       json={"decision": "approve", "expected_revision":2}).status_code == 409
     detail = client.get(f"/api/news-skill-os/drafts/{draft['id']}", headers=viewer)
     assert detail.status_code == 200
     revisions = detail.json()["revisions"]

@@ -81,11 +81,40 @@ PY
 
 echo "Building PLUS image $release_image"
 base_image="$(docker inspect -f '{{.Config.Image}}' plus-api)"
+mkdir -p "$release_dir/runtime-wheels"
+docker run --rm --memory=256m --cpus=0.5 --network bridge --user 0 --entrypoint python \
+  -v "$release_dir:/release" "$base_image" /release/deploy/runtime-wheels.py \
+  /release/jin10-server/requirements.lock /release/runtime-wheels
 docker build --network=none --build-arg "BASE_IMAGE=$base_image" -f "$release_dir/deploy/Dockerfile.release" -t "$release_image" "$release_dir"
-python3 "$release_dir/deploy/drain-worker.py" --worker "$worker_id"
+drain_owner="$revision-$$"
+release_stage=draining
+finish_release() {
+  result=$?
+  trap - EXIT
+  if [[ "$result" != 0 ]]; then
+    if [[ "$release_stage" == worker_stopped ]]; then
+      # No API replacement has begun: resume the same container, never roll back an image.
+      if [[ "$(docker inspect -f '{{.State.Running}}' "$worker_id")" != true ]]; then docker start "$worker_id" >/dev/null || true; fi
+      python3 "$release_dir/deploy/drain-worker.py" --worker "$worker_id" --owner "$drain_owner" --clear || true
+    fi
+    if [[ "$release_stage" == draining ]]; then
+      python3 "$release_dir/deploy/drain-worker.py" --worker "$worker_id" --owner "$drain_owner" --clear || true
+    fi
+    docker run --rm --network none --volumes-from "$worker_id" --entrypoint python "$release_image" -c \
+      "import json,sys; from app.config import get_settings; from app.db.models import utcnow; p=get_settings().storage_dir/'.brief-deployment-failure.json'; p.write_text(json.dumps({'revision':sys.argv[1],'stage':sys.argv[2],'at':utcnow().isoformat()}))" "$revision" "$release_stage" || true
+    echo "PLUS release failed at stage $release_stage; no backup or rollback performed. Worker/API state requires verification." >&2
+  fi
+  exit "$result"
+}
+trap finish_release EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+python3 "$release_dir/deploy/drain-worker.py" --worker "$worker_id" --owner "$drain_owner"
+release_stage=worker_stopped
 
 # Requested 2026-11-02: no deployment backups or automatic rollback.
 # Existing database/storage stay in place; only unused PLUS images are removed.
+release_stage=api_replacing
 if ! PLUS_RELEASE_IMAGE="$release_image" "${compose_cmd[@]}" up -d --no-deps --no-build api; then
   exit 1
 fi
@@ -104,7 +133,9 @@ if [[ "$api_healthy" != true ]]; then
 fi
 docker exec plus-api python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/ready',timeout=10)"
 docker exec plus-api python -c "from alembic.config import Config; from alembic.script import ScriptDirectory; from alembic.runtime.migration import MigrationContext; from app.db.session import get_engine; c=get_engine().connect(); assert MigrationContext.configure(c).get_current_revision()==ScriptDirectory.from_config(Config('/srv/alembic.ini')).get_current_head(); c.close()"
+docker exec plus-api python -c "from app.db.session import get_session_factory; from app.services.team_settings import migrate_tokens; db=get_session_factory()(); print('Migrated legacy encrypted provider tokens:',migrate_tokens(db)); db.close()"
 
+release_stage=worker_replacing
 if ! PLUS_RELEASE_IMAGE="$release_image" "${compose_cmd[@]}" up -d --no-deps --no-build brief-worker; then
   exit 1
 fi
@@ -135,7 +166,7 @@ finally:
     if os.path.exists(name):os.unlink(name)
 PY
 
-docker exec plus-api python -c "from app.config import get_settings; (get_settings().storage_dir/'.brief-worker-drain').unlink(missing_ok=True)"
+python3 "$release_dir/deploy/drain-worker.py" --worker "$worker_id" --owner "$drain_owner" --clear
 worker_ready=false
 for _ in $(seq 1 12); do
   if docker exec plus-api python -c "import json; from datetime import datetime,timezone; from app.config import get_settings; p=json.loads((get_settings().storage_dir/'.brief-worker-heartbeat.json').read_text()); assert (datetime.now(timezone.utc)-datetime.fromisoformat(p['at'])).total_seconds()<20 and not p.get('draining')" 2>/dev/null; then
@@ -171,4 +202,6 @@ while IFS= read -r image; do
   docker image rm "$image" || echo "PLUS image still referenced; retained: $image" >&2
 done < <(docker image ls --filter 'reference=plus-*' --format '{{.Repository}}:{{.Tag}}')
 
+docker exec plus-api python -c "from app.config import get_settings; (get_settings().storage_dir/'.brief-deployment-failure.json').unlink(missing_ok=True)"
+release_stage=verified
 echo "PLUS API and worker are running release $revision"

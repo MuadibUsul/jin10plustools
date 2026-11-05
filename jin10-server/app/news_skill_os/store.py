@@ -427,7 +427,8 @@ def submit_draft(db: Session, *, draft: NewsDraft, user) -> NewsDraft:
     return draft
 
 
-def review_draft(db: Session, *, draft: NewsDraft, user, decision: str, note: str = "") -> NewsDraft:
+def review_draft(db: Session, *, draft: NewsDraft, user, decision: str, note: str = "",expected_revision: int | None=None) -> NewsDraft:
+    expected_revision=draft.current_revision if expected_revision is None else expected_revision
     if decision not in ("approve", "reject"):
         raise StoreError("审核决定必须是 approve 或 reject")
     if draft.status == "approved":
@@ -436,9 +437,16 @@ def review_draft(db: Session, *, draft: NewsDraft, user, decision: str, note: st
         raise StoreConflict("已归档草稿不能审核")
     if decision == "reject" and not note.strip():
         raise StoreError("驳回必须填写原因")
+    stamp=now_utc()
+    status='approved' if decision=='approve' else 'rejected'
+    changed=db.execute(update(NewsDraft).where(NewsDraft.id==draft.id,NewsDraft.team_id==draft.team_id,
+        NewsDraft.current_revision==expected_revision,NewsDraft.status.notin_(['approved','archived'])).values(
+            status=status,updated_at=stamp).execution_options(synchronize_session=False))
+    if changed.rowcount!=1:raise StoreConflict('草稿已更新或审核，请刷新并核对当前修订')
+    db.refresh(draft)
     revision = db.scalar(select(NewsDraftRevision).where(
         NewsDraftRevision.team_id == draft.team_id, NewsDraftRevision.draft_id == draft.id,
-        NewsDraftRevision.number == draft.current_revision))
+        NewsDraftRevision.number == expected_revision))
     if revision is None:
         raise StoreConflict("草稿当前修订不存在")
     stamp = now_utc()

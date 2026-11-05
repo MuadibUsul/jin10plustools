@@ -2,6 +2,7 @@ import type { AuthSession, SyncState } from '@/types/settings';
 import type { NewsMaterial } from '@/types/material';
 import { STORAGE_KEYS } from '@/shared/constants';
 import { DEFAULT_CAPTURE_SHORTCUT, type CaptureShortcut } from '@/shared/shortcut';
+import { withAuthLock } from './sessionScope';
 
 const DEFAULT_SYNC: SyncState = {
   cursor: null,
@@ -31,11 +32,15 @@ export async function getSession(): Promise<AuthSession | null> {
 }
 
 export function setSession(session: AuthSession): Promise<void> {
-  return chrome.storage.local.set({ [STORAGE_KEYS.authSession]: session });
+  return withAuthLock(async () => chrome.storage.local.set({ [STORAGE_KEYS.authSession]: session,
+    [STORAGE_KEYS.syncState]:{...await getSyncState(),syncing:false,last_error:null} }));
 }
 
 export function clearSession(): Promise<void> {
-  return chrome.storage.local.remove(STORAGE_KEYS.authSession);
+  return withAuthLock(async () => {
+    await chrome.storage.local.remove(STORAGE_KEYS.authSession);
+    await updateSyncState({syncing:false,last_error:null});
+  });
 }
 
 /** 上次成功登录的服务端地址，登录表单默认填入 */

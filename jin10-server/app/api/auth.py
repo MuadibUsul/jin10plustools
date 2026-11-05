@@ -16,7 +16,7 @@ def login(body: LoginRequest, db: DbSession) -> LoginResponse:
     user = db.scalar(select(User).where(func.lower(User.email) == body.email.lower()))
     if user is None or not user.is_active or not verify_password(body.password, user.password_hash):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="邮箱或密码错误")
-    token, expires = create_access_token(user.id, user.team_id)
+    token, expires = create_access_token(user.id, user.team_id,user.auth_version)
     return LoginResponse(
         access_token=token,
         expires_at=expires,

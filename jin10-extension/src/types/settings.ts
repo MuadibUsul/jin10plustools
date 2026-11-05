@@ -34,7 +34,7 @@ export interface SyncState {
 }
 
 export interface SyncReport {
-  skipped: 'not_logged_in' | null;
+  skipped: 'not_logged_in' | 'session_changed' | null;
   pushed: number;
   pulled: number;
   assets_uploaded: number;

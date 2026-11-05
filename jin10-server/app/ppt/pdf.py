@@ -12,8 +12,11 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from threading import BoundedSemaphore
+from app.services.processes import run_tree
 
 TIMEOUT_SECONDS = 180
+_conversion_slots=BoundedSemaphore(2)
 
 
 class PdfConversionError(RuntimeError):
@@ -38,9 +41,7 @@ def _convert_uno(pptx: Path, out_dir: Path) -> Path:
     """经 UNO 转换并关闭中西文自动间距，使 PDF 与 PowerPoint 字距一致"""
     pdf = out_dir / f"{pptx.stem}.pdf"
     try:
-        subprocess.run(
-            [_UNO_PYTHON, str(_UNO_SCRIPT), str(pptx), str(pdf)], check=True, capture_output=True, timeout=TIMEOUT_SECONDS
-        )
+        run_tree([_UNO_PYTHON,str(_UNO_SCRIPT),str(pptx),str(pdf)],timeout=TIMEOUT_SECONDS)
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as err:
         detail = getattr(err, "stderr", b"") or b""
         raise PdfConversionError(f"LibreOffice 转换失败：{detail.decode(errors='ignore')[-300:] or err}") from err
@@ -61,7 +62,7 @@ def _convert_libreoffice(binary: str, pptx: Path, out_dir: Path) -> Path:
             str(pptx),
         ]
         try:
-            subprocess.run(cmd, check=True, capture_output=True, timeout=TIMEOUT_SECONDS)
+            run_tree(cmd,timeout=TIMEOUT_SECONDS)
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as err:
             raise PdfConversionError(f"LibreOffice 转换失败：{err}") from err
     return out_dir / f"{pptx.stem}.pdf"
@@ -84,6 +85,10 @@ def _convert_powerpoint(pptx: Path, out_dir: Path) -> Path:
 
 
 def pptx_to_pdf(pptx: Path, out_dir: Path) -> Path:
+    with _conversion_slots:return _pptx_to_pdf(pptx,out_dir)
+
+
+def _pptx_to_pdf(pptx: Path, out_dir: Path) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
     binary = _soffice()
     if binary and _uno_available():

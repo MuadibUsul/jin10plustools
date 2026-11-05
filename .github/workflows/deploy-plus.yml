@@ -61,7 +61,7 @@ jobs:
       - name: Package committed PLUS source
         run: |
           tar -czf "$RUNNER_TEMP/plus-release-${GITHUB_SHA}.tar.gz" \
-            jin10-server skills .dockerignore deploy/Dockerfile.release deploy/drain-worker.py
+            jin10-server skills .dockerignore deploy/Dockerfile.release deploy/drain-worker.py deploy/runtime-wheels.py
 
       - name: Deploy only the PLUS API and worker
         env:

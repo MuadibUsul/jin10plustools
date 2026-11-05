@@ -12,17 +12,23 @@ export function useMaterials(): { materials: NewsMaterial[]; loading: boolean } 
 
   useEffect(() => {
     let cancelled = false;
-    const load = () =>
+    let generation=0;
+    const load = () => {
+      const current=++generation;
       void repository.list().then((list) => {
-        if (cancelled) return;
+        if (cancelled || current!==generation) return;
         setMaterials([...list].sort((a, b) => Date.parse(b.collect_time) - Date.parse(a.collect_time)));
         setLoading(false);
       });
+    };
 
     const onChanged = (changes: Record<string, chrome.storage.StorageChange>, area: string) => {
       if (area !== 'local') return;
       const keys = Object.keys(changes);
-      if (keys.some((k) => k === STORAGE_KEYS.materialIndex || k.startsWith(STORAGE_PREFIX.material))) load();
+      if (keys.some((k) => k === STORAGE_KEYS.authSession || k===STORAGE_KEYS.syncState || k === STORAGE_KEYS.materialIndex || k.startsWith(STORAGE_PREFIX.material))) {
+        if(keys.includes(STORAGE_KEYS.authSession)) setMaterials([]);
+        load();
+      }
     };
 
     load();

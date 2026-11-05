@@ -254,10 +254,10 @@ def record_run(db,job,folder,payload,error=None):
     report=coverage(db,job.team_id,job.category,target)
     # Compare source business values, not images or wording. Corrections found
     # by a later repair do not silently leave a stale draft confirmable.
-    from .product_inputs import publication_digest
+    from .product_inputs import publication_digest,VERSION
     publication=publication_digest(job.category,folder,payload) if payload else None
     if publication:
-        report['publication_digest']=publication;report['publication_digest_version']=2
+        report['publication_digest']=publication;report['publication_digest_version']=VERSION
     report['archive_digest']=digest(points)
     report['current_data_valid']=bool(payload and payload.get('valid'))
     if job.category=='oil_etf' and payload and payload.get('data_date_policy')=='latest_available':

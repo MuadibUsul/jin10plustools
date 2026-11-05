@@ -67,6 +67,7 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(String(255))
     role: Mapped[str] = mapped_column(String(20), default=Role.EDITOR)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    auth_version: Mapped[int] = mapped_column(Integer,default=0,server_default='0')
     created_at: Mapped[dt.datetime] = mapped_column(default=utcnow)
 
     team: Mapped[Team] = relationship(back_populates="users")

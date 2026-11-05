@@ -38,11 +38,11 @@ def verify_password(password: str, stored: str) -> bool:
     return hmac.compare_digest(actual, expected)
 
 
-def create_access_token(user_id: uuid.UUID, team_id: uuid.UUID) -> tuple[str, dt.datetime]:
+def create_access_token(user_id: uuid.UUID, team_id: uuid.UUID,auth_version: int=0) -> tuple[str, dt.datetime]:
     settings = get_settings()
     expires = dt.datetime.now(dt.UTC) + dt.timedelta(hours=settings.jwt_expire_hours)
     token = jwt.encode(
-        {"sub": str(user_id), "team": str(team_id), "exp": expires}, settings.jwt_secret, algorithm=_ALGORITHM
+        {"sub": str(user_id), "team": str(team_id), "exp": expires,"av":auth_version}, settings.jwt_secret, algorithm=_ALGORITHM
     )
     return token, expires
 
@@ -51,3 +51,10 @@ def decode_access_token(token: str) -> uuid.UUID:
     """返回用户 ID；令牌无效或过期抛出 jwt.PyJWTError"""
     payload = jwt.decode(token, get_settings().jwt_secret, algorithms=[_ALGORITHM])
     return uuid.UUID(payload["sub"])
+
+
+def access_token_version(token: str) -> int:
+    payload=jwt.decode(token,get_settings().jwt_secret,algorithms=[_ALGORITHM])
+    value=payload.get('av',0) # Existing sessions remain valid until this user's first reset.
+    if type(value) is not int:raise jwt.InvalidTokenError('Invalid session version')
+    return value

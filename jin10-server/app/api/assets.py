@@ -14,6 +14,7 @@ from app.db.models import Asset
 from app.deps import CurrentUser, DbSession, Editor
 from app.schemas import AssetExistsRequest, AssetExistsResponse
 from app.services.storage import asset_path, write_atomic
+from app.services.asset_upload import upload_lock
 
 router = APIRouter(prefix="/api/assets", tags=["assets"])
 
@@ -62,26 +63,30 @@ async def upload(
     if not data:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="图片内容为空")
 
-    path = asset_path(user.team_id, asset_id)
-    write_atomic(path, bytes(data))
-    db.add(
-        Asset(
-            team_id=user.team_id,
-            id=asset_id,
-            source_url=source_url,
-            mime=mime,
-            size=len(data),
-            sha256=hashlib.sha256(data).hexdigest(),
-            path=str(path.relative_to(get_settings().storage_dir)),
-            uploaded_by=user.id,
+    with upload_lock(db,user.team_id,asset_id):
+        # No await within this critical section; PostgreSQL also serializes processes.
+        if db.get(Asset,(user.team_id,asset_id)) is not None:
+            db.commit()
+            return Response(status_code=status.HTTP_200_OK)
+        path = asset_path(user.team_id, asset_id)
+        write_atomic(path, bytes(data))
+        db.add(
+            Asset(
+                team_id=user.team_id,
+                id=asset_id,
+                source_url=source_url,
+                mime=mime,
+                size=len(data),
+                sha256=hashlib.sha256(data).hexdigest(),
+                path=str(path.relative_to(get_settings().storage_dir)),
+                uploaded_by=user.id,
+            )
         )
-    )
-    try:
-        db.commit()
-    except IntegrityError:
-        # 同事同时上传了同一张图：内容相同，视为成功
-        db.rollback()
-        return Response(status_code=status.HTTP_200_OK)
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            raise HTTPException(409,'图片保存冲突，请重新同步') from None
     return Response(status_code=status.HTTP_201_CREATED)
 
 

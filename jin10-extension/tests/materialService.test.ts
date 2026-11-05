@@ -29,6 +29,10 @@ class MemoryRepository implements MaterialRepository {
   async listAll() {
     return [...this.items.values()];
   }
+  async applyRemote(m: NewsMaterial,keys:string[]) {
+    if(this.items.get(m.id)?.sync_status==='local')return false;
+    await this.save(m,keys);return true;
+  }
   async replace(oldId: string, m: NewsMaterial, keys: string[]) {
     this.items.delete(oldId);
     await this.save(m, keys);

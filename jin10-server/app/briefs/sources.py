@@ -388,7 +388,8 @@ def valuation(day,out,state,refresh=False):
     history.sort(key=lambda r:r['date']);save(history_path,history)
     visible=[r for r in history if r['date']<=day]
     save(out/'buffett-plot-data.json',visible);save(out/'erp-plot-data.json',rows)
-    erp_image=Path(result['image_path']);shutil.copy2(erp_image,out/erp_image.name)
+    if os.getenv('DATA_COLLECTION_ONLY')!='1':
+        erp_image=Path(result['image_path']);shutil.copy2(erp_image,out/erp_image.name)
     record(out,3,'估值输入数据已核验，正在按冻结模板绘制双面板')
     if os.getenv('DATA_COLLECTION_ONLY')!='1':valuation_chart(visible,rows,out)
     ratio=Decimal(updated[day]['market_cap_yi'])/Decimal(gdp['value_yi'])*100

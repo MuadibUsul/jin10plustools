@@ -27,6 +27,7 @@
 <section id="database-panel" class="settings-section database-panel" hidden aria-labelledby="database-title">
 <h2 id="database-title">数据库导出</h2>
 <p class="muted">导出本团队已存入数据库的结构化数据，按时间范围筛选，可选 CSV、Excel 或 JSON。账号、密钥、原始网页 HTML 与来源快照文件本体不在导出范围。</p>
+<p class="muted">Excel超长字段完整保存在“长字段”工作表，按数据行号、字段及分段序号读取；主表显示预览。JSON保留完整字段，便于程序回溯。</p>
 <div class="export-fields">
 <label class="field">数据集<select id="export-dataset"></select></label>
 <label class="field">导出格式<select id="export-format"><option value="xlsx">Excel（.xlsx）</option><option value="csv">CSV（Excel 可直接打开）</option><option value="json">JSON</option></select></label>

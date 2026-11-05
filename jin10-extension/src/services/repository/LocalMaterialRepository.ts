@@ -4,6 +4,7 @@ import { STORAGE_KEYS } from '@/shared/constants';
 import { AppException } from '@/shared/errors';
 import type { MaterialRepository } from './MaterialRepository';
 import { acknowledgedMaterial } from './syncAcknowledgement';
+import { getSession, getSyncState } from '../settingsStore';
 
 type DedupeIndex = Record<string, string>;
 
@@ -34,7 +35,11 @@ export class LocalMaterialRepository implements MaterialRepository {
   }
 
   async list(): Promise<NewsMaterial[]> {
-    return (await this.listAll()).filter((m) => m.deleted_at === null);
+    const session=await getSession();
+    if (!session) return [];
+    const state=await getSyncState();
+    if (state.team_id!==session.team.id || (state.server_url && state.server_url!==session.api_base_url)) return [];
+    return (await this.listAll()).filter(m => m.deleted_at===null && (!m.team_id || m.team_id===session.team.id));
   }
 
   get(id: string): Promise<NewsMaterial | null> {
@@ -72,6 +77,15 @@ export class LocalMaterialRepository implements MaterialRepository {
           [STORAGE_KEYS.materialDedupe]: Object.fromEntries(Object.entries(index).filter(([,id]) => id !== sent.id)) });
         await chrome.storage.local.remove(STORAGE_KEYS.material(sent.id));
       }
+    });
+  }
+
+  applyRemote(material: NewsMaterial, keys: string[]): Promise<boolean> {
+    return this.serial(async () => {
+      const current=await this.get(material.id);
+      if (current?.sync_status==='local') return false;
+      await this.write(null,material,keys);
+      return true;
     });
   }
 

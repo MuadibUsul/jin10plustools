@@ -23,12 +23,27 @@ from .source_archive import archive_run,restore_pe_capture
 from .progress import record,read
 
 log=logging.getLogger('plus.briefs')
+_active_process=None
+
+
+def abort_on_lock_loss():
+    log.critical('Worker exclusive database lock lost; stopping before further writes')
+    if _active_process is not None:
+        from app.services.processes import kill_tree
+        try:kill_tree(_active_process)
+        except Exception:log.exception('Could not terminate active source process')
+    os._exit(75)
 
 PUBLIC_COMPUTE_CATEGORIES = frozenset({'token_cost', 'gpu_rental'})
 
 
 def drain_requested():
-    return (get_settings().storage_dir/'.brief-worker-drain').exists()
+    path=get_settings().storage_dir/'.brief-worker-drain'
+    if not path.exists():return False
+    try:return json.loads(path.read_text())['expires_at']>time.time()
+    except (OSError,ValueError,KeyError,TypeError):
+        try:return path.stat().st_mtime+1800>time.time()
+        except OSError:return False
 
 
 def heartbeat(state='idle',job_id=None):
@@ -200,6 +215,7 @@ def schedule_reconciliation(factory,now=None):
 
 
 def execute(factory,id):
+    global _active_process
     heartbeat('running',id)
     settings=get_settings()
     with factory() as db:
@@ -215,6 +231,8 @@ def execute(factory,id):
         team=db.get(Team,team_id)
         ai=briefs_ai(team)
         team_settings=dict(team.settings or {})
+        starting_issue=find_issue(db,team_id,day,category)
+        starting_version=starting_issue.version if starting_issue else 0
         render_source_id=None;render_payload=None
         followup=category=='oil_etf' and ':latest-' in job.dedupe_key and scheduled_retry
         generation_base=None;generation_payload=None
@@ -284,7 +302,8 @@ def execute(factory,id):
                     AIComputeObservation.kind=='gpu' if category=='gpu_rental' else AIComputeObservation.kind=='token').order_by(
                     AIComputeObservation.date)))
                 rows=[{'date':row.date.isoformat(),'token_price':row.token_price,'a100':row.a100,
-                    'h100':row.h100,'b200':row.b200,'status':row.source_status} for row in observed]
+                    'h100':row.h100,'b200':row.b200,'status':row.source_status,
+                    'public_display':row.public_display,'manual_display':row.manual_display} for row in observed]
                 save(out/'ai-compute-source.json',rows)
                 fields=('a100','h100','b200') if category=='gpu_rental' else ('token_price',)
                 matched=next((row for row in rows if row['date']==target_day.isoformat()),None)
@@ -366,6 +385,7 @@ def execute(factory,id):
              '--root',str(root),'--run-id',str(id),'--action','refresh' if action=='reconcile' or automatic and action=='produce' else action]
     if action=='render':command.extend(['--render-input',str(out/'render-input.json')])
     process=subprocess.Popen(command,env=env,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,start_new_session=os.name!='nt')
+    _active_process=process
     cutoff=time.monotonic()+360
     error=None;retryable=True
     while process.poll() is None:
@@ -375,6 +395,7 @@ def execute(factory,id):
             else:process.kill()
             process.wait();error='任务超时或自动任务已到10:00截止时间';break
         time.sleep(1)
+    _active_process=None
     result=out/'result.json'
     # If AI times out, the already saved complete rule draft is still usable.
     payload=json.loads(result.read_text(encoding='utf-8')) if result.exists() else None
@@ -435,6 +456,8 @@ def execute(factory,id):
                     save_payload(cache, cached)
     if payload and payload.get('valid'):
         from .sources import save
+        if ai.get('configuration_error'):
+            payload.setdefault('warnings',[]).append('AI密钥无法解密，已保留完整风格规则稿；请管理员重新配置该接入')
         # The date cache deliberately keeps the validated pre-Skill rule product;
         # this run's durable result must match what is committed as the final edition.
         save(out/'result.json',payload)
@@ -497,6 +520,10 @@ def execute(factory,id):
             if automatic and not production_window(datetime.now(CHINA)):
                 job.status='skipped';job.active_key=None;job.error='超过10:00，快照保留但未生成当天稿';db.commit();record(out,5,job.error);return
             issue=render_issue or ensure_issue(db,team_id,day,category);issue=owned(db,team_id,issue.id,True)
+            if action!='render' and issue.version!=starting_version:
+                job.status='failed';job.active_key=None
+                job.error='生成期间稿件已更新；已保留当前稿件和本次来源，请核对后重新生成'
+                db.commit();record(out,5,job.error);return
             if action not in ('produce','render') and issue.version:
                 previous=db.scalars(select(BriefVersion).where(BriefVersion.issue_id==issue.id,BriefVersion.number==issue.version)).first()
                 if previous and 'fixed_notes' in previous.payload:payload['fixed_notes']=previous.payload['fixed_notes']
@@ -523,11 +550,10 @@ def main():
     logging.basicConfig(level=logging.INFO)
     factory=get_session_factory();engine=get_engine()
     # A session advisory lock also protects shared per-team historical snapshots.
-    with engine.connect() as connection:
-        if engine.dialect.name=='postgresql':
-            if not connection.execute(text('SELECT pg_try_advisory_lock(71010501)')).scalar():
-                raise SystemExit('Another brief worker is active')
+    from .worker_lock import WorkerLock
+    with WorkerLock(engine,get_settings().storage_dir/'.brief-worker.lock',abort_on_lock_loss) as guard:
         while True:
+            guard.check()
             try:
                 heartbeat('idle')
                 if drain_requested():time.sleep(5);continue

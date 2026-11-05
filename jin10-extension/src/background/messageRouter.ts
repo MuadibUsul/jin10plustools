@@ -4,8 +4,10 @@ import { latestExtensionVersion, login, reportParse } from '@/services/api/serve
 import { getSession } from '@/services/settingsStore';
 import type { UpdateInfo } from '@/types/messages';
 import { clearSession, setLastApiBaseUrl, setSession } from '@/services/settingsStore';
-import { materialService, restoreBadge } from './services';
+import { materialService, materialRepository, restoreBadge } from './services';
 import { syncNow, syncSoon } from './sync';
+import { withAuthLock } from '@/services/sessionScope';
+import { activateScope } from '@/services/syncService';
 
 const UPDATE_CHECK_MS = 30 * 60_000;
 let updateCache: { at: number; info: UpdateInfo } | null = null;
@@ -50,19 +52,23 @@ export const backgroundHandlers: HandlerMap = {
     at: nowIso(),
   }),
 
-  SAVE_MATERIAL: async (payload) => {
+  SAVE_MATERIAL: (payload) => withAuthLock(async () => {
+    const session=await getSession();
+    if(session)await activateScope(materialRepository,session);
     const result = await materialService.save(payload);
     await restoreBadge();
     if (result.outcome !== 'duplicate') syncSoon();
     return result;
-  },
+  }),
 
-  DELETE_MATERIAL: async ({ id }) => {
+  DELETE_MATERIAL: ({ id }) => withAuthLock(async () => {
+    const session=await getSession();
+    if(session)await activateScope(materialRepository,session);
     const deleted = await materialService.delete(id);
     await restoreBadge();
     if (deleted) syncSoon();
     return { deleted };
-  },
+  }),
 
   LOGIN: async ({ api_base_url, email, password }) => {
     const session = await login(api_base_url, email.trim(), password);

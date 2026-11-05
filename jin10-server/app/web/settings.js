@@ -92,7 +92,7 @@ async function load() {
   for (const [name, [label, description]] of Object.entries(providers)) {
     const saved = data.ai[name], card = node('div', undefined, 'ai-setting');
     card.append(node('h3', label), node('p', description, 'muted'));
-    card.append(node('p', `${saved.configured ? '已配置' : '未配置'}${saved.source === 'server' ? ' · 使用服务器 Key' : saved.source === 'team' ? ' · 使用团队 Key' : ''}${saved.enabled ? '' : ' · 已停用'}`, saved.configured && saved.enabled ? 'success' : 'muted'));
+    card.append(node('p', `${saved.configured ? '已配置' : '未配置'}${saved.source === 'server' ? ' · 使用服务器 Key' : saved.source === 'team' ? ' · 使用团队 Key' : ''}${saved.enabled ? '' : ' · 已停用'}${saved.configuration_error ? ' · 密钥无法读取，请重新配置；规则稿仍可生成' : ''}`, saved.configuration_error ? 'error' : saved.configured && saved.enabled ? 'success' : 'muted'));
     if (name === 'chat2api' && saved.model_supported === false) card.append(node('p', `当前节点不支持 ${saved.requested_model}，实际使用 ${saved.model}；请改选已支持模型。`, 'warning'));
     if (data.can_edit) {
       const savedModel = name === 'chat2api' ? saved.requested_model ?? saved.model : saved.model;

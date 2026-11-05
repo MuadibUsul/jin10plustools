@@ -15,7 +15,7 @@ import getpass
 import os
 import sys
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from app.db.models import Role, Team, User
@@ -65,7 +65,8 @@ def reset_password(db: Session, args: argparse.Namespace) -> None:
     user = db.scalar(select(User).where(func.lower(User.email) == args.email.strip().lower()))
     if user is None:
         sys.exit(f"账号不存在：{args.email}")
-    user.password_hash = hash_password(_read_password())
+    db.execute(update(User).where(User.id==user.id).values(
+        password_hash=hash_password(_read_password()),auth_version=User.auth_version+1))
     db.commit()
     print(f"已重置 {user.email} 的密码")
 

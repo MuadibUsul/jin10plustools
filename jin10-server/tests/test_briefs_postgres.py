@@ -157,3 +157,78 @@ def test_second_worker_refuses_advisory_lock(postgres):
         assert result.returncode != 0
         assert 'Another brief worker is active' in result.stderr
         connection.execute(text('SELECT pg_advisory_unlock(71010501)'))
+
+
+def test_database_disconnect_is_fenced_and_reported(postgres,tmp_path):
+    from threading import Event
+    from app.briefs.worker_lock import WorkerLock
+    engine,_,_=postgres;lost=Event()
+    with WorkerLock(engine,tmp_path/'worker.lock',lost.set,interval=.05) as guard:
+        with engine.connect().execution_options(isolation_level='AUTOCOMMIT') as connection:
+            connection.execute(text('SELECT pg_terminate_backend(:pid)'),{'pid':guard.backend_pid})
+        assert lost.wait(5)
+        with pytest.raises(SystemExit,match='lock was lost'):guard.check()
+        with pytest.raises(SystemExit,match='storage volume'):
+            with WorkerLock(engine,tmp_path/'worker.lock',lambda:None):pass
+    with WorkerLock(engine,tmp_path/'worker.lock',lambda:None,interval=.05) as new:
+        new.check()
+
+
+@pytest.mark.parametrize('postgres',['0019'],indirect=True)
+def test_auth_migration_preserves_accounts_and_existing_session_version(postgres):
+    engine,_,team_id=postgres
+    users=Table('users',MetaData(),autoload_with=engine);ident=uuid.uuid4()
+    with engine.begin() as connection:
+        connection.execute(users.insert().values(id=ident,team_id=team_id,email='migration@example.test',name='migration',
+            password_hash='fixture-existing-hash',role='editor',is_active=True,created_at=datetime.now(timezone.utc)))
+    command.upgrade(Config('alembic.ini'),'head')
+    users=Table('users',MetaData(),autoload_with=engine)
+    with engine.connect() as connection:
+        row=connection.execute(select(users).where(users.c.id==ident)).mappings().one()
+        assert row['auth_version']==0 and row['password_hash']=='fixture-existing-hash'
+
+
+def test_concurrent_asset_upload_uses_database_lock_across_request_threads(postgres,tmp_path,monkeypatch):
+    import hashlib,io
+    from contextlib import nullcontext
+    from fastapi.testclient import TestClient
+    from PIL import Image
+    from app.api import assets
+    from app.db.models import Asset,User
+    from app.db.session import get_db
+    from app.main import app
+    from app.security import create_access_token
+    from app.services import asset_upload
+    from app.services.storage import asset_path
+    _,factory,team_id=postgres
+    monkeypatch.setattr(get_settings(),'storage_dir',tmp_path/'storage')
+    with factory() as db:
+        user=User(team_id=team_id,email='asset-lock@example.test',name='fixture',password_hash='fixture-hash',role='editor')
+        db.add(user);db.commit();user_id=user.id
+    def session():
+        with factory() as db:
+            yield db
+            db.commit()
+    previous=dict(app.dependency_overrides);app.dependency_overrides[get_db]=session
+    # Remove only the in-process optimization: the real PG lock must do the fencing.
+    monkeypatch.setattr(asset_upload,'_locks',[nullcontext() for _ in range(64)])
+    barrier=Barrier(2);lock=assets.upload_lock
+    from contextlib import contextmanager
+    @contextmanager
+    def synchronize(*args):
+        barrier.wait(10)
+        with lock(*args):yield
+    monkeypatch.setattr(assets,'upload_lock',synchronize)
+    url='https://example.test/concurrent-source.png';aid=assets.expected_asset_id(url)
+    headers={'Authorization':'Bearer '+create_access_token(user_id,team_id)[0],
+             'Content-Type':'image/png','X-Source-Url':url}
+    def upload(color):
+        buffer=io.BytesIO();Image.new('RGB',(3,3),color).save(buffer,format='PNG')
+        return TestClient(app).put('/api/assets/'+aid,headers=headers,content=buffer.getvalue()).status_code
+    try:
+        with ThreadPoolExecutor(2) as pool:assert sorted(pool.map(upload,['red','blue']))==[200,201]
+        with factory() as db:
+            asset=db.get(Asset,(team_id,aid))
+            assert hashlib.sha256(asset_path(team_id,aid).read_bytes()).hexdigest()==asset.sha256
+    finally:
+        app.dependency_overrides.clear();app.dependency_overrides.update(previous)

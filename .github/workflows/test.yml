@@ -51,6 +51,11 @@ jobs:
           npm run typecheck
           npm test
           npm run build
+          npm audit --audit-level=moderate
+      - name: Audit locked production Python dependencies
+        run: |
+          pip install 'pip-audit==2.10.1'
+          pip-audit -r jin10-server/requirements.lock --no-deps --disable-pip
       - name: Web module syntax
         run: |
           while IFS= read -r source; do node --check "$source"; done < <(rg --files jin10-server/app/web -g '*.js')

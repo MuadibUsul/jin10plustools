@@ -277,6 +277,7 @@ FEEDBACK = build_dataset(
         ('name', '提交人姓名', 'text'), ('user_id', '提交账号', 'user'),
         ('image_mime', '示意图类型', 'text'), ('image_bytes', '示意图字节数', 'int'),
         ('image_sha256', '示意图SHA-256', 'text'), ('created_at', '提交时间', 'datetime'),
+        ('resolution', '处理结果', 'text'), ('completed_at', '完成时间', 'datetime'),
     ) + (Column('has_image', '有示意图', 'bool', lambda row: bool(row.image_path)),),
 )
 

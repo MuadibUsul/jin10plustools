@@ -47,11 +47,13 @@ class Role(StrEnum):
 
 class Team(Base):
     __tablename__ = "teams"
+    __table_args__ = (Index('uq_team_feedback_mcp_token', 'feedback_mcp_token_hash', unique=True),)
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String(100))
     #: 栏目配额、权重系数等团队设置（P5/P6 使用）
     settings: Mapped[dict[str, Any]] = mapped_column(JsonType, default=dict)
+    feedback_mcp_token_hash: Mapped[str | None] = mapped_column(String(64))
     created_at: Mapped[dt.datetime] = mapped_column(default=utcnow)
 
     users: Mapped[list[User]] = relationship(back_populates="team")
@@ -371,6 +373,18 @@ class Feedback(Base):
     image_bytes: Mapped[int] = mapped_column(Integer, default=0)
     image_sha256: Mapped[str | None] = mapped_column(String(64))
     created_at: Mapped[dt.datetime] = mapped_column(default=lambda: utcnow())
+    claim_id: Mapped[uuid.UUID | None] = mapped_column()
+    claim_until: Mapped[dt.datetime | None] = mapped_column()
+    completed_at: Mapped[dt.datetime | None] = mapped_column()
+    resolution: Mapped[str | None] = mapped_column(Text)
+
+
+class FeedbackNotificationRead(Base):
+    __tablename__ = 'feedback_notification_reads'
+
+    feedback_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('feedback.id', ondelete='CASCADE'), primary_key=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('users.id', ondelete='CASCADE'), primary_key=True)
+    read_at: Mapped[dt.datetime] = mapped_column(default=utcnow)
 
 
 # ---------- News Skill OS：独立、团队隔离、默认关闭的内容事实链 ----------

@@ -63,6 +63,15 @@
 <p id="feedback-status" class="muted" role="status" aria-live="polite"></p>
 </form>
 <details open><summary>最近的反馈</summary><div id="feedback-list" class="feedback-list"></div></details>
+<details id="feedback-mcp-settings" hidden>
+<summary>反馈 MCP 接入</summary>
+<p>MCP 地址 <code id="feedback-mcp-url"></code></p>
+<p>在 Agent 客户端添加 Streamable HTTP MCP，并配置团队专用 Bearer 凭据。新凭据仅显示一次，生成后旧凭据立即失效。</p>
+<p>Agent 领取反馈并完成验证后提交处理结果，团队成员可在工作台顶部查看完成通知。</p>
+<div class="toolbar"><button id="feedback-token-issue" type="button">生成凭据</button><button id="feedback-token-revoke" type="button">撤销凭据</button></div>
+<p id="feedback-token-status" class="muted" role="status"></p>
+<label id="feedback-token-field" class="field" hidden>新凭据<input id="feedback-token" readonly autocomplete="off" spellcheck="false"></label>
+</details>
 </section>
 <section id="chat2api-panel" class="settings-section" hidden aria-labelledby="chat2api-title">
 <h2 id="chat2api-title">chat2api</h2>

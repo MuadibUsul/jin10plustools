@@ -50,7 +50,67 @@ export function account(me) {
   const skills = node('a', '◇ Skill 库', 'settings-link'); skills.href = '/skills/';
   if (location.pathname === '/skills/' || location.pathname.startsWith('/skills/')) skills.setAttribute('aria-current', 'page');
   const out = node('button', '退出'); out.onclick = () => { localStorage.removeItem('plus.token'); location.reload(); };
-  target.replaceChildren(settings, skills, node('span', me.user.name), out);
+  const notices = node('button', '反馈通知');
+  notices.type = 'button';
+  target.replaceChildren(settings, skills, notices, node('span', me.user.name), out);
+  mountFeedbackNotifications(notices);
+}
+
+let unmountFeedbackNotifications = () => {};
+function mountFeedbackNotifications(button) {
+  unmountFeedbackNotifications();
+  const dialog = node('dialog', undefined, 'feedback-notifications');
+  const items = node('div');
+  items.setAttribute('aria-live', 'polite');
+  const close = node('button', '关闭');
+  close.type = 'button';
+  close.onclick = () => dialog.close();
+  dialog.append(node('h2', '反馈完成通知'), items, close);
+  document.body.append(dialog);
+  let loading = false;
+
+  async function refresh() {
+    if (loading || !localStorage.getItem('plus.token')) return;
+    loading = true;
+    try {
+      const data = await api('/api/feedback/notifications');
+      const count = data.items.length;
+      button.textContent = count ? `反馈通知（${count}${data.has_more ? '+' : ''}）` : '反馈通知';
+      if (!dialog.open) return;
+      if (!count) { items.replaceChildren(node('p', '没有未读通知。')); return; }
+      items.replaceChildren(...data.items.map((item) => {
+        const row = node('article', undefined, 'feedback-notice');
+        const read = node('button', '标为已读');
+        read.type = 'button';
+        read.onclick = async () => {
+          read.disabled = true;
+          try {
+            await api(`/api/feedback/notifications/${item.id}/read`, { method: 'POST', raw: true });
+            await refresh();
+          } catch (error) { read.disabled = false; toast(error.message, 'error'); }
+        };
+        row.append(node('strong', item.title), node('p', item.resolution),
+          node('small', displayTime(item.completed_at)), read);
+        return row;
+      }));
+    } catch (error) {
+      if (dialog.open) items.replaceChildren(node('p', error.message, 'error'));
+    } finally { loading = false; }
+  }
+  button.onclick = () => {
+    dialog.showModal();
+    items.replaceChildren(node('p', '正在读取通知…'));
+    refresh();
+  };
+  const timer = setInterval(() => { if (!document.hidden) refresh(); }, 30000);
+  const onVisible = () => { if (!document.hidden) refresh(); };
+  document.addEventListener('visibilitychange', onVisible);
+  unmountFeedbackNotifications = () => {
+    clearInterval(timer);
+    document.removeEventListener('visibilitychange', onVisible);
+    dialog.remove();
+  };
+  refresh();
 }
 export async function download(path, filename) { const res = await api(path, { raw: true }); const disposition = res.headers.get('Content-Disposition') || ''; const encoded = disposition.match(/filename\*=UTF-8''([^;]+)/i); const plain = disposition.match(/filename=["]([^"]+)["]/i); const url = URL.createObjectURL(await res.blob()); const a = node('a'); a.href = url; a.download = encoded ? decodeURIComponent(encoded[1]) : plain?.[1] || filename || 'image'; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); }
 export async function copy(text) { try { await navigator.clipboard.writeText(text); } catch { throw new Error('浏览器未允许复制，请选中文字手动复制'); } }

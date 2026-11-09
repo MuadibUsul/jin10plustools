@@ -18,7 +18,7 @@ from fastapi.exception_handlers import request_validation_exception_handler
 from app.ai.jev_client import JevClient
 from app.ai.worker import AnalysisWorker
 from app.api import assets, auth, board, collab, issues, materials
-from app.api import briefs, chat2api, export, feedback, live, settings as team_settings
+from app.api import briefs, chat2api, export, feedback, feedback_mcp, live, settings as team_settings
 try:
     from app.api import news_skill_os
 except ImportError as exc:
@@ -73,6 +73,7 @@ app.include_router(team_settings.router)
 app.include_router(live.router)
 app.include_router(export.router)
 app.include_router(feedback.router)
+app.include_router(feedback_mcp.router)
 if news_skill_os is not None:
     app.include_router(news_skill_os.router)
 @app.middleware('http')

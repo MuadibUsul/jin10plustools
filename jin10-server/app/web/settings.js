@@ -258,10 +258,15 @@ function feedbackItem(item) {
   const box = node('article', undefined, 'feedback-item');
   const head = node('div', undefined, 'feedback-item-head');
   head.append(node('strong', item.title));
-  const meta = [item.name, item.account && item.account !== item.name ? `账号：${item.account}` : '',
+  const status = { pending: '待处理', processing: '处理中', completed: '已完成' };
+  const meta = [status[item.status], item.name, item.account && item.account !== item.name ? `账号：${item.account}` : '',
     displayTime(item.created_at), item.mine ? '我提交的' : ''].filter(Boolean).join(' · ');
   head.append(node('span', meta, 'muted'));
   box.append(head, node('p', item.content, 'feedback-item-body'));
+  if (item.completed_at) {
+    box.append(node('strong', `处理结果 · ${displayTime(item.completed_at)}`),
+      node('p', item.resolution, 'feedback-item-body'));
+  }
   if (item.has_image) {
     const view = node('button', '查看示意图'); view.type = 'button';
     view.onclick = async () => {
@@ -289,7 +294,51 @@ async function loadFeedback() {
 async function openFeedback() {
   const name = $('#feedback-name');
   if (!name.value && currentUser?.user?.name) name.value = currentUser.user.name;
-  await loadFeedback();
+  await Promise.all([loadFeedback(), openFeedbackMcp()]);
+}
+
+async function openFeedbackMcp() {
+  const panel = $('#feedback-mcp-settings');
+  if (!data?.can_admin) return;
+  panel.hidden = false;
+  $('#feedback-mcp-url').textContent = new URL('/api/feedback/mcp', location.origin).href;
+  const issue = $('#feedback-token-issue');
+  const revoke = $('#feedback-token-revoke');
+  const status = $('#feedback-token-status');
+  const field = $('#feedback-token-field');
+  const input = $('#feedback-token');
+  const path = '/api/feedback/agent-token';
+  const render = (enabled) => {
+    issue.textContent = enabled ? '轮换凭据' : '生成凭据';
+    revoke.disabled = !enabled;
+    status.textContent = enabled ? '团队凭据已启用。' : '团队凭据尚未启用。';
+  };
+  issue.disabled = true;
+  revoke.disabled = true;
+  try { render((await api(path)).enabled); issue.disabled = false; }
+  catch (error) { status.textContent = error.message; return; }
+  issue.onclick = async () => {
+    issue.disabled = true;
+    revoke.disabled = true;
+    try {
+      input.value = (await api(path, { method: 'POST' })).token;
+      field.hidden = false;
+      render(true);
+      input.select();
+    } catch (error) { status.textContent = error.message; revoke.disabled = false; }
+    finally { issue.disabled = false; }
+  };
+  revoke.onclick = async () => {
+    issue.disabled = true;
+    revoke.disabled = true;
+    try {
+      await api(path, { method: 'DELETE', raw: true });
+      input.value = '';
+      field.hidden = true;
+      render(false);
+    } catch (error) { status.textContent = error.message; revoke.disabled = false; }
+    finally { issue.disabled = false; }
+  };
 }
 $('#feedback-form').onsubmit = async (event) => {
   event.preventDefault();

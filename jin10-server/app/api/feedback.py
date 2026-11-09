@@ -2,15 +2,17 @@
 from __future__ import annotations
 
 import hashlib
+import secrets
 import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from app.config import get_settings
-from app.db.models import Feedback, User
+from app.db.models import Feedback, FeedbackNotificationRead, Role, Team, User, utcnow
 from app.deps import CurrentUser, DbSession
 from app.services.storage import feedback_path, write_atomic
 
@@ -38,7 +40,79 @@ def out(row: Feedback, accounts: dict[uuid.UUID, str], user: User) -> dict:
         'created_at': row.created_at.isoformat(), 'mine': row.user_id == user.id,
         'has_image': bool(row.image_path), 'image_mime': row.image_mime,
         'image_bytes': row.image_bytes,
+        **workflow_fields(row),
     }
+
+
+def workflow_fields(row: Feedback) -> dict:
+    status = 'completed' if row.completed_at else 'pending'
+    if not row.completed_at and row.claim_until and row.claim_until.replace(tzinfo=None) > utcnow().replace(tzinfo=None):
+        status = 'processing'
+    return {
+        'status': status, 'resolution': row.resolution,
+        'completed_at': row.completed_at.isoformat() if row.completed_at else None,
+    }
+
+
+def feedback_token_hash(token: str) -> str:
+    return hashlib.sha256(token.encode('utf-8')).hexdigest()
+
+
+def admin_team(db: DbSession, user: CurrentUser) -> Team:
+    if user.role != Role.ADMIN:
+        raise HTTPException(403, '只有管理员可以管理反馈 MCP 凭据')
+    return db.get(Team, user.team_id)
+
+
+@router.get('/agent-token')
+def token_status(db: DbSession, user: CurrentUser):
+    return {'enabled': bool(admin_team(db, user).feedback_mcp_token_hash)}
+
+
+@router.post('/agent-token')
+def issue_token(db: DbSession, user: CurrentUser):
+    team = admin_team(db, user)
+    token = 'plus_feedback_' + secrets.token_urlsafe(32)
+    team.feedback_mcp_token_hash = feedback_token_hash(token)
+    db.commit()
+    return {'token': token}
+
+
+@router.delete('/agent-token', status_code=204)
+def revoke_token(db: DbSession, user: CurrentUser):
+    admin_team(db, user).feedback_mcp_token_hash = None
+    db.commit()
+
+
+@router.get('/notifications')
+def notifications(db: DbSession, user: CurrentUser):
+    read = select(FeedbackNotificationRead.feedback_id).where(
+        FeedbackNotificationRead.user_id == user.id,
+        FeedbackNotificationRead.feedback_id == Feedback.id,
+    ).exists()
+    rows = db.scalars(select(Feedback).where(
+        Feedback.team_id == user.team_id, Feedback.completed_at.is_not(None), ~read,
+    ).order_by(Feedback.completed_at.desc(), Feedback.id).limit(21)).all()
+    return {'items': [{'id': str(row.id), 'title': row.title, **workflow_fields(row)}
+                      for row in rows[:20]], 'has_more': len(rows) > 20}
+
+
+@router.post('/notifications/{feedback_id}/read', status_code=204)
+def read_notification(feedback_id: uuid.UUID, db: DbSession, user: CurrentUser):
+    row = db.scalar(select(Feedback.id).where(
+        Feedback.id == feedback_id, Feedback.team_id == user.team_id, Feedback.completed_at.is_not(None),
+    ))
+    if row is None:
+        raise HTTPException(404, '未找到完成通知')
+    if db.get(FeedbackNotificationRead, (row, user.id)) is None:
+        try:
+            with db.begin_nested():
+                db.add(FeedbackNotificationRead(feedback_id=row, user_id=user.id))
+                db.flush()
+        except IntegrityError:
+            if db.get(FeedbackNotificationRead, (row, user.id)) is None:
+                raise
+    db.commit()
 
 
 def accounts_of(db: DbSession, team_id: uuid.UUID) -> dict[uuid.UUID, str]:
@@ -93,11 +167,16 @@ async def submit(db: DbSession, user: CurrentUser,
 def image(feedback_id: uuid.UUID, db: DbSession, user: CurrentUser):
     row = db.scalars(select(Feedback).where(Feedback.id == feedback_id,
                                             Feedback.team_id == user.team_id)).first()
+    path = image_file(row)
+    return FileResponse(path, media_type=row.image_mime or 'application/octet-stream',
+                        headers={'Cache-Control': 'private, max-age=3600'})
+
+
+def image_file(row: Feedback | None):
     if row is None or not row.image_path:
         raise HTTPException(404, '未找到示意图')
     root = get_settings().storage_dir.resolve()
     path = (root / row.image_path).resolve()
     if not path.is_relative_to(root) or not path.is_file():
         raise HTTPException(404, '未找到示意图')
-    return FileResponse(path, media_type=row.image_mime or 'application/octet-stream',
-                        headers={'Cache-Control': 'private, max-age=3600'})
+    return path

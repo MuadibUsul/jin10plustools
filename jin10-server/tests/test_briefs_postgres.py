@@ -188,6 +188,39 @@ def test_auth_migration_preserves_accounts_and_existing_session_version(postgres
         assert row['auth_version']==0 and row['password_hash']=='fixture-existing-hash'
 
 
+@pytest.mark.parametrize('postgres', ['0020'], indirect=True)
+def test_feedback_migration_preserves_pending_items_and_serializes_claims(postgres):
+    from app.api.feedback_mcp import call_tool
+    from app.db.models import Feedback
+
+    engine, factory, team_id = postgres
+    ident = uuid.uuid4()
+    old_feedback = Table('feedback', MetaData(), autoload_with=engine)
+    with engine.begin() as connection:
+        connection.execute(old_feedback.insert().values(
+            id=ident, team_id=team_id, name='原提交人', title='已有反馈', content='待处理的反馈',
+            image_bytes=0, created_at=datetime.now(timezone.utc),
+        ))
+    command.upgrade(Config('alembic.ini'), 'head')
+    with factory() as db:
+        assert db.get(Feedback, ident).claim_id is None
+        assert call_tool(db, team_id, 'feedback_list_pending', {})['items'][0]['status'] == 'pending'
+
+    barrier = Barrier(2)
+
+    def claim_feedback(_):
+        with factory() as db:
+            barrier.wait()
+            try:
+                return call_tool(db, team_id, 'feedback_claim', {'feedback_id': str(ident)})
+            except ValueError:
+                return None
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        claims = [item for item in pool.map(claim_feedback, range(2)) if item is not None]
+    assert len(claims) == 1 and claims[0]['title'] == '已有反馈'
+
+
 def test_concurrent_asset_upload_uses_database_lock_across_request_threads(postgres,tmp_path,monkeypatch):
     import hashlib,io
     from contextlib import nullcontext

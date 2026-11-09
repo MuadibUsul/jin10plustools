@@ -47,13 +47,11 @@ class Role(StrEnum):
 
 class Team(Base):
     __tablename__ = "teams"
-    __table_args__ = (Index('uq_team_feedback_mcp_token', 'feedback_mcp_token_hash', unique=True),)
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String(100))
     #: 栏目配额、权重系数等团队设置（P5/P6 使用）
     settings: Mapped[dict[str, Any]] = mapped_column(JsonType, default=dict)
-    feedback_mcp_token_hash: Mapped[str | None] = mapped_column(String(64))
     created_at: Mapped[dt.datetime] = mapped_column(default=utcnow)
 
     users: Mapped[list[User]] = relationship(back_populates="team")
@@ -377,6 +375,13 @@ class Feedback(Base):
     claim_until: Mapped[dt.datetime | None] = mapped_column()
     completed_at: Mapped[dt.datetime | None] = mapped_column()
     resolution: Mapped[str | None] = mapped_column(Text)
+
+
+class FeedbackMcpCredential(Base):
+    __tablename__ = 'feedback_mcp_credentials'
+
+    team_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('teams.id', ondelete='CASCADE'), primary_key=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
 
 
 class FeedbackNotificationRead(Base):

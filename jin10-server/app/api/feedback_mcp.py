@@ -9,7 +9,7 @@ from fastapi.responses import Response
 from sqlalchemy import or_, select, update
 
 from app.api.feedback import feedback_token_hash, image_file, workflow_fields
-from app.db.models import Feedback, Team, utcnow
+from app.db.models import Feedback, FeedbackMcpCredential, utcnow
 from app.deps import DbSession
 
 router = APIRouter(prefix='/api/feedback/mcp', tags=['feedback'])
@@ -51,7 +51,9 @@ def agent_team(request: Request, db: DbSession):
     auth = request.headers.get('authorization', '')
     scheme, _, token = auth.partition(' ')
     if scheme.lower() == 'bearer' and token.startswith('plus_feedback_') and len(token) == 57:
-        team_id = db.scalar(select(Team.id).where(Team.feedback_mcp_token_hash == feedback_token_hash(token)))
+        team_id = db.scalar(select(FeedbackMcpCredential.team_id).where(
+            FeedbackMcpCredential.token_hash == feedback_token_hash(token),
+        ))
         if team_id:
             return team_id
     raise HTTPException(401, 'Invalid feedback MCP token', headers={'WWW-Authenticate': 'Bearer'})

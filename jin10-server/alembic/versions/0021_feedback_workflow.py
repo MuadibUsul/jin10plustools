@@ -9,8 +9,11 @@ depends_on = None
 
 
 def upgrade():
-    op.add_column('teams', sa.Column('feedback_mcp_token_hash', sa.String(64)))
-    op.create_index('uq_team_feedback_mcp_token', 'teams', ['feedback_mcp_token_hash'], unique=True)
+    op.create_table(
+        'feedback_mcp_credentials',
+        sa.Column('team_id', sa.Uuid(), sa.ForeignKey('teams.id', ondelete='CASCADE'), primary_key=True),
+        sa.Column('token_hash', sa.String(64), nullable=False, unique=True),
+    )
     op.add_column('feedback', sa.Column('claim_id', sa.Uuid()))
     op.add_column('feedback', sa.Column('claim_until', sa.DateTime()))
     op.add_column('feedback', sa.Column('completed_at', sa.DateTime()))
@@ -27,5 +30,4 @@ def downgrade():
     op.drop_table('feedback_notification_reads')
     for column in ('resolution', 'completed_at', 'claim_until', 'claim_id'):
         op.drop_column('feedback', column)
-    op.drop_index('uq_team_feedback_mcp_token', table_name='teams')
-    op.drop_column('teams', 'feedback_mcp_token_hash')
+    op.drop_table('feedback_mcp_credentials')

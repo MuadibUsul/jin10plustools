@@ -12,7 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
 from app.config import get_settings
-from app.db.models import Feedback, FeedbackNotificationRead, Role, Team, User, utcnow
+from app.db.models import Feedback, FeedbackMcpCredential, FeedbackNotificationRead, Role, Team, User, utcnow
 from app.deps import CurrentUser, DbSession
 from app.services.storage import feedback_path, write_atomic
 
@@ -58,29 +58,42 @@ def feedback_token_hash(token: str) -> str:
     return hashlib.sha256(token.encode('utf-8')).hexdigest()
 
 
-def admin_team(db: DbSession, user: CurrentUser) -> Team:
+def admin_team(user: User) -> uuid.UUID:
     if user.role != Role.ADMIN:
         raise HTTPException(403, '只有管理员可以管理反馈 MCP 凭据')
-    return db.get(Team, user.team_id)
+    return user.team_id
+
+
+def lock_credential(db: DbSession, user: CurrentUser):
+    team_id = admin_team(user)
+    # Lock the parent even if no credential exists yet.
+    db.execute(select(Team.id).where(Team.id == team_id).with_for_update()).scalar_one()
+    return db.get(FeedbackMcpCredential, team_id)
 
 
 @router.get('/agent-token')
 def token_status(db: DbSession, user: CurrentUser):
-    return {'enabled': bool(admin_team(db, user).feedback_mcp_token_hash)}
+    return {'enabled': db.get(FeedbackMcpCredential, admin_team(user)) is not None}
 
 
 @router.post('/agent-token')
 def issue_token(db: DbSession, user: CurrentUser):
-    team = admin_team(db, user)
+    credential = lock_credential(db, user)
     token = 'plus_feedback_' + secrets.token_urlsafe(32)
-    team.feedback_mcp_token_hash = feedback_token_hash(token)
+    digest = feedback_token_hash(token)
+    if credential is None:
+        db.add(FeedbackMcpCredential(team_id=user.team_id, token_hash=digest))
+    else:
+        credential.token_hash = digest
     db.commit()
     return {'token': token}
 
 
 @router.delete('/agent-token', status_code=204)
 def revoke_token(db: DbSession, user: CurrentUser):
-    admin_team(db, user).feedback_mcp_token_hash = None
+    credential = lock_credential(db, user)
+    if credential is not None:
+        db.delete(credential)
     db.commit()
 
 

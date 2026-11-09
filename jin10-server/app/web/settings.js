@@ -25,7 +25,10 @@ const modelOptions = { jev: ['jev-latest'], deepseek: ['deepseek-chat', 'deepsee
 function message(text, error = false) { const target = $('#settings-message'); target.textContent = text; target.className = error ? 'error' : 'success'; }
 function field(label, input) { const row = node('label', label, 'field'); row.append(input); return row; }
 async function load() {
-  data = await api('/api/settings');
+  renderSettings(await api('/api/settings'));
+}
+function renderSettings(settings) {
+  data = settings;
   if (!$('#editorial-mode')) {
     const group = node('div', undefined, 'ai-setting');
     const mode = node('select'); mode.id = 'editorial-mode';
@@ -98,12 +101,13 @@ async function load() {
       const savedModel = name === 'chat2api' ? saved.requested_model ?? saved.model : saved.model;
       const choices = modelOptions[name] || [];
       const model = node('select'); model.id = `model-${name}`;
+      if (!savedModel) { const option = node('option', '未指定'); option.value = ''; model.append(option); }
       for (const value of choices) { const option = node('option', value); option.value = value; model.append(option); }
       const customOption = node('option', '自定义…'); customOption.value = '__custom__'; model.append(customOption);
       const custom = node('input'); custom.id = `model-custom-${name}`; custom.maxLength = 100; custom.placeholder = '输入模型名称';
       const customSelected = Boolean(savedModel) && !choices.includes(savedModel);
       custom.hidden = !customSelected;
-      if (customSelected) { model.value = '__custom__'; custom.value = savedModel; } else { model.value = savedModel || choices[0] || ''; }
+      if (customSelected) { model.value = '__custom__'; custom.value = savedModel; } else { model.value = savedModel || ''; }
       model.onchange = () => { custom.hidden = model.value !== '__custom__'; };
       const modelWrap = node('div', undefined, 'model-picker'); modelWrap.append(model, custom);
       if (data.can_admin) {
@@ -142,9 +146,13 @@ function initialPanel() {
 function showPanel(name) {
   if (name === 'chat2api' && !data?.can_admin) name = 'team';
   if (!(name in sections) && !(name in standalone)) name = 'team';
+  if (panel === 'feedback' && name !== 'feedback') clearFeedbackToken();
   panel = name;
   $('#settings-form').hidden = !(name in sections);
   $('#save-settings').hidden = !data?.can_edit || !(name in sections);
+  $('#reload-settings').textContent = {
+    database: '刷新数据集', feedback: '刷新反馈', chat2api: '刷新节点状态',
+  }[name] || '刷新设置';
   for (const [key, selector] of Object.entries(sections)) $(selector).hidden = key !== name;
   for (const [key, selector] of Object.entries(standalone)) $(selector).hidden = key !== name;
   for (const link of document.querySelectorAll('.settings-nav a')) {
@@ -185,8 +193,7 @@ function updateDatasetNote() {
   const item = exportData?.datasets.find((entry) => entry.key === $('#export-dataset').value);
   $('#export-dataset-note').textContent = item ? `${item.description} 筛选字段：${item.date_label}。` : '';
 }
-function exportQuery() {
-  const { start, end } = currentRange();
+function exportQuery({ start, end } = checkedRange()) {
   const params = new URLSearchParams();
   if (start) params.set('start', start);
   if (end) params.set('end', end);
@@ -227,8 +234,9 @@ async function openExport() {
       const button = $('#export-count');
       button.disabled = true; exportStatus('正在统计…');
       try {
-        checkedRange();
-        const result = await api(`/api/export/${select.value}/count?${exportQuery()}`);
+        const key = select.value, query = exportQuery().toString();
+        const result = await api(`/api/export/${key}/count?${query}`);
+        if (select.value !== key || exportQuery(currentRange()).toString() !== query) return;
         const limited = result.count > result.max_rows ? `，超过单次上限 ${result.max_rows} 行，请缩小时间范围` : '';
         exportStatus(`当前范围共 ${result.count} 行${limited}。`);
       } catch (error) { exportStatus(error.message, true); }
@@ -240,11 +248,13 @@ async function openExport() {
       try {
         const { start, end } = checkedRange();
         const key = select.value, fmt = $('#export-format').value;
-        const count = await api(`/api/export/${key}/count?${exportQuery()}`);
+        const dataset = exportData.datasets.find((item) => item.key === key)?.label || key;
+        const params = exportQuery({ start, end });
+        const count = await api(`/api/export/${key}/count?${params}`);
         if (count.count > count.max_rows) throw new Error(`本次 ${count.count} 行，超过单次上限 ${count.max_rows} 行，请缩小时间范围`);
-        const params = exportQuery(); params.set('format', fmt);
+        params.set('format', fmt);
         await download(`/api/export/${key}?${params}`);
-        exportStatus(`已开始下载：${start ? copyDate(start) : '最早'} 至 ${end ? copyDate(end) : '现在'}，共 ${count.count} 行。`); toast('导出文件已开始下载。');
+        exportStatus(`已开始下载 ${dataset}：${start ? copyDate(start) : '最早'} 至 ${end ? copyDate(end) : '现在'}，共 ${count.count} 行。`); toast('导出文件已开始下载。');
       } catch (error) { exportStatus(error.message, true); }
       finally { button.disabled = false; }
     };
@@ -308,7 +318,9 @@ async function openFeedbackMcp() {
   const field = $('#feedback-token-field');
   const input = $('#feedback-token');
   const path = '/api/feedback/agent-token';
+  let configured = false;
   const render = (enabled) => {
+    configured = enabled;
     issue.textContent = enabled ? '轮换凭据' : '生成凭据';
     revoke.disabled = !enabled;
     status.textContent = enabled ? '团队凭据已启用。' : '团队凭据尚未启用。';
@@ -318,27 +330,32 @@ async function openFeedbackMcp() {
   try { render((await api(path)).enabled); issue.disabled = false; }
   catch (error) { status.textContent = error.message; return; }
   issue.onclick = async () => {
+    if (configured && !confirm('轮换会立即停用当前 Agent 凭据。确认生成新的凭据？')) return;
     issue.disabled = true;
     revoke.disabled = true;
     try {
       input.value = (await api(path, { method: 'POST' })).token;
       field.hidden = false;
       render(true);
-      input.select();
+      if (panel === 'feedback') input.select(); else clearFeedbackToken();
     } catch (error) { status.textContent = error.message; revoke.disabled = false; }
     finally { issue.disabled = false; }
   };
   revoke.onclick = async () => {
+    if (!confirm('撤销后，已接入的 Agent 将无法继续处理反馈。确认撤销？')) return;
     issue.disabled = true;
     revoke.disabled = true;
     try {
       await api(path, { method: 'DELETE', raw: true });
-      input.value = '';
-      field.hidden = true;
+      clearFeedbackToken();
       render(false);
     } catch (error) { status.textContent = error.message; revoke.disabled = false; }
     finally { issue.disabled = false; }
   };
+}
+function clearFeedbackToken() {
+  $('#feedback-token').value = '';
+  $('#feedback-token-field').hidden = true;
 }
 $('#feedback-form').onsubmit = async (event) => {
   event.preventDefault();
@@ -363,7 +380,12 @@ $('#feedback-form').onsubmit = async (event) => {
       try { const data = await res.json(); if (typeof data.detail === 'string') detail = data.detail; } catch { /* not json */ }
       throw new Error(detail);
     }
-    $('#feedback-title-input').value = ''; $('#feedback-content').value = ''; $('#feedback-image').value = '';
+    for (const [id, value] of [['#feedback-title-input', title], ['#feedback-content', content]]) {
+      const input = $(id);
+      if (input.value.trim() === value) input.value = '';
+    }
+    const image = $('#feedback-image');
+    if (image.files[0] === file) image.value = '';
     feedbackStatus('已提交，感谢反馈。'); toast('反馈已提交。');
     await loadFeedback();
   } catch (error) { feedbackStatus(error.message, true); }
@@ -450,9 +472,50 @@ $('#chat2api-clear').onclick = async () => {
 };
 
 $('#settings-form').oninput = () => { dirty = true; };
-$('#reload-settings').onclick = async () => { if (dirty && !confirm('放弃未保存的设置并刷新？')) return; try { exportData = null; await load(); message('设置已刷新。'); toast('设置已刷新。'); } catch (e) { message(e.message, true); toast(e.message, 'error'); } };
+let settingsBusy = false;
+function setSettingsBusy(busy) {
+  settingsBusy = busy;
+  const form = $('#settings-form');
+  form.inert = busy;
+  form.setAttribute('aria-busy', String(busy));
+  $('#save-settings').disabled = busy;
+  $('#reload-settings').disabled = busy;
+}
+$('#reload-settings').onclick = async () => {
+  if (settingsBusy) return;
+  if (panel in standalone) {
+    const button = $('#reload-settings');
+    button.disabled = true;
+    try {
+      if (panel === 'feedback') await loadFeedback();
+      if (panel === 'database') { exportData = null; await openExport(); }
+      if (panel === 'chat2api') await loadChat2api();
+    } finally { button.disabled = settingsBusy; }
+    return;
+  }
+  if (dirty && !confirm('放弃未保存的设置并刷新？')) return;
+  setSettingsBusy(true);
+  try {
+    await load(); message('设置已刷新。'); toast('设置已刷新。');
+  } catch (e) { message(e.message, true); toast(e.message, 'error'); }
+  finally { setSettingsBusy(false); }
+};
+function validateSettings() {
+  const invalid = [...document.querySelectorAll('#settings-form input[type="url"]')].find((input) => !input.validity.valid);
+  if (!invalid) return true;
+  showPanel('live');
+  history.replaceState(null, '', '#live');
+  for (let group = invalid.closest('details'); group; group = group.parentElement.closest('details')) group.open = true;
+  invalid.focus();
+  invalid.reportValidity();
+  message('请检查直播链接，填写完整的 HTTPS 地址。', true);
+  return false;
+}
 $('#settings-form').onsubmit = async (event) => {
-  event.preventDefault(); const button = $('#save-settings'); button.disabled = true;
+  event.preventDefault();
+  if (settingsBusy || !data?.can_edit || !validateSettings()) return;
+  setSettingsBusy(true);
+  message('正在保存设置…');
   try {
     const body = { revision: data.revision, live_url: $('#live-url').value.trim(), notes: Object.fromEntries(data.categories.map((c) => [c.id, $(`#notes-${c.id}`).value])) };
     if (data.can_edit) body.brief_templates = Object.fromEntries(data.categories.filter((c) => templateCategories.has(c.id)).map((c) => [c.id, {
@@ -484,10 +547,14 @@ $('#settings-form').onsubmit = async (event) => {
       if ($('#adopt-current-style').checked) body.adopt_current_style=true;
     }
     if (data.can_admin) body.data_collection_enabled = $('#data-collection-enabled').checked;
-    await api('/api/settings', { method: 'PUT', json: body });
-    for (const name of Object.keys(providers)) if ($(`#key-${name}`)) $(`#key-${name}`).value = '';
-    dirty = false; await load(); message('设置已保存。后续任务将使用新配置。'); toast('设置已保存。');
-  } catch (e) { message(e.message, true); toast(e.message, 'error'); } finally { button.disabled = false; }
+    const saved = await api('/api/settings', { method: 'PUT', json: body });
+    renderSettings(saved);
+    message('设置已保存。后续任务将使用新配置。'); toast('设置已保存。');
+  } catch (e) { message(e.message, true); toast(e.message, 'error'); }
+  finally { setSettingsBusy(false); }
 };
-window.addEventListener('beforeunload', (e) => { if (dirty) { e.preventDefault(); e.returnValue = ''; } });
+window.addEventListener('beforeunload', (e) => {
+  const feedbackDraft = $('#feedback-title-input').value.trim() || $('#feedback-content').value.trim() || $('#feedback-image').files.length;
+  if (dirty || feedbackDraft) { e.preventDefault(); e.returnValue = ''; }
+});
 try { currentUser = await login(); await load(); } catch (e) { message(e.message, true); }

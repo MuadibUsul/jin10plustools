@@ -3,19 +3,49 @@ import { $, node, api, login, displayTime, toast } from '/workspace.js';
 const target = location.pathname.startsWith('/annotations/') ? 'annotation' : 'fresh';
 const targetLabel = target === 'annotation' ? 'Plus注解辅助' : 'Plus新鲜事';
 let me, canEdit = false, events = [], drafts = [];
+const draftPageSize = 12;
+let draftPage = 0, draftHasMore = false, draftRequest = 0, draftLoading = false;
 const dialog = $('#news-dialog');
+const draftStates = { draft: '草稿', pending_review: '待审核', approved: '已通过', rejected: '已驳回', archived: '已归档' };
+let dialogBusy = false;
+let draftEditChanged = null;
 
 function message(text, error = false) { $('#news-status').textContent = text; $('#news-status').className = error ? 'error' : 'muted'; }
 async function safe(action) { try { await action(); } catch (e) { message(e.message, true); toast(e.message, 'error'); } }
 function openDialog(title, status = '') {
+  draftEditChanged = null;
   $('#news-dialog-title').textContent = title;
   $('#news-dialog-status').textContent = status;
+  $('#news-dialog-action-status').textContent = '';
   $('#news-dialog-content').replaceChildren();
   if (!dialog.open) { if (dialog.showModal) dialog.showModal(); else dialog.setAttribute('open', ''); }
 }
 function closeDialog() {
-  if (!dialog?.open) return;
+  if (!dialog?.open || dialogBusy) return;
+  if (draftEditChanged?.() && !window.confirm('放弃未保存的修改？')) return;
   if (dialog.close) dialog.close(); else dialog.removeAttribute('open');
+}
+async function dialogAction(progress, success, action, onSaved) {
+  if (dialogBusy) return;
+  dialogBusy = true;
+  const controls = [...dialog.querySelectorAll('button:not(:disabled)')];
+  const status = $('#news-dialog-action-status');
+  for (const control of controls) control.disabled = true;
+  status.className = 'muted'; status.textContent = progress;
+  let result;
+  try {
+    result = await action();
+  } catch (error) {
+    status.className = 'error'; status.textContent = error.message;
+    return;
+  } finally {
+    dialogBusy = false;
+    for (const control of controls) control.disabled = false;
+  }
+  if (onSaved) onSaved(result);
+  else closeDialog();
+  toast(success);
+  await safe(load);
 }
 function empty(text) { return node('p', text, 'news-empty'); }
 function stamp(value) { return value ? displayTime(value) : ''; }
@@ -26,17 +56,54 @@ function textSection(host, title, values) {
   for (const value of list) host.append(node('p', String(value), 'muted'));
 }
 
-async function load() {
-  const [eventData, draftData] = await Promise.all([
-    api('/api/news-skill-os/events'),
-    api('/api/news-skill-os/drafts'),
-  ]);
-  events = eventData.items || [];
-  drafts = (draftData.items || []).filter((item) => item.target === target);
-  renderEvents();
-  renderDrafts();
-  message(`事件 ${events.length} 个 · ${targetLabel}草稿 ${drafts.length} 个`);
+async function load(firstPage = false) {
+  await Promise.all([loadEvents(), loadDrafts(firstPage ? 0 : draftPage)]);
 }
+
+async function loadEvents() {
+  const eventData = await api('/api/news-skill-os/events');
+  events = eventData.items || [];
+  renderEvents();
+}
+
+function updateDraftPager() {
+  $('#draft-pager').hidden = draftPage === 0 && !draftHasMore;
+  $('#draft-prev').disabled = draftLoading || draftPage === 0;
+  $('#draft-next').disabled = draftLoading || !draftHasMore;
+  $('#draft-page').textContent = draftLoading ? '正在加载…' : `第 ${draftPage + 1} 页`;
+}
+
+async function loadDrafts(page) {
+  const request = ++draftRequest;
+  draftLoading = true;
+  updateDraftPager();
+  try {
+    let data;
+    do {
+      data = await api(`/api/news-skill-os/drafts?target=${target}&limit=${draftPageSize}&offset=${page * draftPageSize}`);
+      if (request !== draftRequest) return;
+      if (data.items.length || page === 0) break;
+      page--;
+    } while (true);
+    draftPage = page;
+    draftHasMore = data.has_more;
+    drafts = data.items;
+    renderDrafts();
+  } finally {
+    if (request === draftRequest) {
+      draftLoading = false;
+      updateDraftPager();
+    }
+  }
+}
+
+function changeDraftPage(page) {
+  if (draftLoading) return;
+  $('#draft-page').focus({ preventScroll: true });
+  return safe(() => loadDrafts(page));
+}
+$('#draft-prev').onclick = () => changeDraftPage(draftPage - 1);
+$('#draft-next').onclick = () => changeDraftPage(draftPage + 1);
 
 function renderEvents() {
   const host = $('#news-events'); host.replaceChildren();
@@ -60,11 +127,16 @@ function renderEvents() {
 
 function renderDrafts() {
   const host = $('#news-drafts'); host.replaceChildren();
-  if (!drafts.length) { host.append(empty(`暂无${targetLabel}草稿。链接分析确认后可生成。`)); return; }
+  if (!drafts.length) {
+    host.append(empty(canEdit
+      ? target === 'annotation' ? '暂无注解草稿。分析一条快讯，核对后保存草稿。' : '暂无新鲜事草稿。分析新闻链接，核对后生成草稿。'
+      : '本团队暂无可查看的草稿。'));
+    return;
+  }
   for (const item of drafts) {
     const card = node('article', undefined, 'news-card');
     const head = node('div', undefined, 'toolbar');
-    head.append(node('h3', item.title), node('span', item.status, 'news-badge'));
+    head.append(node('h3', item.title), node('span', draftStates[item.status] || item.status, 'news-badge'));
     card.append(head, node('p', item.body.slice(0, 160), 'muted'));
     const view = node('button', '查看与审核'); view.onclick = () => safe(() => showDraft(item)); card.append(view);
     host.append(card);
@@ -126,9 +198,9 @@ async function createFreshDraft(eventId, button) {
   button.disabled = true;
   try {
     const draft = await api(`/api/news-skill-os/events/${eventId}/fresh-draft`, { method: 'POST' });
-    toast('Plus新鲜事草稿已生成，等待人工审核。');
-    message(`已生成待审草稿：${draft.title}`);
-    await load();
+    toast('草稿已生成，核对后可送审。');
+    message(`已生成草稿：${draft.title}`);
+    await load(true);
   } finally { button.disabled = false; }
 }
 
@@ -157,10 +229,14 @@ async function showEvent(item) {
   if (!(snapshot.claims || []).length) host.append(empty('该修订没有 Claim。'));
 }
 
-function showAnnotationResult(result) {
+function showAnnotationResult(result, input) {
   openDialog(result.title, '三段注解 · 先人工核对再保存送审');
   const host = $('#news-dialog-content');
   host.append(node('div', result.body, 'news-draft-body'));
+  const original = node('details');
+  original.append(node('summary', '核对本次快讯原文'), node('p', input.text, 'news-draft-body'));
+  if (input.source_url) original.append(node('p', input.source_url, 'news-draft-body'));
+  host.append(original);
   if (result.warnings?.length) {
     host.append(node('h3', '核对提醒'));
     for (const warning of result.warnings) host.append(node('p', warning, 'warning'));
@@ -174,52 +250,121 @@ function showAnnotationResult(result) {
   }
   if (canEdit && target === 'annotation') {
     const actions = node('div', undefined, 'news-dialog-actions');
-    const save = node('button', '保存为待审草稿', 'primary');
-    save.onclick = () => safe(async () => {
-      save.disabled = true;
-      try {
-        await api('/api/news-skill-os/drafts', { method: 'POST', json: {
-          title: result.title, body: result.body, target: 'annotation',
-          payload: { flash: $('#annotation-text').value.trim(),
-                     source_url: $('#annotation-source').value.trim() || null,
-                     sources: result.sources || [], warnings: result.warnings || [],
-                     quality_review: result.quality_review || null },
-        }});
-        toast('注解草稿已保存，等待人工审核。');
-        closeDialog(); await load();
-      } finally { save.disabled = false; }
-    });
+    const save = node('button', '保存草稿', 'primary');
+    save.onclick = () => dialogAction('正在保存注解草稿…', '注解草稿已保存，核对后可送审。', () =>
+      api('/api/news-skill-os/drafts', { method: 'POST', json: {
+        title: result.title, body: result.body, target: 'annotation',
+        payload: { flash: input.text, source_url: input.source_url,
+                   sources: result.sources || [], warnings: result.warnings || [],
+                   quality_review: result.quality_review || null },
+      }}), () => { draftPage = 0; closeDialog(); });
     actions.append(save); host.append(actions);
   }
 }
 
 async function showDraft(item) {
-  const detail = await api(`/api/news-skill-os/drafts/${item.id}`);
-  openDialog(detail.draft.title, `${detail.draft.status} · 修订 ${detail.draft.current_revision}`);
+  renderDraftDetail(await api(`/api/news-skill-os/drafts/${item.id}`));
+}
+
+function renderDraftDetail(detail) {
+  const draft = detail.draft;
+  const current = detail.revisions.find((version) => version.number === draft.current_revision);
+  openDialog(draft.title, `${draftStates[draft.status] || draft.status} · 修订 ${draft.current_revision}`);
   const host = $('#news-dialog-content');
+  if (draft.status === 'rejected' && current?.review_note) {
+    host.append(node('p', `驳回原因：${current.review_note}`, 'warning'));
+  }
   host.append(node('div', detail.draft.body, 'news-draft-body'));
   const details = node('details'); details.append(node('summary', `版本记录（${detail.revisions.length}）`));
   for (const version of [...detail.revisions].reverse()) {
     details.append(node('p', `第 ${version.number} 次 · ${stamp(version.created_at)} · ${version.review_status}${version.review_note ? ` · ${version.review_note}` : ''}`, 'muted'));
   }
   host.append(details);
-  if (!canEdit) return;
+  if (!canEdit || ['approved', 'archived'].includes(draft.status)) return;
   const actions = node('div', undefined, 'news-dialog-actions');
-  const submit = node('button', '送审'); submit.onclick = () => safe(async () => {
-    await api(`/api/news-skill-os/drafts/${item.id}/submit`, { method: 'POST' });
-    await showDraft(item); await load();
-  });
-  const approve = node('button', '通过', 'primary'); approve.onclick = () => safe(async () => {
-    await api(`/api/news-skill-os/drafts/${item.id}/review`, { method: 'POST', json: { decision: 'approve', note: '', expected_revision:item.current_revision } });
-    toast('草稿已通过人工审核。'); await showDraft(item); await load();
-  });
-  const reject = node('button', '驳回'); reject.onclick = () => safe(async () => {
-    const note = window.prompt('驳回原因（必填）');
-    if (!note) return;
-    await api(`/api/news-skill-os/drafts/${item.id}/review`, { method: 'POST', json: { decision: 'reject', note, expected_revision:item.current_revision } });
-    toast('草稿已驳回。'); await showDraft(item); await load();
-  });
-  actions.append(submit, approve, reject); host.append(actions);
+  const path = `/api/news-skill-os/drafts/${draft.id}`;
+  if (draft.status !== 'pending_review') {
+    const edit = node('button', '编辑新修订', draft.status === 'rejected' ? 'primary' : undefined);
+    edit.onclick = () => editDraft(detail, current);
+    actions.append(edit);
+  }
+  if (draft.status === 'draft') {
+    const submit = node('button', '送审');
+    submit.onclick = () => dialogAction('正在送审…', '草稿已送审。', () => api(`${path}/submit`, { method: 'POST' }),
+      (saved) => renderDraftDetail({ ...detail, draft: saved }));
+    actions.append(submit);
+  }
+  if (draft.status !== 'pending_review') { host.append(actions); return; }
+  const review = (decision, note, success) => dialogAction('正在保存审核结果…', success, () =>
+    api(`${path}/review`, { method: 'POST', json: { decision, note, expected_revision: draft.current_revision } }));
+  const approve = node('button', '通过', 'primary');
+  approve.onclick = () => review('approve', '', '草稿已通过人工审核。');
+  const reject = node('button', '驳回');
+  reject.onclick = () => {
+    const note = window.prompt('驳回原因（必填）')?.trim();
+    if (note) review('reject', note, '草稿已驳回。');
+  };
+  actions.append(approve, reject); host.append(actions);
+}
+
+function editDraft(detail, current) {
+  const { draft } = detail;
+  openDialog('编辑草稿修订', `基于第 ${draft.current_revision} 版。保存后可送审。`);
+  const host = $('#news-dialog-content');
+  if (draft.status === 'rejected' && current?.review_note) {
+    host.append(node('p', `驳回原因：${current.review_note}`, 'warning'));
+  }
+  const form = node('form');
+  const title = node('input');
+  title.value = draft.title; title.maxLength = 300; title.required = true;
+  const body = node('textarea');
+  body.value = draft.body; body.rows = 10; body.maxLength = 100000; body.required = true;
+  for (const [label, control] of [['标题', title], ['正文', body]]) {
+    const field = node('label', label, 'field');
+    field.append(control); form.append(field);
+  }
+  const save = node('button', '保存新修订', 'primary');
+  save.type = 'submit';
+  const cancel = node('button', '取消'); cancel.type = 'button';
+  draftEditChanged = () => title.value !== draft.title || body.value !== draft.body;
+  cancel.onclick = () => {
+    if (draftEditChanged() && !window.confirm('放弃未保存的修改？')) return;
+    renderDraftDetail(detail);
+  };
+  const actions = node('div', undefined, 'news-dialog-actions');
+  actions.append(save, cancel); form.append(actions); host.append(form);
+  form.onsubmit = async (event) => {
+    event.preventDefault();
+    if (dialogBusy) return;
+    const request = {
+      expected_revision: draft.current_revision, title: title.value.trim(),
+      body: body.value, payload: current?.payload ?? draft.payload ?? {},
+    };
+    if (!request.title || !request.body.trim()) {
+      const status = $('#news-dialog-action-status');
+      status.className = 'error'; status.textContent = '请填写标题和正文。';
+      return;
+    }
+    title.readOnly = body.readOnly = true;
+    try {
+      await dialogAction('正在保存新修订…', '新修订已保存，可以送审。', async () => {
+        if (draft.event_id && current?.event_revision_id) {
+          const event = await api(`/api/news-skill-os/events/${draft.event_id}`);
+          const source = event.revisions.find((version) => version.id === current.event_revision_id);
+          if (!source) throw new Error('无法核对原事实修订，请刷新后重试。');
+          request.event_revision = source.number;
+        }
+        return api(`/api/news-skill-os/drafts/${draft.id}/revisions`, { method: 'POST', json: request });
+      }, (revision) => {
+        renderDraftDetail({
+          draft: { ...draft, status: 'draft', current_revision: revision.number, title: revision.title, body: revision.body },
+          revisions: [...detail.revisions, revision],
+        });
+        host.querySelector('.news-dialog-actions button:last-child')?.focus();
+      });
+    } finally { title.readOnly = body.readOnly = false; }
+  };
+  title.focus();
 }
 
 $('#news-form').onsubmit = (event) => {
@@ -238,20 +383,31 @@ $('#news-form').onsubmit = (event) => {
 };
 $('#annotation-form').onsubmit = (event) => {
   event.preventDefault();
-  const button = $('#annotation-submit'); button.disabled = true;
+  const button = $('#annotation-submit');
+  if (button.disabled) return;
+  const input = {
+    text: $('#annotation-text').value.trim(),
+    source_url: $('#annotation-source').value.trim() || null,
+  };
+  button.disabled = true;
+  message('正在分析快讯并检索参考来源…');
   safe(async () => {
     const result = await api('/api/news-skill-os/annotations/analyze', {
-      method: 'POST', json: {
-        text: $('#annotation-text').value.trim(),
-        source_url: $('#annotation-source').value.trim() || null,
-      },
+      method: 'POST', json: input,
     });
     toast('三段注解已生成，请核对后保存。');
-    showAnnotationResult(result);
+    message('分析已完成。核对本次原文、注解和参考来源后保存。');
+    showAnnotationResult(result, input);
   }).finally(() => { button.disabled = false; });
 };
 $('#news-dialog-close').onclick = closeDialog;
-$('#news-dialog').addEventListener('close', () => $('#news-dialog-content').replaceChildren());
+dialog.addEventListener('cancel', (event) => {
+  if (dialogBusy || (draftEditChanged?.() && !window.confirm('放弃未保存的修改？'))) event.preventDefault();
+});
+dialog.addEventListener('close', () => {
+  draftEditChanged = null;
+  $('#news-dialog-content').replaceChildren();
+});
 
 try {
   me = await login();

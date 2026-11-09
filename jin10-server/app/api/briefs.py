@@ -13,7 +13,7 @@ from app.db.models import BriefAudit, BriefConfig, BriefIssue, BriefJob, BriefVe
 from app.services.team_settings import update_notes
 from app.deps import CurrentUser, DbSession, Editor
 from app.briefs.policy import CATEGORIES, CHINA
-from app.briefs.service import owned, enqueue, issue_out, job_out, append_version, artifact_path, delivered_image, prepare_chart_notes_revision, edition_payload
+from app.briefs.service import owned, find_issue, enqueue, issue_out, job_out, append_version, artifact_path, delivered_image, prepare_chart_notes_revision, edition_payload
 from app.briefs.delivery import complete_body
 from app.services.image_delivery import download_name
 
@@ -25,6 +25,7 @@ class JobRequest(BaseModel):
     category: Literal[*CATEGORIES]
     issue_date: date
     action: Literal['produce','refresh','render','ai']='produce'
+    expected_version: int | None = Field(default=None, ge=1)
 
 
 class ManualComputeRequest(BaseModel):
@@ -163,8 +164,20 @@ def jobs(body:JobRequest,db:DbSession,user:Editor):
     if active and active.action!=body.action:
         names={'produce':'生成稿件','refresh':'重新取数','render':'重新制图','ai':'补跑AI文案'}
         raise HTTPException(409,f"该栏目正在执行{names.get(active.action,active.action)}，请等待当前任务结束后再{names.get(body.action,body.action)}")
+    render_base_version = None
+    if body.action == 'render':
+        issue = find_issue(db, user.team_id, body.issue_date, body.category)
+        if issue is None or not issue.version:
+            raise HTTPException(409, '尚无可重绘稿件，请先生成')
+        render_base_version = issue.version
+        if body.expected_version is not None and body.expected_version != render_base_version:
+            raise HTTPException(409, '稿件已更新，请基于最新版本重新制图')
+    elif body.expected_version is not None:
+        raise HTTPException(422, '只有重新制图可以指定稿件版本')
     job=enqueue(db,user.team_id,body.issue_date,body.category,action=body.action,
-                user_id=user.id,unique=True)
+                user_id=user.id,unique=True,render_base_version=render_base_version)
+    if job.action != body.action or job.render_base_version != render_base_version:
+        raise HTTPException(409, '该栏目已有其他任务，请等待结束后重试')
     db.commit();return job_out(job)
 
 

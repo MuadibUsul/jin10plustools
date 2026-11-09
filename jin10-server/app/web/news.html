@@ -23,8 +23,11 @@
 </section>
 <div class="news-grid">
 <section class="settings-section"><h2>事件与事实链</h2><div id="news-events" class="news-list"></div></section>
-<section class="settings-section"><h2>草稿与人工审核</h2><div id="news-drafts" class="news-list"></div></section>
+<section class="settings-section"><h2>草稿与人工审核</h2><div id="news-drafts" class="news-list"></div>
+<div id="draft-pager" class="toolbar" role="group" aria-label="草稿分页" hidden>
+<button id="draft-prev" type="button">上一页</button><span id="draft-page" class="muted" role="status" tabindex="-1"></span><button id="draft-next" type="button">下一页</button>
+</div></section>
 </div>
 </main>
-<dialog id="news-dialog" class="detail-dialog" aria-labelledby="news-dialog-title"><section class="detail"><div class="detail-head"><div><h2 id="news-dialog-title"></h2><p id="news-dialog-status" class="muted"></p></div><button id="news-dialog-close">关闭</button></div><div id="news-dialog-content"></div></section></dialog>
+<dialog id="news-dialog" class="detail-dialog" aria-labelledby="news-dialog-title"><section class="detail"><div class="detail-head"><div><h2 id="news-dialog-title"></h2><p id="news-dialog-status" class="muted"></p><p id="news-dialog-action-status" class="muted" role="status"></p></div><button id="news-dialog-close">关闭</button></div><div id="news-dialog-content"></div></section></dialog>
 <script type="module" src="/news.js"></script></body></html>

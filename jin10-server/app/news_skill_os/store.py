@@ -301,12 +301,14 @@ def get_draft(db: Session, team_id: uuid.UUID, draft_id: uuid.UUID) -> NewsDraft
 
 
 def list_drafts(db: Session, team_id: uuid.UUID, *, event_id: uuid.UUID | None = None,
-                limit: int = 50, offset: int = 0) -> list[NewsDraft]:
+                target: str | None = None, limit: int = 50, offset: int = 0) -> list[NewsDraft]:
     statement = select(NewsDraft).where(NewsDraft.team_id == team_id)
     if event_id is not None:
         statement = statement.where(NewsDraft.event_id == event_id)
+    if target is not None:
+        statement = statement.where(NewsDraft.target == target)
     return list(db.scalars(statement.order_by(NewsDraft.updated_at.desc(), NewsDraft.id)
-                           .limit(max(1, min(limit, 100))).offset(max(0, offset))))
+                           .limit(max(1, min(limit, 101))).offset(max(0, offset))))
 
 
 def list_draft_revisions(db: Session, team_id: uuid.UUID, draft_id: uuid.UUID) -> list[NewsDraftRevision]:

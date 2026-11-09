@@ -115,21 +115,49 @@ async function loadParseAlert() {
 async function openRecycle() {
   const dlg = $('#recycle');
   const list = $('#recycle-list');
+  const all = $('#recycle-all');
+  const restore = $('#recycle-restore');
+  all.disabled = restore.disabled = true;
+  all.hidden = restore.hidden = !canEdit();
+  const status = $('#recycle-status');
+  status.textContent = '';
   list.replaceChildren(el('li', { class: 'muted' }, '加载中…'));
   dlg.showModal();
-  const rows = await api('/api/materials/deleted');
+  let rows;
+  try { rows = await api('/api/materials/deleted'); }
+  catch (error) {
+    list.replaceChildren();
+    status.textContent = `回收站读取失败：${error.message}。请关闭后重新打开。`;
+    return;
+  }
   const chosen = new Set();
-  const sync = () => { $('#recycle-restore').textContent = `恢复所选（${chosen.size}）`; $('#recycle-restore').disabled = !chosen.size; };
+  let restoring = false;
+  const sync = () => {
+    restore.textContent = restoring ? '正在恢复…' : `恢复所选（${chosen.size}）`;
+    restore.disabled = restoring || !chosen.size;
+    all.disabled = restoring || !rows.length;
+  };
   list.replaceChildren(...(rows.length ? rows.map((m) => el('li', {},
     el('label', {},
-      el('input', { type: 'checkbox', onchange: (e) => { e.target.checked ? chosen.add(m.id) : chosen.delete(m.id); sync(); } }),
+      canEdit() ? el('input', { type: 'checkbox', onchange: (e) => { e.target.checked ? chosen.add(m.id) : chosen.delete(m.id); sync(); } }) : null,
       el('span', {}, eff.title(m)),
       el('span', { class: 'muted' }, ` · 删除于 ${fmtTime(m.deleted_at)}`)))) : [el('li', { class: 'muted' }, '回收站是空的')]));
-  $('#recycle-all').onclick = () => { list.querySelectorAll('input').forEach((i) => { i.checked = true; }); rows.forEach((m) => chosen.add(m.id)); sync(); };
-  $('#recycle-restore').onclick = async () => {
-    await api('/api/materials/restore', { method: 'POST', json: { ids: [...chosen] } });
-    dlg.close();
-    await refresh();
+  all.onclick = () => { list.querySelectorAll('input').forEach((i) => { i.checked = true; }); rows.forEach((m) => chosen.add(m.id)); sync(); };
+  restore.onclick = async () => {
+    if (restoring || !canEdit() || !chosen.size) return;
+    restoring = true;
+    status.textContent = '';
+    sync();
+    try {
+      await api('/api/materials/restore', { method: 'POST', json: { ids: [...chosen] } });
+      dlg.close();
+      await refresh();
+    } catch (error) {
+      status.textContent = `恢复失败：${error.message}。请重试。`;
+    } finally {
+      restoring = false;
+      sync();
+    }
   };
   sync();
 }
@@ -154,6 +182,23 @@ function sectionItems(sectionId) {
 let boardVersion = -1;
 let boardQueue = Promise.resolve();
 let boardPending = 0;
+let boardMutation = 0;
+let poolRequest = 0;
+let poolScope = '';
+let poolReady = false;
+let poolFilter = 'all';
+let issueGenerating = false;
+
+function currentScope() {
+  return `${$('#day').value}/${$('#days').value}`;
+}
+
+function showPoolStatus(message, error = false) {
+  const status = $('#pool-status');
+  status.textContent = message;
+  status.hidden = !message;
+  status.classList.toggle('error', error);
+}
 
 function adoptBoard(board) {
   boardVersion = board.version;
@@ -164,9 +209,13 @@ function adoptBoard(board) {
 
 /** 拉取选稿板；有本地操作未提交完时跳过，避免把刚做的改动闪回去 */
 async function loadBoard() {
+  if (!poolReady || boardPending) return false;
   const day = $('#day').value;
+  const scope = poolScope;
+  const mutation = boardMutation;
   const board = await api(`/api/board?day=${day}`);
-  if (boardPending || day !== $('#day').value) return false;
+  if (!poolReady || boardPending || state.editing || state.editingTitle || state.dragId ||
+      mutation !== boardMutation || scope !== currentScope() || board.version < boardVersion) return false;
   const changed = board.version !== boardVersion;
   adoptBoard(board);
   return changed;
@@ -192,16 +241,30 @@ function migrateLocalBoard() {
 
 /** 本地已先行更新（界面即时响应），再把增量操作按顺序提交给服务端合并 */
 function boardOps(ops) {
+  if (!canEdit() || !poolReady) return Promise.resolve();
   const day = $('#day').value;
+  const scope = poolScope;
+  boardMutation++;
   boardPending++;
   boardQueue = boardQueue
     .then(() => api(`/api/board/ops?day=${day}`, { method: 'POST', json: ops }))
-    .then((board) => { if (boardPending === 1 && day === $('#day').value) { adoptBoard(board); render(); } })
+    .then((board) => {
+      if (boardPending === 1 && poolReady && scope === poolScope) {
+        adoptBoard(board);
+        if (!state.editing && !state.editingTitle && !state.dragId) render();
+      }
+    })
     .catch(async (err) => {
-      alert(`选稿同步失败：${err.message ?? err}`);
-      if (ops.cover_add || ops.cover_remove || ops.cover_reset) {
+      if (poolReady && scope === poolScope) {
+        showPoolStatus(`选稿同步失败：${err.message ?? err}。请核对后重试。`, true);
         const board = await api(`/api/board?day=${day}`).catch(() => null);
-        if (board && boardPending === 1 && day === $('#day').value) adoptBoard(board);
+        if (board && boardPending === 1 && poolReady && scope === poolScope) {
+          adoptBoard(board);
+          render();
+        } else if (!board && poolReady && scope === poolScope) {
+          poolReady = false;
+          render();
+        }
       }
     })
     .finally(() => { boardPending--; });
@@ -210,6 +273,7 @@ function boardOps(ops) {
 
 /** 拖拽放下：移到 targetSection 的 index 位置；跨栏目时同时修改栏目（锁定，AI 不再覆盖） */
 async function dropMaterial(id, targetSection, index) {
+  if (!canEdit() || !poolReady) return;
   const m = state.materials.find((x) => x.id === id);
   if (!m || targetSection === UNSORTED.id) return;
   const ids = sectionItems(targetSection).map((x) => x.id).filter((x) => x !== id);
@@ -256,11 +320,45 @@ function logout() {
 // ---------- 数据 ----------
 
 async function refresh() {
+  const scope = currentScope();
+  const changed = scope !== poolScope || !poolReady;
+  const request = ++poolRequest;
   const day = $('#day').value;
   const days = $('#days').value;
-  const [materials] = await Promise.all([api(`/api/pool?day=${day}&days=${days}`), loadBoard()]);
-  state.materials = materials;
-  render();
+  if (changed) {
+    poolScope = scope;
+    poolReady = false;
+    boardVersion = -1;
+    state.materials = [];
+    state.picked.clear();
+    state.coverIds = null;
+    state.order = {};
+    state.expanded.clear();
+    state.editing = state.editingTitle = null;
+    state.bulk = null;
+    showPoolStatus('正在载入此日期的素材和选稿…');
+    render();
+  }
+  try {
+    if (changed) await boardQueue;
+    if (request !== poolRequest) return;
+    const mutation = boardMutation;
+    const [materials, board] = await Promise.all([
+      api(`/api/pool?day=${day}&days=${days}`),
+      changed || !boardPending ? api(`/api/board?day=${day}`) : null,
+    ]);
+    if (request !== poolRequest || scope !== currentScope() || !state.token ||
+        (!changed && (state.editing || state.editingTitle || state.dragId))) return;
+    if (board && !boardPending && mutation === boardMutation && board.version >= boardVersion) adoptBoard(board);
+    state.materials = materials;
+    poolReady = true;
+    showPoolStatus('');
+    render();
+  } catch (error) {
+    if (request === poolRequest && scope === currentScope() && state.token) {
+      showPoolStatus(`载入失败：${error.message}。请点击「刷新」重试。`, true);
+    }
+  }
 }
 
 const HISTORY_PAGE = 5;
@@ -303,6 +401,7 @@ async function download(issue, format) {
 }
 
 async function moveTo(material, category) {
+  if (!canEdit() || !poolReady) return;
   const updated = await api(`/api/materials/${material.id}`, { method: 'PATCH', json: { category } });
   Object.assign(material, updated);
   render();
@@ -311,6 +410,7 @@ async function moveTo(material, category) {
 // ---------- 选择 ----------
 
 function togglePick(id) {
+  if (!canEdit() || !poolReady) return;
   if (state.picked.has(id)) {
     state.picked.delete(id);
     boardOps({ pick_remove: [id] });
@@ -322,6 +422,7 @@ function togglePick(id) {
 }
 
 function autoPick() {
+  if (!canEdit() || !poolReady) return;
   state.picked.clear();
   for (const s of SECTIONS) {
     sectionItems(s.id).slice(0, s.quota).forEach((m) => state.picked.add(m.id));
@@ -451,9 +552,9 @@ function renderImages(m) {
     ids.map((id, i) => el('figure', {},
       thumb(id),
       el('figcaption', {},
-        el('button', { class: 'link', onclick: () => replaceImage(m, i).catch(alert) }, '替换'),
-        el('button', { class: 'link danger', onclick: () => removeImage(m, i).catch(alert) }, '移除')))),
-    el('button', { class: 'add-image', onclick: () => replaceImage(m, ids.length).catch(alert) }, '+ 上传图片'));
+        canEdit() ? el('button', { class: 'link', onclick: () => replaceImage(m, i).catch(alert) }, '替换') : null,
+        canEdit() ? el('button', { class: 'link danger', onclick: () => removeImage(m, i).catch(alert) }, '移除') : null))),
+    canEdit() ? el('button', { class: 'add-image', onclick: () => replaceImage(m, ids.length).catch(alert) }, '+ 上传图片') : null);
 }
 
 function renderEditor(m) {
@@ -479,7 +580,7 @@ function renderEditor(m) {
 }
 
 /** 标题原地编辑：回车 / 失焦保存，Esc 取消 */
-const canEdit = () => state.me?.user.role !== 'viewer';
+const canEdit = () => ['admin', 'editor'].includes(state.me?.user.role);
 
 function renderTitleEditor(m) {
   let done = false;
@@ -512,9 +613,9 @@ function renderDetail(m) {
     el('p', {}, el('strong', {}, '【新闻】'), eff.news(m)),
     paragraphs.map((p, i) => el('p', {}, i === 0 ? el('strong', {}, '【解读】') : null, p)),
     renderImages(m),
-    el('div', { class: 'editor-actions' },
+    canEdit() ? el('div', { class: 'editor-actions' },
       el('button', { onclick: () => { if (confirmEditing(m)) { state.editing = m.id; render(); } } }, '编辑文字'),
-      m.edits ? el('button', { class: 'link', onclick: () => clearEdits(m).catch(alert) }, '恢复原文') : null),
+      m.edits ? el('button', { class: 'link', onclick: () => clearEdits(m).catch(alert) }, '恢复原文') : null) : null,
     m.ai_reason ? el('p', { class: 'reason' }, m.ai_reason) : null);
 }
 
@@ -525,7 +626,7 @@ function renderItem(m, cover) {
   const expanded = state.expanded.has(m.id);
   const images = eff.images(m).length;
 
-  const select = el('select', { title: '调整栏目（编辑指定后 AI 不再覆盖）', onchange: (e) => moveTo(m, e.target.value).catch(alert) },
+  const select = el('select', { title: '调整栏目（编辑指定后 AI 不再覆盖）', 'aria-label': '调整栏目', onchange: (e) => moveTo(m, e.target.value).catch(alert) },
     SECTIONS.map((s) => el('option', { value: s.id, selected: s.id === m.category }, s.label)));
   if (!SECTIONS.some((s) => s.id === m.category)) select.prepend(el('option', { value: '', selected: true, disabled: true }, '选择栏目'));
 
@@ -541,9 +642,10 @@ function renderItem(m, cover) {
       toggleBulk(m.id);
     },
     // 编辑文字时不可拖动，避免选中文字时误触发拖拽
-    draggable: state.bulk || state.editing === m.id || state.editingTitle === m.id ? 'false' : 'true',
-    title: '拖动可调整顺序，或拖到其他栏目',
+    draggable: canEdit() && poolFilter === 'all' && !state.bulk && state.editing !== m.id && state.editingTitle !== m.id ? 'true' : 'false',
+    title: canEdit() && poolFilter === 'all' ? '拖动可调整顺序，或拖到其他栏目' : null,
     ondragstart: (e) => {
+      if (!canEdit() || !poolReady || poolFilter !== 'all') { e.preventDefault(); return; }
       state.dragId = m.id;
       e.dataTransfer.effectAllowed = 'move';
       e.dataTransfer.setData('text/plain', m.id);
@@ -579,11 +681,20 @@ function renderItem(m, cover) {
   },
     state.bulk
       ? el('input', { type: 'checkbox', class: 'bulk-check', checked: marked, onchange: () => toggleBulk(m.id), 'aria-label': '勾选删除' })
-      : el('input', { type: 'checkbox', checked: picked, onchange: () => togglePick(m.id), 'aria-label': '选入日报' }),
+      : el('input', { id: `material-pick-${m.id}`, type: 'checkbox', checked: picked, disabled: !canEdit(), 'aria-label': '选入日报',
+        onchange: () => {
+          togglePick(m.id);
+          (document.getElementById(`material-pick-${m.id}`) || $('#pool-filters [aria-pressed="true"]'))?.focus({ preventScroll: true });
+        } }),
     state.editingTitle === m.id
       ? renderTitleEditor(m)
       : el('div', { class: 'item-title' },
-          el('span', { onclick: () => { if (state.bulk) return; expanded ? state.expanded.delete(m.id) : state.expanded.add(m.id); render(); } }, eff.title(m)),
+          state.bulk ? el('span', {}, eff.title(m)) : el('button', { class: 'item-title-toggle', 'aria-expanded': String(expanded),
+            onclick: () => {
+              expanded ? state.expanded.delete(m.id) : state.expanded.add(m.id);
+              render();
+              document.getElementById(`material-title-${m.id}`)?.focus({ preventScroll: true });
+            }, id: `material-title-${m.id}` }, eff.title(m)),
           canEdit() && !state.bulk ? el('button', { class: 'title-edit', title: '修改标题', 'aria-label': '修改标题', onclick: () => { if (confirmEditing(m)) { state.editingTitle = m.id; render(); } } }, '✎') : null),
     el('div', { class: 'item-meta' },
       m.level ? el('span', { class: `level ${m.level}` }, m.level) : null,
@@ -596,7 +707,7 @@ function renderItem(m, cover) {
       m.edits ? el('span', { class: 'chip edited' }, '已编辑') : null,
       m.collected_by.length > 1 ? el('span', { class: 'chip' }, `${m.collected_by.length} 人收藏`) : null,
       m.ai_confidence !== null && m.ai_confidence < 0.5 && !m.category_locked ? el('span', { class: 'chip warn' }, '栏目待确认') : null,
-      select,
+      canEdit() ? select : null,
       picked && sectionOf(m) !== UNSORTED.id && !state.bulk
         ? el('button', { class: `cover-toggle${cover.has(m.id) ? ' selected' : ''}`,
             disabled: !canEdit() || state.coverSaving, 'aria-pressed': String(cover.has(m.id)),
@@ -610,10 +721,17 @@ function renderItem(m, cover) {
 function render() {
   const coverIds = coverSelection();
   const cover = new Set(coverIds);
+  const matches = (material) => {
+    if (poolFilter === 'picked') return state.picked.has(material.id);
+    if (poolFilter === 'unpicked') return !state.picked.has(material.id);
+    if (poolFilter === 'unsorted') return sectionOf(material) === UNSORTED.id;
+    return true;
+  };
   const groups = [...SECTIONS, UNSORTED].map((s, idx) => {
-    const items = sectionItems(s.id);
-    if (s === UNSORTED && !items.length) return null;
-    const count = items.filter((m) => state.picked.has(m.id)).length;
+    const section = sectionItems(s.id);
+    const items = section.filter(matches);
+    if ((s === UNSORTED || poolFilter !== 'all') && !items.length) return null;
+    const count = section.filter((m) => state.picked.has(m.id)).length;
     return el('section', {
       class: 'card',
       // 拖到栏目空白处：追加到该栏目末尾
@@ -634,16 +752,28 @@ function render() {
       el('div', { class: 'section-head' },
         el('h2', {}, s === UNSORTED ? null : el('span', { class: 'no' }, String(idx + 1).padStart(2, '0')), s.label),
         state.bulk && items.length
-          ? el('button', { class: 'link', onclick: () => markAll(items.map((x) => x.id)) }, items.every((x) => state.bulk.has(x.id)) ? '取消本栏' : '全选本栏')
+          ? el('button', { class: 'link', onclick: () => markAll(items.map((x) => x.id)) }, items.every((x) => state.bulk.has(x.id))
+            ? (poolFilter === 'all' ? '取消本栏' : '取消可见项') : (poolFilter === 'all' ? '全选本栏' : '全选可见项'))
           : s.quota ? el('span', { class: `quota${count >= s.quota ? ' full' : ''}` }, `已选 ${count} / 建议 ${s.quota}`) : null),
       items.length ? el('ul', { class: 'items' }, items.map((m) => renderItem(m, cover))) : el('p', { class: 'empty' }, '暂无素材'));
   });
-  $('#sections').replaceChildren(...groups.filter(Boolean));
+  const visibleGroups = groups.filter(Boolean);
+  $('#sections').replaceChildren(...(poolReady ? visibleGroups.length ? visibleGroups : [
+    el('p', { class: 'empty pool-filter-empty' }, '当前筛选下没有素材，可切回「全部」。'),
+  ] : []));
   renderBulkBar();
 
   const picked = pickedBySection();
   const total = picked.reduce((n, s) => n + s.items.length, 0);
-  $('#pick-summary').textContent = total ? `正文共 ${total} 条，未选素材的栏目仍保留空白页` : '尚未选择素材';
+  $('#pool-filters').hidden = !poolReady;
+  for (const button of $('#pool-filters').querySelectorAll('button')) {
+    button.setAttribute('aria-pressed', String(button.dataset.poolFilter === poolFilter));
+    button.disabled = Boolean(state.bulk || state.editing || state.editingTitle);
+  }
+  const visibleCount = state.materials.filter(matches).length;
+  const countText = `显示 ${visibleCount}/${state.materials.length} 条 · 正文已选 ${total} 条`;
+  if ($('#pool-filter-count').textContent !== countText) $('#pool-filter-count').textContent = countText;
+  $('#pick-summary').textContent = !poolReady ? '请先载入此日期的选稿' : total ? `正文共 ${total} 条，未选素材的栏目仍保留空白页` : '尚未选择素材';
   $('#cover-summary').textContent = `首页精选 ${coverIds.length}/${COVER_LIMIT}`;
   $('#cover-mode').textContent = state.coverIds === null ? '系统推荐。勾选下方标题可改为人工精选。' : '人工精选已保存。未勾选的稿件仍进入正文。';
   $('#cover-reset').disabled = !canEdit() || state.coverSaving || state.coverIds === null;
@@ -651,8 +781,12 @@ function render() {
     el('li', {}, el('label', { class: 'cover-choice' },
       el('input', { type: 'checkbox', checked: cover.has(m.id), disabled: !canEdit() || state.coverSaving,
         'aria-label': `首页精选：${eff.title(m)}`, onchange: () => toggleCover(m.id) }), eff.title(m))))]));
-  $('#generate').disabled = total === 0 || !canEdit();
-  $('#preview').disabled = total === 0;
+  for (const id of ['auto-pick', 'clear-pick', 'reset-ai', 'clear-pool', 'bulk-delete']) {
+    $(`#${id}`).disabled = !poolReady || !canEdit();
+    $(`#${id}`).hidden = !canEdit();
+  }
+  $('#preview').textContent = canEdit() ? '预览并排版' : '预览日报';
+  $('#preview').disabled = !poolReady || total === 0 || issueGenerating;
 }
 
 // ---------- 生成 ----------
@@ -668,7 +802,9 @@ function issueRequest() {
 // ---------- 从选稿进入排版编辑 ----------
 
 let dailyEditor;
-function openPreview() { return dailyEditor.open(issueRequest()); }
+function openPreview() {
+  if (poolReady && !issueGenerating && pickedBySection().length) dailyEditor.open(issueRequest());
+}
 
 // ---------- 垃圾桶 / 恢复 AI 排版 ----------
 
@@ -761,8 +897,9 @@ async function resetAiLayout() {
 
 async function generate(request = issueRequest()) {
   const status = $('#gen-status');
-  const button = $('#generate');
-  button.disabled = true;
+  if (!canEdit() || issueGenerating) throw new Error('当前无法生成日报');
+  issueGenerating = true;
+  $('#preview').disabled = true;
   status.hidden = false;
   status.replaceChildren('正在生成 PPT 并转换 PDF，通常需要十几秒…');
   try {
@@ -771,15 +908,23 @@ async function generate(request = issueRequest()) {
       el('strong', {}, `已生成 ${issue.page_count} 页`),
       ...issue.warnings.map((w) => el('div', { class: 'muted' }, `· ${w}`)),
       el('div', { class: 'downloads' },
-        issue.has_pdf ? el('button', { class: 'primary', onclick: () => download(issue, 'pdf') }, '下载 PDF') : null,
-        el('button', { onclick: () => download(issue, 'pptx') }, '下载 PPT')));
-    if (issue.has_pdf) await download(issue, 'pdf');
-    await loadHistory(0);
+        issue.has_pdf ? el('button', { class: 'primary', onclick: () => download(issue, 'pdf').catch(reportDownloadError) }, '下载 PDF') : null,
+        el('button', { onclick: () => download(issue, 'pptx').catch(reportDownloadError) }, '下载 PPT')));
+    if (issue.has_pdf) download(issue, 'pdf').catch(reportDownloadError);
+    loadHistory(0).catch((error) => {
+      status.append(el('div', { class: 'error' }, `生成记录刷新失败：${error.message}。`));
+    });
   } catch (err) {
     status.replaceChildren(el('span', { class: 'error' }, `生成失败：${err.message}`));
+    throw err;
   } finally {
-    button.disabled = false;
+    issueGenerating = false;
+    $('#preview').disabled = !poolReady || pickedBySection().length === 0;
   }
+}
+
+function reportDownloadError(error) {
+  $('#gen-status').append(el('div', { class: 'error' }, `下载失败：${error.message}。请重新下载。`));
 }
 
 // ---------- 启动 ----------
@@ -789,12 +934,9 @@ async function enterApp() {
   account(state.me);
   $('#login-view').hidden = true;
   $('#app-view').hidden = false;
-  const editable = canEdit();
-  $('#generate').title = editable ? '' : '只读账号不能生成日报';
   await Promise.all([refresh(), loadHistory()]);
   loadParseAlert().catch(() => {});
-  migrateLocalBoard();
-  if (!editable) { $('#generate').disabled = true; $('#clear-pool').disabled = true; $('#bulk-delete').disabled = true; $('#recycle-restore').hidden = true; }
+  if (poolReady) migrateLocalBoard();
 }
 
 function wire() {
@@ -813,13 +955,23 @@ function wire() {
     }
   });
   $('#refresh').addEventListener('click', () => refresh().catch(alert));
-  $('#day').addEventListener('change', () => { boardVersion = -1; refresh().catch(alert); });
+  $('#day').addEventListener('change', () => refresh());
   $('#days').addEventListener('change', () => refresh().catch(alert));
+  $('#pool-filters').addEventListener('click', (event) => {
+    const button = event.target.closest('[data-pool-filter]');
+    if (!button || button.disabled || button.dataset.poolFilter === poolFilter) return;
+    poolFilter = button.dataset.poolFilter;
+    render();
+  });
   $('#auto-pick').addEventListener('click', autoPick);
-  $('#clear-pick').addEventListener('click', () => { state.picked.clear(); boardOps({ pick_set: [] }); render(); });
+  $('#clear-pick').addEventListener('click', () => {
+    if (!canEdit() || !poolReady) return;
+    state.picked.clear();
+    boardOps({ pick_set: [] });
+    render();
+  });
   $('#cover-reset').addEventListener('click', resetCover);
   dailyEditor = createDailyEditor({ api, onGenerate: generate, canGenerate: canEdit });
-  $('#generate').addEventListener('click', openPreview);
   $('#preview').addEventListener('click', openPreview);
   $('#reset-ai').addEventListener('click', () => resetAiLayout().catch(alert));
   $('#clear-pool').addEventListener('click', () => clearPool().catch(alert));

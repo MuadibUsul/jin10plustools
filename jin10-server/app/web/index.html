@@ -55,8 +55,20 @@
         <div class="user"><button id="parse-alert" class="parse-alert" hidden></button><a class="guide-link" href="/guide.html" target="_blank" rel="noopener">使用教程</a></div>
       </div>
 
+      <p id="pool-status" class="pool-status" role="status" aria-live="polite" hidden></p>
       <main>
-        <div id="sections" class="sections"></div>
+        <div class="material-pool">
+          <div id="pool-filters" class="pool-filters" role="group" aria-label="筛选素材" hidden>
+            <div class="pool-filter-buttons">
+              <button type="button" data-pool-filter="all" aria-pressed="true">全部</button>
+              <button type="button" data-pool-filter="picked" aria-pressed="false">已选</button>
+              <button type="button" data-pool-filter="unpicked" aria-pressed="false">未选</button>
+              <button type="button" data-pool-filter="unsorted" aria-pressed="false">待分类</button>
+            </div>
+            <p id="pool-filter-count" role="status"></p>
+          </div>
+          <div id="sections" class="sections"></div>
+        </div>
 
         <aside class="side">
           <div class="card">
@@ -66,10 +78,9 @@
             <p class="muted" id="cover-mode">系统推荐。勾选下方标题可改为人工精选。</p>
             <ol id="pick-list" class="pick-list"></ol>
             <div class="gen-buttons">
-              <button id="preview" class="wide" disabled>预览并排版</button>
-              <button id="generate" class="primary wide" disabled>进入排版后生成</button>
+              <button id="preview" class="primary wide" disabled>预览并排版</button>
             </div>
-            <div id="gen-status" class="gen-status" hidden></div>
+            <div id="gen-status" class="gen-status" role="status" aria-live="polite" hidden></div>
           </div>
           <div class="card">
             <h2>生成记录</h2>
@@ -95,6 +106,7 @@
     <dialog id="recycle" class="recycle">
       <h2>回收站 <span class="muted">（删除的素材保留 7 天）</span></h2>
       <ul id="recycle-list" class="recycle-list"></ul>
+      <p id="recycle-status" class="error" role="status" aria-live="polite"></p>
       <div class="recycle-actions">
         <button id="recycle-all">全选</button>
         <button id="recycle-restore" class="primary">恢复所选</button>

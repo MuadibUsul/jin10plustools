@@ -1,4 +1,13 @@
 /* Daily editing keeps its existing layout and controls inside the shared workspace shell. */
+.daily-page .pool-status { margin: 8px 4vw; }
+.daily-page #recycle-status:empty { display: none; }
+.material-pool { min-width: 0; }
+.pool-filters { position: sticky; top: 0; z-index: 4; display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; justify-content: space-between; margin: 0 0 12px; padding: 8px; background: #fff; border: 1px solid #e2e9f3; border-radius: 12px; }
+.pool-filter-buttons { display: flex; flex-wrap: wrap; gap: 4px; }
+.pool-filter-buttons button { padding: 7px 10px; border-color: transparent; }
+.pool-filter-buttons button[aria-pressed="true"] { background: #eaf1fe; color: #244f9c; border-color: #d7e3f8; font-weight: 600; }
+.pool-filters p { margin: 0 4px; font-size: 13px; color: #476382; }
+.pool-filter-empty { grid-column: 1 / -1; }
 :root{--bg:#f5f7fb;--ink:#173153;--muted:#7b8da5;--line:#e2e9f3;--brand:#477ae2;--brand-dark:#3567cd}
 .daily-page{font-size:14px;background:var(--bg)}
 .daily-page>header .brand{display:block;font-size:18px}

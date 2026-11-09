@@ -222,6 +222,7 @@ BRIEF_JOBS = build_dataset(
     columns=_columns(
         ('id', '任务ID', 'text'), ('issue_date', '生产日期', 'date'), ('category', '栏目', 'text'),
         ('action', '动作', 'text'), ('preview', '测试运行', 'bool'), ('status', '状态', 'text'),
+        ('render_base_version', '重绘基准版本', 'int'),
         ('attempts', '尝试次数', 'int'), ('error', '错误', 'text'),
         ('created_by', '发起人', 'user'), ('schedule_origin','原自动排期','bool'), ('next_attempt_at', '下次尝试', 'datetime'),
         ('created_at', '创建时间', 'datetime'), ('updated_at', '更新时间', 'datetime'),

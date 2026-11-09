@@ -273,6 +273,7 @@ class BriefJob(Base):
     issue_date: Mapped[dt.date] = mapped_column(Date)
     category: Mapped[str] = mapped_column(String(30))
     action: Mapped[str] = mapped_column(String(20), default='produce')
+    render_base_version: Mapped[int | None] = mapped_column(Integer)
     manual_capture: Mapped[dict | None] = mapped_column(JSON)
     preview: Mapped[bool] = mapped_column(Boolean, default=False)
     dedupe_key: Mapped[str] = mapped_column(String(180))

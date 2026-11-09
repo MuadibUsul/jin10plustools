@@ -199,6 +199,28 @@ def test_draft_revision_review_and_audit(client, db_factory, monkeypatch):
     }).status_code == 422
 
 
+def test_draft_pagination_filters_before_offset(client, monkeypatch):
+    enable(monkeypatch)
+    headers = login(client, "editor@plus.test")
+    other = login(client, "out@plus.test")
+    path = "/api/news-skill-os/drafts"
+    for target, title, auth in [
+        ("fresh", "第一条新鲜事", headers),
+        ("annotation", "第一条注解", headers),
+        ("fresh", "第二条新鲜事", headers),
+        ("annotation", "第二条注解", headers),
+        ("fresh", "另一团队的新鲜事", other),
+    ]:
+        response = client.post(path, headers=auth, json={"target": target, "title": title, "body": "草稿内容。"})
+        assert response.status_code == 201, response.text
+    for target, label in [("fresh", "新鲜事"), ("annotation", "注解")]:
+        first = client.get(path, headers=headers, params={"target": target, "limit": 1}).json()
+        second = client.get(path, headers=headers, params={"target": target, "limit": 1, "offset": 1}).json()
+        assert [row["title"] for row in first["items"]] == ["第二条" + label]
+        assert [row["title"] for row in second["items"]] == ["第一条" + label]
+        assert first["has_more"] is True and second["has_more"] is False
+
+
 def test_export_registers_news_tables_and_keeps_team_scope(client, db_factory, monkeypatch):
     enable(monkeypatch)
     editor = login(client, "editor@plus.test")

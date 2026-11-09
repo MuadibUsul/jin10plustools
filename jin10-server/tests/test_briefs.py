@@ -197,6 +197,41 @@ def test_active_job_cannot_silently_swap_action(client):
     assert swapped.status_code==409 and '正在执行' in swapped.json()['detail']
 
 
+def test_render_rejects_edition_change_before_and_after_queueing(client, db_factory, seed, monkeypatch):
+    import uuid
+    from app.briefs import worker
+
+    issue_id = draft(db_factory, seed)
+    headers = login(client, 'editor@plus.test')
+    request = {'category': 'liquidity', 'issue_date': '2026-10-15', 'action': 'render', 'expected_version': 1}
+    queued = client.post('/api/briefs/jobs', headers=headers, json=request)
+    assert queued.status_code == 202 and queued.json()['render_base_version'] == 1
+    job_id = uuid.UUID(queued.json()['id'])
+    duplicate = client.post('/api/briefs/jobs', headers=headers, json=request)
+    assert duplicate.json()['id'] == str(job_id)
+    edit = {'base_version': 1, 'title': '新版标题', 'dynamic_body': '新版正文。'}
+    assert client.post(f'/api/briefs/issues/{issue_id}/revisions', headers=headers, json=edit).status_code == 201
+    assert client.post('/api/briefs/jobs', headers=headers, json=request).status_code == 409
+    assert client.post('/api/briefs/jobs', headers=headers, json={**request, 'expected_version': 2}).status_code == 409
+
+    with db_factory() as db:
+        db.get(BriefJob, job_id).status = 'running'
+        db.commit()
+
+    def unexpected_calendar(*args, **kwargs):
+        pytest.fail('Obsolete render job started processing')
+
+    monkeypatch.setattr(worker, 'expected_date', unexpected_calendar)
+    worker.execute(db_factory, job_id)
+    with db_factory() as db:
+        job = db.get(BriefJob, job_id)
+        assert job.status == 'failed' and '稿件已更新' in job.error and job.active_key is None
+        assert db.get(BriefIssue, uuid.UUID(issue_id)).version == 2
+
+    fresh = client.post('/api/briefs/jobs', headers=headers, json={**request, 'expected_version': 2})
+    assert fresh.status_code == 202 and fresh.json()['render_base_version'] == 2
+
+
 def test_viewer_sees_the_confirmed_older_version(client,db_factory,seed):
     id=draft(db_factory,seed); headers=login(client,'editor@plus.test'); viewer=login(client,'viewer@plus.test')
     assert client.post(f'/api/briefs/issues/{id}/confirm',json={'version':1},headers=headers).status_code==200

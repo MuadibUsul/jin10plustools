@@ -426,11 +426,12 @@ def append_event_revision(event_id: uuid.UUID, payload: RevisionCreate, db: DbSe
 
 @router.get("/drafts")
 def drafts(db: DbSession, user: CurrentUser, event_id: uuid.UUID | None = None,
+           target: Literal["fresh", "annotation", "brief_text"] | None = None,
            limit: int = Query(50, ge=1, le=100), offset: int = Query(0, ge=0)):
     _enabled()
     with _errors():
-        return {"items": [_draft_out(row) for row in list_drafts(
-            db, user.team_id, event_id=event_id, limit=limit, offset=offset)]}
+        rows = list_drafts(db, user.team_id, event_id=event_id, target=target, limit=limit + 1, offset=offset)
+        return {"items": [_draft_out(row) for row in rows[:limit]], "has_more": len(rows) > limit}
 
 
 @router.post("/drafts", status_code=201)

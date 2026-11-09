@@ -6,6 +6,16 @@
 .warning{color:#7b8da5;font-size:11px}
 .brief-card-head{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:40px;margin-bottom:12px}.brief-card-head h2{margin:0;font-size:17px}.process-button{display:inline-flex;align-items:center;gap:6px;border:0;padding:6px 0 6px 5px;font-size:11px;white-space:nowrap;color:#7b8da5}.job-indicator{width:13px;height:13px;display:inline-block;border:2px solid #dfe6f0;border-radius:50%;flex-shrink:0}.job-indicator.spinning{border-top-color:#477ae2;border-right-color:#477ae2;animation:job-spin .8s linear infinite}.job-indicator.succeeded{border-color:#3f9c86;background:#e3f6ef}.job-indicator.failed{border-color:#c75555;background:#fbeeee}@keyframes job-spin{to{transform:rotate(360deg)}}.process-panel{min-width:0;display:flex;flex-direction:column;min-height:290px}.process-panel select{max-width:55%;font-size:11px;padding:6px}.process-panel progress{width:100%;height:9px;accent-color:#477ae2;margin:8px 0}.process-panel progress.failed{accent-color:#c75555}.process-log{background:#f7f9fc;border:1px solid #e9eef5;border-radius:8px;max-height:210px;min-height:150px;overflow:auto;padding:10px;font-size:11px;line-height:1.7;overflow-wrap:anywhere}.process-log p{display:flex;gap:9px;margin:4px 0}.process-log time{font-variant-numeric:tabular-nums;color:#8a99ae;flex-shrink:0}.process-log span{color:#58708f}@media(prefers-reduced-motion:reduce){.job-indicator.spinning{animation:none}.module{transition:none}}
 .settings-link{display:inline-flex;align-items:center;white-space:nowrap;border-radius:8px;padding:9px 12px;color:#476382}.settings-link:hover,.settings-link[aria-current=page]{color:#2563dc;background:#edf3ff}
+#account{min-width:0;max-width:100%;flex-wrap:wrap}
+#account>span{min-width:0;max-width:100%;overflow-wrap:anywhere}
+.brief-filters{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0 16px}
+.brief-filters button[aria-pressed="true"]{background:#eaf1fe;color:#244f9c;border-color:#ccdafa;font-weight:600}
+.brief-card-body>h3{margin:9px 0 12px;line-height:1.45;overflow-wrap:anywhere}
+.brief-badge-review{color:#7d4c12;background:#fff0d9}
+.brief-card-meta{display:flex;flex-wrap:wrap;gap:8px 16px;margin:0 0 12px;padding:10px 12px;background:#f5f8fd;border-radius:9px}
+.brief-card-meta div{min-width:0}.brief-card-meta dt{color:#526986;font-size:12px}
+.brief-card-meta dd{margin:3px 0 0;color:#173153;font-size:13px;font-weight:600}
+@media(max-width:650px){#account{gap:6px}.settings-link{padding:9px 8px}}
 .feedback-notifications{width:min(36rem,calc(100vw - 2rem));max-height:80vh;overflow:auto;border:1px solid #d9e2ef;border-radius:12px;padding:20px}
 .feedback-notifications::backdrop{background:#10254266}
 .feedback-notice{padding:12px 0;border-bottom:1px solid #d9e2ef;margin-bottom:12px}

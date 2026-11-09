@@ -234,6 +234,7 @@ def execute(factory,id):
         starting_issue=find_issue(db,team_id,day,category)
         starting_version=starting_issue.version if starting_issue else 0
         render_source_id=None;render_payload=None
+        render_version_changed = False
         followup=category=='oil_etf' and ':latest-' in job.dedupe_key and scheduled_retry
         generation_base=None;generation_payload=None
         if followup:
@@ -241,9 +242,9 @@ def execute(factory,id):
             current=db.scalar(select(BriefVersion).where(BriefVersion.issue_id==issue.id,BriefVersion.number==issue.version)) if issue else None
             if current:generation_base=current.id;generation_payload=edition_payload(current)
         if action=='render':
-            issue=find_issue(db,team_id,day,category)
-            if issue and issue.version:
-                selected=db.scalar(select(BriefVersion).where(BriefVersion.issue_id==issue.id,BriefVersion.number==issue.version))
+            render_version_changed = job.render_base_version is not None and job.render_base_version != starting_version
+            if starting_version and not render_version_changed:
+                selected=db.scalar(select(BriefVersion).where(BriefVersion.issue_id==starting_issue.id,BriefVersion.number==starting_version))
                 if selected:
                     render_source_id=selected.id;render_payload=edition_payload(selected)
         config=db.get(BriefConfig,team_id)
@@ -259,6 +260,12 @@ def execute(factory,id):
         if category in PUBLIC_COMPUTE_CATEGORIES | {'liquidity'} and not str(category_notes or '').strip():
             category_notes=default_notes(category)
     root=root_for(team_id);out=root/'runs'/str(id);out.mkdir(parents=True,exist_ok=True)
+    if action == 'render' and render_payload is None:
+        error = '稿件已更新，请基于最新版本重新制图' if render_version_changed else '尚无可重绘稿件，请先生成'
+        with factory() as db:
+            failed=db.get(BriefJob,id);failed.status='failed';failed.active_key=None
+            failed.lease_until=None;failed.error=error;failed.updated_at=utcnow();db.commit()
+        record(out,1,error);return
     try:target_day=expected_date(category,day)
     except ValueError as exc:
         with factory() as db:
@@ -266,11 +273,6 @@ def execute(factory,id):
             failed.active_key=None;failed.lease_until=None;db.commit()
         record(out,1,str(exc));return
     if action=='render':
-        if render_payload is None:
-            with factory() as db:
-                failed=db.get(BriefJob,id);failed.status='failed';failed.active_key=None
-                failed.lease_until=None;failed.error='尚无可重绘稿件，请先生成';db.commit()
-            record(out,1,'尚无可重绘稿件，请先生成');return
         from .sources import save
         target_day=date.fromisoformat(render_payload['data_date'])
         render_payload['render_source_version_id']=str(render_source_id)

@@ -486,11 +486,21 @@ export function createDailyEditor({ api, onGenerate, canGenerate }) {
   scroll.addEventListener('scroll', syncPageFromScroll, { passive: true });
   q('preview-save-images').addEventListener('click', saveImages);
   q('preview-close').addEventListener('click', close);
-  q('preview-generate').addEventListener('click', () => {
-    if (busy || !source || !canGenerate()) return;
-    const payload = request();
-    close();
-    onGenerate(payload);
+  q('preview-generate').addEventListener('click', async () => {
+    if (busy || !ready || !source || !canGenerate()) return;
+    saving = true;
+    setBusy(true);
+    setStatus('正在生成日报，请稍候…');
+    try {
+      await onGenerate(request());
+      saving = false;
+      close();
+    } catch (error) {
+      setStatus(`生成失败：${error.message}。排版调整已保留，可重试。`);
+    } finally {
+      saving = false;
+      setBusy(false);
+    }
   });
   q('editor-undo').addEventListener('click', () => timeTravel(undo, redo));
   q('editor-redo').addEventListener('click', () => timeTravel(redo, undo));

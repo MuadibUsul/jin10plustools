@@ -60,46 +60,80 @@ let unmountFeedbackNotifications = () => {};
 function mountFeedbackNotifications(button) {
   unmountFeedbackNotifications();
   const dialog = node('dialog', undefined, 'feedback-notifications');
+  const heading = node('h2', '反馈完成通知');
+  heading.id = 'feedback-notifications-title';
+  dialog.setAttribute('aria-labelledby', heading.id);
   const items = node('div');
-  items.setAttribute('aria-live', 'polite');
+  const status = node('p');
+  status.setAttribute('role', 'status');
+  status.hidden = true;
+  const history = node('a', '查看需求反馈', 'settings-link');
+  history.href = '/settings/#feedback';
+  history.onclick = () => dialog.close();
   const close = node('button', '关闭');
   close.type = 'button';
   close.onclick = () => dialog.close();
-  dialog.append(node('h2', '反馈完成通知'), items, close);
+  dialog.append(heading, status, items, history, close);
   document.body.append(dialog);
-  let loading = false;
+  const rows = new Map();
+  let refreshTask = null;
 
-  async function refresh() {
-    if (loading || !localStorage.getItem('plus.token')) return;
-    loading = true;
-    try {
-      const data = await api('/api/feedback/notifications');
-      const count = data.items.length;
-      button.textContent = count ? `反馈通知（${count}${data.has_more ? '+' : ''}）` : '反馈通知';
-      if (!dialog.open) return;
-      if (!count) { items.replaceChildren(node('p', '没有未读通知。')); return; }
-      items.replaceChildren(...data.items.map((item) => {
-        const row = node('article', undefined, 'feedback-notice');
-        const read = node('button', '标为已读');
-        read.type = 'button';
-        read.onclick = async () => {
-          read.disabled = true;
-          try {
-            await api(`/api/feedback/notifications/${item.id}/read`, { method: 'POST', raw: true });
-            await refresh();
-          } catch (error) { read.disabled = false; toast(error.message, 'error'); }
-        };
-        row.append(node('strong', item.title), node('p', item.resolution),
-          node('small', displayTime(item.completed_at)), read);
-        return row;
-      }));
-    } catch (error) {
-      if (dialog.open) items.replaceChildren(node('p', error.message, 'error'));
-    } finally { loading = false; }
+  function setStatus(text) {
+    status.textContent = text;
+    status.hidden = !text;
+  }
+  function noticeRow(item) {
+    const row = node('article', undefined, 'feedback-notice');
+    const read = node('button', '标为已读');
+    read.type = 'button';
+    read.onclick = async () => {
+      if (read.getAttribute('aria-disabled') === 'true') return;
+      read.setAttribute('aria-disabled', 'true');
+      try {
+        await api(`/api/feedback/notifications/${item.id}/read`, { method: 'POST', raw: true });
+        if (refreshTask) await refreshTask;
+        await refresh();
+      } catch (error) { toast(error.message, 'error'); }
+      finally { read.removeAttribute('aria-disabled'); }
+    };
+    row.append(node('strong', item.title), node('p', item.resolution),
+      node('small', displayTime(item.completed_at)), read);
+    return row;
+  }
+  function renderNotices(data) {
+    const count = data.items.length;
+    const label = count ? `反馈通知（${count}${data.has_more ? '+' : ''}）` : '反馈通知';
+    if (button.textContent !== label) button.textContent = label;
+    if (!dialog.open) return;
+    const ids = new Set(data.items.map((item) => item.id));
+    const focused = document.activeElement;
+    const focusIndex = [...items.children].findIndex((row) => row.contains(focused));
+    for (const [id, row] of rows) {
+      if (!ids.has(id)) { row.remove(); rows.delete(id); }
+    }
+    for (const [index, item] of data.items.entries()) {
+      let row = rows.get(item.id);
+      if (!row) { row = noticeRow(item); rows.set(item.id, row); }
+      if (items.children[index] !== row) items.insertBefore(row, items.children[index] || null);
+    }
+    if (focusIndex >= 0 && document.activeElement !== focused) {
+      if (focused.isConnected) focused.focus();
+      else (items.children[Math.min(focusIndex, count - 1)]?.querySelector('button') || close).focus();
+    }
+    setStatus(count ? '' : '没有未读通知。');
+  }
+  function refresh() {
+    if (!localStorage.getItem('plus.token')) return;
+    if (refreshTask) return refreshTask;
+    refreshTask = api('/api/feedback/notifications')
+      .then(renderNotices)
+      .catch((error) => { if (dialog.open) setStatus(`读取通知失败：${error.message}`); })
+      .finally(() => { refreshTask = null; });
+    return refreshTask;
   }
   button.onclick = () => {
+    if (!rows.size) setStatus('正在读取通知…');
     dialog.showModal();
-    items.replaceChildren(node('p', '正在读取通知…'));
     refresh();
   };
   const timer = setInterval(() => { if (!document.hidden) refresh(); }, 30000);

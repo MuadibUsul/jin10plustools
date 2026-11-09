@@ -45,20 +45,33 @@ async function renderList() {
   msg(`共 ${data.skills.length} 项 Skill。点击卡片进入设置。`);
 }
 
-async function saveSkill(item, area, enabled, button, instructions = area.value) {
-  button.disabled = true;
+async function saveSkill(item, area, enabled, buttons, instructions = area.value) {
+  if (area.readOnly) return;
+  const request = { revision: item.revision, enabled: enabled.checked, instructions };
+  area.readOnly = true;
+  enabled.disabled = true;
+  buttons.forEach((button) => { button.disabled = true; });
+  msg('正在保存 Skill…');
   try {
-    await api(`/api/settings/skills/${encodeURIComponent(item.category)}`, {
-      method: 'PUT', json: { revision: item.revision, enabled: enabled.checked, instructions },
+    const { skill } = await api(`/api/settings/skills/${encodeURIComponent(item.category)}`, {
+      method: 'PUT', json: request,
     });
+    renderSkill(skill);
+    msg('Skill 已保存，后续任务将使用此版本。');
     toast('Skill 已保存。');
-    await renderDetail(item.category);
-  } finally { button.disabled = false; }
+  } finally {
+    area.readOnly = false;
+    enabled.disabled = false;
+    buttons.forEach((button) => { button.disabled = false; });
+  }
 }
 
 async function renderDetail(category) {
   const data = await api(`/api/settings/skills/${encodeURIComponent(category)}`);
-  const item = data.skill;
+  renderSkill(data.skill);
+}
+
+function renderSkill(item) {
   document.title = `${item.label} · Skill 库`;
   $('#skill-title').textContent = item.label;
   $('#skill-subtitle').textContent = `${item.skill_id}@${item.version} · ${item.customized ? '团队规范' : '内置规范'}`;
@@ -74,19 +87,20 @@ async function renderDetail(category) {
   area.setAttribute('aria-label', `${item.label} Skill 规范`);
   const counter = node('p', `${item.instructions.length} / 8000`, 'muted');
   area.addEventListener('input', () => { counter.textContent = `${area.value.length} / 8000`; });
-  card.append(field('编辑规范', area), counter);
+  card.append(field(canAdmin ? '编辑规范' : '当前规范', area), counter);
   const controls = node('div', undefined, 'toolbar');
   const enabled = node('input'); enabled.type = 'checkbox'; enabled.checked = item.enabled;
   enabled.disabled = !canAdmin;
   const enabledLabel = node('label', ' 启用此 Skill', 'check-row'); enabledLabel.prepend(enabled);
   controls.append(enabledLabel);
-  const save = node('button', '保存 Skill', 'primary'); save.disabled = !canAdmin;
-  save.onclick = () => safe(() => saveSkill(item, area, enabled, save));
+  const save = node('button', '保存 Skill', 'primary'); save.hidden = !canAdmin;
   controls.append(save);
   const restore = node('button', '恢复内置规范'); restore.hidden = !canAdmin || !item.customized;
+  const buttons = [save, restore];
+  save.onclick = () => safe(() => saveSkill(item, area, enabled, buttons));
   restore.onclick = () => safe(async () => {
     if (!window.confirm('恢复内置规范会覆盖当前团队版本，继续？')) return;
-    await saveSkill(item, area, enabled, restore, '');
+    await saveSkill(item, area, enabled, buttons, '');
   });
   controls.append(restore);
   card.append(controls);
@@ -110,7 +124,7 @@ async function renderDetail(category) {
   }
   host.append(card);
   const scope = item.category === 'editorial_quality' ? '后续新鲜事与注解辅助的文字质量检查' : '后续固定快讯任务的 Skill 文案产出';
-  msg(canAdmin ? `修改会影响${scope}。` : '只读账号可查看 Skill 规范，修改需管理员。');
+  msg(canAdmin ? `修改会影响${scope}。` : '团队成员可查看 Skill 规范，修改需管理员。');
 }
 
 const path = location.pathname.replace(/\/+$/, '');

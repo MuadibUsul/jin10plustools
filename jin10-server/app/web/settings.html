@@ -14,7 +14,7 @@
 <a href="#chat2api" data-panel="chat2api" id="nav-chat2api" hidden>chat2api</a>
 </aside>
 <div class="settings-panels">
-<form id="settings-form">
+<form id="settings-form" novalidate>
 <section id="notes-panel" class="settings-section" hidden><h2>栏目默认注释</h2><p class="muted">应用于后续新稿，已保存稿件保留各自的注释版本。本期稿件仍可在稿件编辑区单独修改。</p><div id="note-fields"></div><details><summary>默认注释修改记录</summary><div id="note-history"></div></details>
 <h2 class="template-heading">动态正文模板</h2>
 <p class="muted">默认使用程序内置的动态正文。关闭“使用内置文案”后，系统改用这里的团队模板；模板仍由取数、数字和 Skill 数字守卫约束，AI 额度耗尽时回退到该模板。模板不会改写已生成的历史稿件。</p>
@@ -51,7 +51,7 @@
 </section>
 <section id="feedback-panel" class="settings-section feedback-panel" hidden aria-labelledby="feedback-title">
 <h2 id="feedback-title">需求反馈</h2>
-<p class="muted">提交改进意见或遇到的问题，可附一张示意图。提交人姓名用于后续对接；反馈按团队保存，所有成员都可以查看。</p>
+<p class="muted">提交改进意见或遇到的问题，可附一张示意图。团队成员可以查看反馈和处理结果。处理完成后，工作台顶部的「反馈通知」会提示你。</p>
 <form id="feedback-form">
 <label class="field">标题<input id="feedback-title-input" maxlength="200" placeholder="一句话说明要改进什么"></label>
 <label class="field">内容<textarea id="feedback-content" rows="6" maxlength="5000" placeholder="具体场景、期望的做法、现在的困扰"></textarea></label>

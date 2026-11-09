@@ -166,7 +166,8 @@ def render_plan(context,plan):
     groups=deepcopy(plan['paragraphs'])
     # A redundant one-line conclusion never becomes a separate paragraph.
     if len(groups)>1 and len(groups[-1])==1 and groups[-1][0].startswith('reading.'):
-        groups[-2]+=groups.pop()
+        conclusion=groups.pop()
+        groups[-1].extend(conclusion)
     paragraphs=[''.join(variants[v] for v in group) for group in groups]
     if context['category'] in ('us_structure','us_barometer'):
         paragraphs=[str(i)+'、'+text for i,text in enumerate(paragraphs,1)]

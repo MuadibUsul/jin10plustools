@@ -145,6 +145,24 @@ def test_sample_story_uses_real_prose_instructions_facts_and_survives_model_fail
     assert p['skill']['status']=='failed' and p['dynamic_body']
 
 
+def test_turnover_story_merges_standalone_reading_into_previous_paragraph():
+    from app.briefs.sample_story import render_plan
+
+    context = {
+        'category': 'turnover',
+        'printed_day': '11月6日',
+        'headlines': [{'id': 'title.0', 'text': 'A股交易活跃度回升'}],
+        'fact_bank': [
+            {'id': 'turnover', 'variants': [{'id': 'turnover.0', 'text': '换手率上升。'}]},
+            {'id': 'reading', 'variants': [{'id': 'reading.0', 'text': '交易活跃度回升。'}]},
+        ],
+    }
+    plan = {'headline': 'title.0', 'paragraphs': [['turnover.0'], ['reading.0']]}
+
+    assert render_plan(context, plan) == ('A股交易活跃度回升', '11月6日，换手率上升。交易活跃度回升。')
+    assert plan['paragraphs'] == [['turnover.0'], ['reading.0']]
+
+
 def test_old_adopted_pack_remains_effective_when_new_pack_changes(monkeypatch):
     from app.briefs.editorial_authorization import adoption,resolve_pack
     from app.briefs import editorial_suite

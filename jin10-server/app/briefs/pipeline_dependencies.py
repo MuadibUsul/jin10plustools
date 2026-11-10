@@ -45,6 +45,9 @@ def dependencies(here,category):
         for path in sorted((here/'seed').glob('*')):
             if path.is_file():yield 'seed/'+path.name,path.read_bytes()
     if category=='liquidity':yield 'central_bank.py',(here/'central_bank.py').read_bytes()
+    if category=='turnover':
+        for name in ('turnover_draft.py','turnover_draft_ai.py'):
+            yield name,(here/name).read_bytes()
     if category=='gpu_rental':yield 'gpu_editorial.py',(here/'gpu_editorial.py').read_bytes()
     directories=[here/'assets',here/'engines'/category]
     if category=='us_structure':directories.append(here/'engines/us_barometer')

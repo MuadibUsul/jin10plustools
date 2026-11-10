@@ -22,9 +22,15 @@ def authorization(category):
 
 @pytest.mark.parametrize('category',CATEGORIES)
 def test_explicit_sample_choice_keeps_style_during_ai_quota_failure(category,monkeypatch):
-    from app.briefs import gpu_editorial_ai
-    monkeypatch.setattr(gpu_editorial_ai,'select_plan',lambda *a,**kw:{
-        'status':'failed','reason':'provider_http_error','http_status':402})
+    from app.briefs import gpu_editorial_ai, turnover_draft_ai
+
+    def unavailable(*args, **kwargs):
+        return {'status': 'failed', 'reason': 'provider_http_error', 'http_status': 402}
+
+    if category == 'turnover':
+        monkeypatch.setattr(turnover_draft_ai, 'request_draft', unavailable)
+    else:
+        monkeypatch.setattr(gpu_editorial_ai, 'select_plan', unavailable)
     def no_legacy_polish(*a,**kw):raise AssertionError('Do not replace styled copy with the legacy polishing stage')
     monkeypatch.setattr(skill_production,'polish',no_legacy_polish)
     payload=source(category);original=copy.deepcopy(payload)

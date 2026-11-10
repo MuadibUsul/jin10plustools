@@ -185,29 +185,31 @@ describe('fixed brief image refresh', () => {
     expect(revokeUrl).not.toHaveBeenCalled();
   });
 
-  it('retains the old preview until the replacement finishes decoding', async () => {
+  it('removes the old preview and download while the selected version is loading', async () => {
     const ui = await page(); await ui.open(issue());
     const old = $('#images img');
     let ready!: () => void;
     decode.mockImplementationOnce(() => new Promise<void>((resolve) => { ready = resolve; }));
     const changing = ui.open(issue(2));
     await vi.waitFor(() => expect(decode).toHaveBeenCalledTimes(2));
-    expect($('#images img')).toBe(old);
-    expect(revokeUrl).not.toHaveBeenCalled();
+    expect($('#images img')).toBeNull();
+    expect($('#images [data-download]')).toBeNull();
+    expect(revokeUrl).toHaveBeenCalledWith('blob:chart-1');
     ready(); await changing;
     expect($('#images img')).not.toBe(old);
-    expect(revokeUrl).toHaveBeenCalledWith('blob:chart-1');
+    expect(($('#images img') as HTMLImageElement).src).toBe('blob:chart-2');
   });
 
-  it('preserves the old image if the next image fails to load', async () => {
+  it('offers a retry for the selected version when decoding fails', async () => {
     const ui = await page(); await ui.open(issue());
-    const old = $('#images img');
     decode.mockRejectedValueOnce(new Error('decode failed'));
     await ui.open(issue(2));
-    expect($('#images img')).toBe(old);
-    expect($('#message').textContent).toContain('原预览保留');
+    expect($('#images img')).toBeNull();
+    expect($('#images [data-download]')).toBeNull();
+    expect($('#image-status').textContent).toContain('当前版本图片加载失败');
+    expect($('#images button').textContent).toBe('重试当前版本配图');
     expect(revokeUrl).toHaveBeenCalledWith('blob:chart-2');
-    expect(revokeUrl).not.toHaveBeenCalledWith('blob:chart-1');
+    expect(revokeUrl).toHaveBeenCalledWith('blob:chart-1');
   });
 
   it('discards a slow response after a newer version has been selected', async () => {
@@ -223,16 +225,17 @@ describe('fixed brief image refresh', () => {
     expect(createUrl).toHaveBeenCalledTimes(2);
   });
 
-  it('cancels a pending replacement when returning to the displayed version', async () => {
+  it('reloads the original version and discards a pending response for another version', async () => {
     const ui = await page(); await ui.open(issue());
-    const old = $('#images img');
     let release!: (value: unknown) => void;
     api.mockImplementationOnce(() => new Promise((resolve) => { release = resolve; }));
     const slow = ui.open(issue(2));
     await ui.open(issue());
+    const original = $('#images img');
     release({ blob: async () => new Blob(['old']) }); await slow;
-    expect($('#images img')).toBe(old);
-    expect(createUrl).toHaveBeenCalledTimes(1);
+    expect($('#images img')).toBe(original);
+    expect(api.mock.calls.filter(([path]) => path === '/files/1')).toHaveLength(2);
+    expect(createUrl).toHaveBeenCalledTimes(2);
   });
 
   it('releases displayed and pending blobs when closing the detail', async () => {

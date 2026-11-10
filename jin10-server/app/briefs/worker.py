@@ -430,7 +430,12 @@ def execute(factory,id):
         apply_body_template(payload,category,team_settings)
         apply_skill_copy(payload,category,team_settings)
         if (payload.get('editorial') or {}).get('status')=='active':
-            record(out,4,'样本风格文案已采用：'+('AI选择表达模块' if payload['editorial'].get('selection_status')=='model_selected' else '完整固定组合'))
+            editorial=payload['editorial']
+            method=(editorial.get('candidate') or {}).get('draft_method')
+            label={'bound_prose':'AI基于核验事实写稿','facts_fallback':'完整事实稿回退'}.get(method)
+            if label is None:
+                label='AI选择表达模块' if editorial.get('selection_status')=='model_selected' else '完整固定组合'
+            record(out,4,'样本风格文案已采用：'+label)
         elif payload.get('skill'):
             record(out,4,'Skill AI 文案已采用' if payload['skill'].get('status')=='ok'
                    else 'Skill AI 未完成，已保留固定组合文案')

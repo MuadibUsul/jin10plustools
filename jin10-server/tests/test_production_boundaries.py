@@ -129,38 +129,51 @@ CASES=json.loads((Path(__file__).parent/'fixtures/editorial_suite_cases.json').r
 def test_sample_story_uses_real_prose_instructions_facts_and_survives_model_failure(category,monkeypatch):
     from app.briefs.editorial_authorization import adoption
     from app.briefs.skill_production import apply_skill_copy
-    from app.briefs import gpu_editorial_ai
+    from app.briefs import gpu_editorial_ai, turnover_draft_ai
     contexts=[]
     def unavailable(settings,context):contexts.append(context);return {'status':'failed','reason':'quota','http_status':402}
-    monkeypatch.setattr(gpu_editorial_ai,'select_plan',unavailable)
+    if category == 'turnover':
+        monkeypatch.setattr(turnover_draft_ai, 'request_draft', unavailable)
+    else:
+        monkeypatch.setattr(gpu_editorial_ai, 'select_plan', unavailable)
     p=copy.deepcopy(next(c['payload'] for c in CASES if c['category']==category and c['expect']['status']=='ok'))
     original=copy.deepcopy(p);settings={'brief_editorial':adoption('test-operator')}
     settings['skills']={category:{'enabled':True,'instructions':'优先写核心变化，再给比较；不得编造任何事实。'}}
     apply_skill_copy(p,category,settings)
     assert p['editorial']['status']=='active',p['editorial']
     assert p['editorial']['writer']=='sample_story_v2' and p['facts']==original['facts']
-    assert contexts[0]['facts']==original['facts'] and contexts[0]['instructions'].startswith('优先写核心变化')
-    assert contexts[0]['examples'] and all(e['body'] and e['title'] for e in contexts[0]['examples'])
+    context, = contexts
+    if category == 'turnover':
+        assert {'date', 'low_turnover', 'high_turnover', 'reference_line'} <= context['facts'].keys()
+        assert context['facts'].keys().isdisjoint(original['facts'].keys() - {'date'})
+    else:
+        assert context['facts'] == original['facts']
+    assert context['instructions'].startswith('优先写核心变化')
+    assert context['examples'] and all(e['body'] and e['title'] for e in context['examples'])
     assert p['editorial']['candidate']['style_quality']['human_acceptance']=='pending'
     assert p['skill']['status']=='failed' and p['dynamic_body']
 
 
-def test_turnover_story_merges_standalone_reading_into_previous_paragraph():
+@pytest.mark.parametrize('category,headline,fact,fact_text', [
+    ('volume', '沪深两市成交额回升', 'volume', '沪深两市成交额上升。'),
+    ('turnover', 'A股交易活跃度回升', 'turnover', '换手率上升。'),
+])
+def test_plan_story_merges_standalone_reading_into_previous_paragraph(category, headline, fact, fact_text):
     from app.briefs.sample_story import render_plan
 
     context = {
-        'category': 'turnover',
+        'category': category,
         'printed_day': '11月6日',
-        'headlines': [{'id': 'title.0', 'text': 'A股交易活跃度回升'}],
+        'headlines': [{'id': 'title.0', 'text': headline}],
         'fact_bank': [
-            {'id': 'turnover', 'variants': [{'id': 'turnover.0', 'text': '换手率上升。'}]},
+            {'id': fact, 'variants': [{'id': fact + '.0', 'text': fact_text}]},
             {'id': 'reading', 'variants': [{'id': 'reading.0', 'text': '交易活跃度回升。'}]},
         ],
     }
-    plan = {'headline': 'title.0', 'paragraphs': [['turnover.0'], ['reading.0']]}
+    plan = {'headline': 'title.0', 'paragraphs': [[fact + '.0'], ['reading.0']]}
 
-    assert render_plan(context, plan) == ('A股交易活跃度回升', '11月6日，换手率上升。交易活跃度回升。')
-    assert plan['paragraphs'] == [['turnover.0'], ['reading.0']]
+    assert render_plan(context, plan) == (headline, '11月6日，' + fact_text + '交易活跃度回升。')
+    assert plan['paragraphs'] == [[fact + '.0'], ['reading.0']]
 
 
 def test_old_adopted_pack_remains_effective_when_new_pack_changes(monkeypatch):

@@ -79,9 +79,11 @@ def extract(category,folder,payload=None,*,only_file=None):
         for series in EXPECTED[category]:
             add(series,[{'date':row['date'],'weighted_rate':row[series]} for row in
                          raw.get('history',{}).get('rows',[]) if row.get(series) is not None], 'cfets_dr_close_v1')
+            kind=(raw.get('quotes') or {}).get('timestamp_kind')
+            method='cfets_dr_intraday_v1' if kind=='intraday' else 'cfets_dr_close_v1'
             for row in raw.get('quotes',{}).get('rows',[]):
-                if row['product']==series:
-                    add(series,[{'date':raw['quotes']['quote_date'],'weighted_rate':row['weighted_rate']}], 'cfets_dr_close_v1')
+                if row['product']==series and row.get('weighted_rate') not in (None,''):
+                    add(series,[{'date':raw['quotes']['quote_date'],'weighted_rate':row['weighted_rate']}], method)
     elif category=='oil_etf' and payload:
         for fund in payload.get('facts',{}).get('funds',[]):
             add(fund['ticker'],[{'date':fund.get('data_date') or payload['data_date'],**fund}],'issuer_futures_and_swap_estimate_v1')

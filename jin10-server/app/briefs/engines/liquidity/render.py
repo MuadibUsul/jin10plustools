@@ -178,12 +178,28 @@ def plot_history(history):
     return Image.open(png).convert('RGB'),svg.getvalue(),audit
 
 
+def quote_table_rows(quote):
+    """Published board rows, plus an explicit pending marker. Pending is not a rate."""
+    pending=set(quote.get('pending_products') or [])
+    by_product={row['product']:row for row in quote['rows']}
+    ordered=[]
+    for code in ('DR001','DR007','DR014'):
+        if code in by_product:ordered.append(by_product[code])
+        elif code in pending:
+            ordered.append({'product':code,'weighted_rate':'待公布','latest_rate':'待公布',
+                            'average_term_days':'待公布','pending':True})
+    for row in quote['rows']:
+        if row['product'] not in {item['product'] for item in ordered}:ordered.append(row)
+    return ordered
+
+
 def render_poster(snapshot,out_dir,*,logo_path=None,logo_kind='original_user_file',notes=None):
     quote=snapshot['quotes'];history=snapshot['history'];out=Path(out_dir);out.mkdir(parents=True,exist_ok=True)
     notes=default_notes('liquidity') if notes is None else notes
     paragraphs=notes.strip().splitlines()
+    table_rows=quote_table_rows(quote)
     # Size the editable note card from the same font and wrapping used for output.
-    explanation_top=1464+320+len(quote['rows'])*126+52
+    explanation_top=1464+320+len(table_rows)*126+52
     measuring=Poster(5000);body_end=explanation_top+164
     for paragraph in paragraphs:
         body_end=measuring.paragraph(paragraph,152,body_end,1856,size=44,line_height=68)+26
@@ -195,7 +211,12 @@ def render_poster(snapshot,out_dir,*,logo_path=None,logo_kind='original_user_fil
     extras=[r['product'] for r in quote['rows'] if r['product'] not in history['series']]
     products='涉及品种：'+curve_names+('；行情另含 '+' / '.join(extras) if extras else '')
     poster.text((100,224),products,42,MUTED)
-    poster.text((100,290),copy_dates(f"历史：{history['start']} — {history['end']}"),38,MUTED)
+    if quote.get('timestamp_kind')=='intraday':
+        poster.text((100,290),copy_dates(f"日度历史：{history['start']} — {history['end']}（已发布交易日，不含当日盘中）"),38,MUTED)
+        table_title='当日盘中成交行情'
+    else:
+        poster.text((100,290),copy_dates(f"历史：{history['start']} — {history['end']}"),38,MUTED)
+        table_title='前一交易日收盘行情'
     # History card.
     poster.rectangle((80,396,2080,1412),'white',40,BORDER)
     poster.text((136,450),'历史走势',60,NAVY,True)
@@ -207,9 +228,9 @@ def render_poster(snapshot,out_dir,*,logo_path=None,logo_kind='original_user_fil
     plot_box=(136,624,plot.width,plot.height)
     poster.image.paste(plot,(plot_box[0],plot_box[1]))
     # Latest quotation card. Values are copied as original source strings.
-    table_top=1464;table_bottom=table_top+320+len(quote['rows'])*126
+    table_top=1464;table_bottom=table_top+320+len(table_rows)*126
     poster.rectangle((80,table_top,2080,table_bottom),'white',40,BORDER)
-    poster.text((136,table_top+54),'前一交易日收盘行情',60,NAVY,True)
+    poster.text((136,table_top+54),table_title,60,NAVY,True)
     poster.text((2024,table_top+72),'行情时间 '+copy_dates(quote['updated_at']),34,MUTED,anchor='rt')
     header_y=table_top+174
     poster.rectangle((128,header_y,2032,header_y+116),'#F0F6FD',20)
@@ -217,14 +238,15 @@ def render_poster(snapshot,out_dir,*,logo_path=None,logo_kind='original_user_fil
     headers=['品种','加权利率（%）','最新利率（%）','平均回购期限（天）']
     for x,text in zip(centers,headers):poster.text((x,header_y+36),text,34,NAVY,True,'mt')
     values_audit=[]
-    for i,row in enumerate(quote['rows']):
+    for i,row in enumerate(table_rows):
         y=header_y+142+i*126
         poster.text((168,y+16),row['product'],48,NAVY,True)
         for x,key in zip(centers[1:4],('weighted_rate','latest_rate','average_term_days')):
             display=row[key] if row[key] is not None else '—'
             poster.text((x,y+12),display,52,'#1677FF' if key=='weighted_rate' else TEXT,key=='weighted_rate','mt')
-            values_audit.append({'product':row['product'],'field':key,'source':row[key],'display':display})
-        if i<len(quote['rows'])-1:poster.line((136,y+103,2024,y+103),BORDER,2)
+            values_audit.append({'product':row['product'],'field':key,
+                                 'source':None if row.get('pending') else row[key],'display':display})
+        if i<len(table_rows)-1:poster.line((136,y+103,2024,y+103),BORDER,2)
     # Editable explanation is drawn into the image of this immutable edition.
     poster.rectangle((80,explanation_top,2080,explanation_bottom),'#F2F9FF',28,'#DDEDF8')
     cx,cy=174,explanation_top+86
@@ -261,7 +283,7 @@ def render_poster(snapshot,out_dir,*,logo_path=None,logo_kind='original_user_fil
            'quote_updated_at':quote['updated_at'],'chart_series':history['series'],
            'quote_time_basis':'ChinaMoney overall quote timestamp; not fetch time or individual instrument update time',
            'table_columns':headers,'explanation_text':notes,
-           'quotation_products':[r['product'] for r in quote['rows']],
+           'quotation_products':[r['product'] for r in table_rows],
            'curves':plot_audit,'table_cells':values_audit,
            'policy_rate_supplied':False,'current_liquidity_conclusion':False,
            'website_watermark_included':False,'font':'bundled PlusPosterSans (OFL Noto-derived subset)',

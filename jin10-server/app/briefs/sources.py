@@ -189,16 +189,23 @@ def liquidity(day,out,state,refresh=False):
     rows=merge_history(path,list(merged.values()),method='cfets_dr_close_v1')
     for row in rows:
         for code in ('DR001','DR007','DR014'):row.setdefault(code,None)
-    snapshot['history']['rows']=[row for row in rows if row['date']<=day]
-    if snapshot['history']['rows']:snapshot['history']['start']=snapshot['history']['rows'][0]['date']
-    record(out,2,f"中国货币网行情已读取，源数据时间 {snapshot['quotes']['updated_at']}；正在核对央行公告")
+    quote_day=snapshot['quotes']['quote_date']
+    intraday=snapshot['quotes'].get('timestamp_kind')=='intraday'
+    # A later board must not pull an intraday daily print, or an older stored one, onto the curve.
+    snapshot['history']['rows']=[row for row in rows if row['date']<quote_day or (not intraday and row['date']<=quote_day)]
+    if snapshot['history']['rows']:
+        snapshot['history']['start']=snapshot['history']['rows'][0]['date']
+        snapshot['history']['end']=snapshot['history']['rows'][-1]['date']
+    record(out,2,f"中国货币网行情已读取，源数据时间 {snapshot['quotes']['updated_at']}；正在核对同一天的央行公告")
     warnings=[]
     try:
-        snapshot['central_bank']=central_bank.fetch(day,out)
+        bank=central_bank.fetch(quote_day,out)
+        if bank.get('date')!=quote_day:raise ValueError('公告日期与盘口日期不一致')
+        snapshot['central_bank']=bank
     except ValueError as exc:
-        # The DR007 brief still has value when no reverse-repo table was published.
+        # Yesterday's operation stays out. A missing same-day notice does not block the rates.
         snapshot['central_bank']=None
-        warnings.append(f'央行公开市场公告未纳入：{exc}')
+        warnings.append(f'{quote_day}央行公开市场公告未纳入，不用其他日期操作代替：{exc}')
     save(out/'liquidity-snapshot.json',snapshot)
     payload=render_liquidity(snapshot,out)
     payload['warnings']=warnings+payload.get('warnings',[])
@@ -212,16 +219,12 @@ def render_liquidity(snapshot,out,notes=None):
     notes=os.getenv('CATEGORY_NOTES',default_notes('liquidity')) if notes is None else notes
     png,svg,audit=(render_poster(snapshot,out,logo_path=HERE/'engines/liquidity/assets/plus-original.png',notes=notes)
         if os.getenv('DATA_COLLECTION_ONLY')!='1' else (None,None,{'collection_only':True}))
-    rule=build_copy(snapshot);bank=snapshot.get('central_bank');warning=[]
-    if bank:
-        product='DR001' if bank['term_days']==1 else 'DR007'
-        term='隔夜' if bank['term_days']==1 else '7天期'
-        dr=next(r for r in snapshot['quotes']['rows'] if r['product']==product)
-        spread=(Decimal(dr['weighted_rate'])-Decimal(bank['rate_percent']))*100
-        rule['body']+=(f"{product}较当日{term}逆回购操作利率{bank['rate_percent']}%{'低' if spread<0 else '高' if spread>0 else '持平'}"
-                       +(f'{abs(spread):.2f}个基点。' if spread else '。')+
-                       f"央行当日开展{bank['awarded_yi']}亿元{term}逆回购，投标量{bank['bid_yi']}亿元，中标量{bank['awarded_yi']}亿元。")
-    else:warning.append('未取得对应日期央行操作信息，仅描述DR行情')
+    bank=snapshot.get('central_bank');warning=[]
+    if bank and bank.get('date')!=snapshot['quotes'].get('quote_date'):
+        warning.append(f"已排除{bank.get('date')}央行操作，避免写成{snapshot['quotes'].get('quote_date')}的操作")
+        snapshot={**snapshot,'central_bank':None};bank=None
+    rule=build_copy(snapshot)
+    if bank is None:warning.append('未取得与盘口同一日期的央行操作，不用其他日期公告代替')
     save(out/'chart-audit.json',audit)
     # Additive evidence for editorial copy; no history is inferred from prose.
     previous_close = {}
@@ -230,7 +233,9 @@ def render_liquidity(snapshot,out,notes=None):
                       if row['date'] < snapshot['quotes']['quote_date'] and row.get(product) is not None), None)
         if prior:
             previous_close[product] = {'date': prior['date'], 'weighted_rate': str(prior[product])}
-    return {'title':'【流动性指标】质押式回购利率走势与最新行情','dynamic_body':rule['body'],'images':[png.name] if png else [],'data_date':snapshot['quotes']['quote_date'],
+    kind=snapshot['quotes'].get('timestamp_kind')
+    return {'title':rule.get('title') or '【流动性指标】质押式回购成交行情','dynamic_body':rule['body'],'images':[png.name] if png else [],'data_date':snapshot['quotes']['quote_date'],
+            'data_date_policy':'intraday_board' if kind=='intraday' else 'session_close',
             'fixed_notes':notes,'chart_notes':notes,
             'facts':{'quotes':snapshot['quotes'],'central_bank':bank,'history_range':[snapshot['history']['start'],snapshot['history']['end']],
                      'previous_close':previous_close},'warnings':warning}

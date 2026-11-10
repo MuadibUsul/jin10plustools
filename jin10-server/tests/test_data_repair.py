@@ -192,18 +192,14 @@ def test_volume_pages_and_retains_older_history_instead_of_overwriting(tmp_path,
     assert result['facts']['previous_date']=='2026-10-29'
 
 
-def test_liquidity_restores_an_expired_quote_from_real_daily_history(tmp_path,monkeypatch):
+def test_empty_next_morning_board_does_not_relabel_history_as_a_1700_close(tmp_path,monkeypatch):
     from app.briefs.engines.liquidity import fetch_data
     quotes=json.dumps({'head':{'rep_code':'200'},'data':{'showDateCN':'2026-10-30 10:00'},
                        'records':[]}).encode()
     csv=b'2026-10-30,,,,,,1.2,1.3,1.4\n2026-10-29,,,,,,1.25,1.35,1.45\n2026-10-28,,,,,,1.26,1.36,1.46\n'
     monkeypatch.setattr(fetch_data,'read_source',lambda name,*args,**kwargs:(quotes if name.endswith('json') else csv,{'url':name}))
-    snapshot=fetch_data.fetch_snapshot(tmp_path,'2026-10-29')
-    assert snapshot['quotes']['provenance']=='official_published_daily_history'
-    assert snapshot['quotes']['rows'][0]['weighted_rate']=='1.25'
-    assert snapshot['quotes']['rows'][0]['latest_rate'] is None
-    assert snapshot['history']['end']=='2026-10-29'
-    assert snapshot['quotes']['source_actual_updated_at']=='2026-10-30 10:00'
+    with pytest.raises(fetch_data.SourceError, match='不用日度历史冒充'):
+        fetch_data.fetch_snapshot(tmp_path,'2026-10-29')
 
 
 def test_official_dr_month_tenor_does_not_block_required_dr_closes():

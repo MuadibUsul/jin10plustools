@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 
 from app.briefs.engines.liquidity.render import render_poster, EXPLANATION
-from app.briefs.engines.liquidity.fetch_data import SourceError, parse_quotes
+from app.briefs.engines.liquidity.fetch_data import parse_quotes
 from app.briefs.delivery import default_notes
 from app.services.image_delivery import store_image, WATERMARK, MAX_BYTES
 
@@ -34,16 +34,19 @@ def test_liquidity_table_time_and_editable_notes(tmp_path):
     assert Path(delivered).stat().st_size <= MAX_BYTES
 
 
-def test_quotation_requires_previous_day_close_and_both_dr_rates():
+def test_intraday_board_is_kept_and_a_close_is_still_marked_as_a_close():
     payload = {'head': {'rep_code': '200'}, 'data': {'showDateCN': '2026-10-15 17:00'},
                'records': [{'productCode': code, 'date': '26-10-15', 'weightedRate': '1.3500',
                             'latestRate': '1.3500', 'avgPrd': '1'} for code in ('DR001','DR007')]}
     raw = lambda: json.dumps(payload).encode()
-    assert parse_quotes(raw(), '2026-10-15')['quote_date'] == '2026-10-15'
+    closed = parse_quotes(raw(), '2026-10-15')
+    assert closed['quote_date'] == '2026-10-15' and closed['timestamp_kind'] == 'session_close'
     payload['data']['showDateCN'] = '2026-10-15 16:45'
-    with pytest.raises(SourceError, match='17:00'):
-        parse_quotes(raw(), '2026-10-15')
+    early = parse_quotes(raw(), '2026-10-15')
+    assert early['timestamp_kind'] == 'intraday' and early['updated_at'] == '2026-10-15 16:45'
+    assert early['rows'][0]['weighted_rate'] == '1.3500'
     payload['data']['showDateCN'] = '2026-10-15 17:00'
     payload['records'].pop(0)
-    with pytest.raises(SourceError, match='DR001'):
-        parse_quotes(raw(), '2026-10-15')
+    partial = parse_quotes(raw(), '2026-10-15')
+    assert partial['timestamp_kind'] == 'intraday' and 'DR001' in partial['pending_products']
+    assert [row['product'] for row in partial['rows']] == ['DR007']

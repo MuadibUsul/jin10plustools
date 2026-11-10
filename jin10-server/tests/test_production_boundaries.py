@@ -154,22 +154,26 @@ def test_sample_story_uses_real_prose_instructions_facts_and_survives_model_fail
     assert p['skill']['status']=='failed' and p['dynamic_body']
 
 
-def test_plan_story_merges_standalone_reading_into_previous_paragraph():
+@pytest.mark.parametrize('category,headline,fact,fact_text', [
+    ('volume', '沪深两市成交额回升', 'volume', '沪深两市成交额上升。'),
+    ('turnover', 'A股交易活跃度回升', 'turnover', '换手率上升。'),
+])
+def test_plan_story_merges_standalone_reading_into_previous_paragraph(category, headline, fact, fact_text):
     from app.briefs.sample_story import render_plan
 
     context = {
-        'category': 'volume',
+        'category': category,
         'printed_day': '11月6日',
-        'headlines': [{'id': 'title.0', 'text': '沪深两市成交额回升'}],
+        'headlines': [{'id': 'title.0', 'text': headline}],
         'fact_bank': [
-            {'id': 'volume', 'variants': [{'id': 'volume.0', 'text': '沪深两市成交额上升。'}]},
+            {'id': fact, 'variants': [{'id': fact + '.0', 'text': fact_text}]},
             {'id': 'reading', 'variants': [{'id': 'reading.0', 'text': '交易活跃度回升。'}]},
         ],
     }
-    plan = {'headline': 'title.0', 'paragraphs': [['volume.0'], ['reading.0']]}
+    plan = {'headline': 'title.0', 'paragraphs': [[fact + '.0'], ['reading.0']]}
 
-    assert render_plan(context, plan) == ('沪深两市成交额回升', '11月6日，沪深两市成交额上升。交易活跃度回升。')
-    assert plan['paragraphs'] == [['volume.0'], ['reading.0']]
+    assert render_plan(context, plan) == (headline, '11月6日，' + fact_text + '交易活跃度回升。')
+    assert plan['paragraphs'] == [[fact + '.0'], ['reading.0']]
 
 
 def test_old_adopted_pack_remains_effective_when_new_pack_changes(monkeypatch):

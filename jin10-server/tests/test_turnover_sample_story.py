@@ -135,6 +135,16 @@ def test_turnover_at_reference_line_does_not_claim_a_crossing(monkeypatch, previ
     assert '跌破' not in result['title'] + result['dynamic_body']
 
 
+def test_turnover_prompt_tokens_are_rejected_when_the_model_uses_source_field_names(monkeypatch):
+    monkeypatch.setattr(turnover_draft_ai, 'request_draft', lambda *_: {'status': 'ok', 'draft': {
+        'title': '{{high_title}}',
+        'body': '{{date}}，{{low_ma9}}。{{high_ma9}}。'}})
+    result = run_story(turnover_payload(('2026-11-09', '66.37', '16.71'), ('2026-11-06', '66.24', '16.76')))
+    assert result['editorial']['candidate']['draft_method'] == 'facts_fallback'
+    assert result['editorial']['selector']['reason'] == 'turnover_draft_invalid_token'
+    assert '66.37%' in result['dynamic_body'] and '16.71%' in result['dynamic_body']
+
+
 @pytest.mark.parametrize('claim', ['回升至19.99%。', '创三个月新高。', '因外资回流。', '{{low_turnover}}。'])
 def test_turnover_rejects_unbound_claims_and_does_not_save_the_rejected_draft(monkeypatch, claim):
     monkeypatch.setattr(turnover_draft_ai, 'request_draft', lambda *_: {'status': 'ok', 'draft': {
@@ -155,9 +165,14 @@ def test_turnover_model_transport_passes_the_free_draft_into_the_normal_entry_po
         assert request.full_url == 'https://draft-provider.invalid/v1/chat/completions'
         assert timeout == 30
         model_request = json.loads(request.data)
+        system = model_request['messages'][0]['content']
         evidence = json.loads(model_request['messages'][1]['content'])
         assert evidence['data_date'] == '2026-11-09' and evidence['examples']
         assert 'headlines' not in evidence and 'fact_bank' not in evidence
+        for name in evidence['required_body_tokens']:
+            assert '{{' + name + '}}' in system
+        assert '{{low_ma9}}' not in system and '{{high_ma9}}' not in system
+        assert set(evidence['required_body_tokens']) <= set(evidence['facts'])
         draft = {'title': '{{reference_title}}', 'body':
                  '{{date}}，{{reference_line}}。\n\n具体来看，{{high_turnover}}。同期，{{low_turnover}}。'}
         return BytesIO(json.dumps({'choices': [{'finish_reason': 'stop', 'message': {

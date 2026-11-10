@@ -6,29 +6,70 @@ from urllib.request import Request,urlopen
 from urllib.error import HTTPError,URLError
 
 
+def _points(current,previous):
+    delta=(Decimal(str(current))-Decimal(str(previous)))*100
+    shown=abs(delta).quantize(Decimal('0.01'),rounding=ROUND_HALF_UP)
+    if delta==0:return '持平',f'{shown:.2f}'
+    return ('上行' if delta>0 else '下行'),f'{shown:.2f}'
+
+
+def _prior(snapshot,code,quote_date):
+    return next((row for row in reversed(snapshot.get('history',{}).get('rows',[]))
+                 if row['date']<quote_date and row.get(code) not in (None,'')),None)
+
+
 def build_copy(snapshot):
-    quotes=snapshot['quotes'];row=next(r for r in quotes['rows'] if r['product']=='DR007')
-    current=Decimal(row['weighted_rate'])
-    previous=next((r for r in reversed(snapshot['history']['rows']) if r['date']<quotes['quote_date'] and r.get('DR007') is not None),None)
-    fact=f"截至{quotes['updated_at']}，DR007加权利率为{row['weighted_rate']}%"
-    if row['latest_rate'] is not None:fact+=f"，最新成交利率为{row['latest_rate']}%"
-    if previous:
-        change=(current-Decimal(previous['DR007']))*100
-        change_abs=abs(change).quantize(Decimal('.01'),rounding=ROUND_HALF_UP)
-        direction='下行' if change<0 else '上行' if change>0 else '持平'
-        fact+=(f"；较{previous['date']}的日加权利率{direction}"+
-               (f'{change_abs}个基点' if change else ''))
-        assessment=('短端回购融资利率较上一日有所回落。' if change<0 else
-                    '短端回购融资利率较上一日有所上升。' if change>0 else '短端回购融资利率较上一日保持平稳。')
-    else:
-        direction='更新';assessment='该数据反映当前时点的短端回购融资利率。'
-    fact+='。'
-    titles=[f'【流动性指标】DR007加权利率{direction}至{row["weighted_rate"]}%' if direction not in ('持平','更新') else
-            f'【流动性指标】DR007加权利率报{row["weighted_rate"]}%',
-            f'【流动性指标】DR007最新加权利率为{row["weighted_rate"]}%']
-    bodies=[fact+assessment,fact+'以上为当前时点的回购利率表现。']
-    return {'status':'ok','title':titles[0],'body':bodies[0],
-            'approved_titles':titles,'approved_bodies':bodies,'policy_comparison_included':False}
+    """Two paragraphs: same-basis daily comparison, then the same-date policy operation.
+
+    Intraday weighted rates may be compared with the previous session's published
+    daily weighted rate only when both bases are named. A previous day's operation
+    is never described as today's.
+    """
+    quotes=snapshot['quotes'];rows={row['product']:row for row in quotes.get('rows',[])}
+    intraday=quotes.get('timestamp_kind')=='intraday'
+    basis='盘中加权利率' if intraday else '收盘加权利率'
+    lead=f"截至{quotes.get('updated_at','')}，"
+    if intraday:lead+='本次为盘中成交加权，不是当日收盘。'
+    fragments=[]
+    for code in ('DR001','DR007'):
+        row=rows.get(code)
+        if not row or row.get('weighted_rate') in (None,''):
+            fragments.append(f'{code}本时刻未公布。')
+            continue
+        fragment=f"{code}{basis}为{row['weighted_rate']}%"
+        prior=_prior(snapshot,code,quotes['quote_date'])
+        if prior:
+            direction,amount=_points(row['weighted_rate'],prior[code])
+            fragment+=f"，较{prior['date']}已发布日度加权利率{prior[code]}%"
+            fragment+='持平' if direction=='持平' else f'{direction}{amount}个基点'
+        else:
+            fragment+='，尚无更早的已发布日度加权利率，不算涨跌基点'
+        fragments.append(fragment+'。')
+    first=lead+''.join(fragments)
+    bank=snapshot.get('central_bank') if isinstance(snapshot.get('central_bank'),dict) else None
+    same_day=bool(bank and bank.get('date')==quotes.get('quote_date') and bank.get('term_days') in (1,7))
+    title='【流动性指标】质押式回购成交行情'
+    second=''
+    if same_day:
+        product='DR001' if bank['term_days']==1 else 'DR007'
+        term='隔夜' if bank['term_days']==1 else '7天期'
+        current=rows.get(product) or {}
+        if current.get('weighted_rate') not in (None,''):
+            direction,amount=_points(current['weighted_rate'],bank['rate_percent'])
+            side='高' if direction=='上行' else '低' if direction=='下行' else '持平'
+            second=(f"{product}较当日{term}逆回购操作利率{bank['rate_percent']}%"
+                    +('持平。' if side=='持平' else f'{side}{amount}个基点。')
+                    +f"央行{bank['date']}开展{bank['awarded_yi']}亿元{term}逆回购，"
+                    +f"投标量{bank['bid_yi']}亿元，中标量{bank['awarded_yi']}亿元。")
+            headline='高于' if side=='高' else '低于' if side=='低' else '持平于'
+            title=f"【流动性指标】{product}{headline}{term}逆回购操作利率"+(f'{amount}个基点' if side!='持平' else '')
+    elif rows.get('DR001',{}).get('weighted_rate') not in (None,''):
+        title=f"【流动性指标】DR001{'盘中' if intraday else '收盘'}加权利率报{rows['DR001']['weighted_rate']}%"
+    elif rows.get('DR007',{}).get('weighted_rate') not in (None,''):
+        title=f"【流动性指标】DR007{'盘中' if intraday else '收盘'}加权利率报{rows['DR007']['weighted_rate']}%"
+    body=first+('\n\n'+second if second else '')
+    return {'status':'ok','title':title,'body':body,'approved_titles':[title],'approved_bodies':[body],
+            'policy_comparison_included':bool(second)}
 
 
 def parse_answer(content):

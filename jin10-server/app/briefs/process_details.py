@@ -122,13 +122,17 @@ def describe(category, payload):
                 value(row.get('product', 'DR')+'加权利率', row.get('weighted_rate'), '%')
             calculations = ['历史走势读取DR001、DR007、DR014历史序列；最新行情表读取来源的加权利率、最新利率和平均回购期限，不自行伪造盘中行情。',
                 '行情更新时间来自中国货币网 showDateCN 字段，与本程序抓取时间分别记录；抓取发生在现在，不代表来源刚刚更新。']
-            if bank:
-                source('央行当日操作公告', bank.get('source_url') or bank.get('url'))
-                value('7天期逆回购中标利率', bank.get('rate_percent'), '%')
-                dr = next((r for r in quotes.get('rows', []) if r.get('product') == 'DR007'), {})
+            if bank and bank.get('date') and bank.get('date')==quotes.get('quote_date'):
+                source('央行同日操作公告', bank.get('source_url') or bank.get('url'))
+                product='DR001' if bank.get('term_days')==1 else 'DR007'
+                term='隔夜' if bank.get('term_days')==1 else '7天期'
+                value(f"{bank['date']}{term}逆回购操作利率", bank.get('rate_percent'), '%')
+                dr = next((r for r in quotes.get('rows', []) if r.get('product') == product), {})
                 if dr.get('weighted_rate') is not None and bank.get('rate_percent') is not None:
                     spread = (Decimal(str(dr['weighted_rate']))-Decimal(str(bank['rate_percent'])))*100
-                    calculations.append(f"DR007与政策利率之差 =（{dr['weighted_rate']} − {bank['rate_percent']}）× 100 = {spread:.2f} 个基点。")
+                    calculations.append(f"{product}与同日政策利率之差 =（{dr['weighted_rate']} − {bank['rate_percent']}）× 100 = {spread:.2f} 个基点。")
+            elif bank:
+                calculations.append(f"央行公告日期{bank.get('date')}与盘口日期不同，不写入本期操作。")
             else:
                 calculations.append('本次未取得对应日期央行操作公告，仅描述DR行情，不推算政策利率。')
         elif category == 'oil_etf':

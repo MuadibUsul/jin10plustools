@@ -42,7 +42,8 @@ def production_status(db,team_id,now=None):
         try:target=expected_date(category,local.date()).isoformat()
         except CalendarUnavailable as exc:
             alerts.append({'code':'calendar','category':category,'message':str(exc)});continue
-        item={'category':category,'data_date':actual,'target_date':target,'status':'current' if actual==target else 'awaiting_source'}
+        fresh=actual==target or (category=='liquidity' and actual==local.date().isoformat())
+        item={'category':category,'data_date':actual,'target_date':target,'status':'current' if fresh else 'awaiting_source'}
         item['schedule_enabled']=scheduled
         if category=='oil_etf':
             query=select(BriefDataCheck).where(BriefDataCheck.team_id==team_id,BriefDataCheck.category==category)

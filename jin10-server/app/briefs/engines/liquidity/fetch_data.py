@@ -37,7 +37,8 @@ def numeric(text,field,*,allow_missing=True):
     return str(text)
 
 
-def parse_quotes(raw,expected_date):
+def parse_board(raw):
+    """Read the live board. The source clock is China civil time, not the server zone."""
     try:
         payload=json.loads(raw.decode('utf-8-sig'),parse_constant=lambda _: (_ for _ in ()).throw(ValueError()))
         if str(payload['head']['rep_code'])!='200':raise ValueError()
@@ -47,10 +48,6 @@ def parse_quotes(raw,expected_date):
         if not isinstance(records,list):raise ValueError()
     except (ValueError,KeyError,TypeError,UnicodeError):
         raise SourceError('source_changed','Quotation response does not match the official page schema') from None
-    if updated.date().isoformat()!=expected_date:
-        raise SourceError('pending_close',f'Quotation data day {updated.date()} does not match required closing day {expected_date}')
-    if updated.hour < 17:
-        raise SourceError('pending_close','Quotation is not the previous trading day 17:00 close')
     rows=[];seen=set()
     for record in records:
         code=record.get('productCode','')
@@ -58,17 +55,38 @@ def parse_quotes(raw,expected_date):
             raise SourceError('source_changed','Unexpected product; DR must not be replaced by R or FDR')
         if code in seen:raise SourceError('duplicate_product','Duplicate quotation product')
         seen.add(code)
-        if record.get('date') not in (updated.strftime('%y-%m-%d'),expected_date):
+        if record.get('date') not in (updated.strftime('%y-%m-%d'),updated.date().isoformat()):
             raise SourceError('date_mismatch','Row date disagrees with the quotation update date')
         rows.append({'product':code,'weighted_rate':numeric(record.get('weightedRate'),'weighted rate'),
                      'latest_rate':numeric(record.get('latestRate'),'latest rate'),
                      'average_term_days':numeric(record.get('avgPrd'),'average term'),
                      'updated_at':stamp})
-    for code in ('DR001','DR007'):
-        row=next((r for r in rows if r['product']==code),None)
-        if not row or row['weighted_rate'] is None or Decimal(row['weighted_rate'])<=0:
-            raise SourceError('pending_close',f'No positive closing {code} weighted rate has been published')
-    return {'updated_at':stamp,'quote_date':expected_date,'rows':rows}
+    pending=[code for code in ('DR001','DR007') if not any(
+        row['product']==code and row['weighted_rate'] not in (None,'') and Decimal(row['weighted_rate'])>0
+        for row in rows)]
+    return {'updated_at':stamp,'quote_date':updated.date().isoformat(),'rows':rows,
+            'pending_products':pending,'hour':updated.hour,'minute':updated.minute}
+
+
+def classify_board(board,expected_date):
+    """A later morning board is intraday, not a reason to relabel the previous close."""
+    if board['quote_date']<expected_date:
+        return 'stale'
+    if (board['quote_date']==expected_date and board['hour']>=17
+            and not any(code in board['pending_products'] for code in ('DR001','DR007'))):
+        return 'session_close'
+    return 'intraday'
+
+
+def parse_quotes(raw,expected_date):
+    board=parse_board(raw)
+    kind=classify_board(board,expected_date)
+    if kind=='stale':
+        raise SourceError('pending_close',f"盘口数据日 {board['quote_date']} 早于所需 {expected_date}，不用更早行情冒充")
+    board['timestamp_kind']=kind
+    board['provenance']='official_session_close' if kind=='session_close' else 'official_intraday_board'
+    board.pop('hour');board.pop('minute')
+    return board
 
 
 def parse_history(raw,quote_date,*,clip_after=False):
@@ -108,35 +126,24 @@ def read_source(name,method,*,timeout=25,opener=urlopen):
 
 
 def fetch_snapshot(output_dir,expected_date,*,timeout=25,opener=urlopen):
-    """One quote request; history follows only after both DR closing rates pass validation."""
+    """Keep the live board and the daily curve separate. Never invent a 17:00 stamp."""
     date.fromisoformat(expected_date)
     out=Path(output_dir);out.mkdir(parents=True,exist_ok=True)
     quotes_raw,quotes_meta=read_source('prr-md.json','GET',timeout=timeout,opener=opener)
     (out/'prr-md.json').write_bytes(quotes_raw)
-    quote=None;quote_error=None
-    try:quote=parse_quotes(quotes_raw,expected_date)
-    except SourceError as exc:
-        if exc.code!='pending_close':raise
-        quote_error=exc
     history_raw,history_meta=read_source('prr-chrt.csv','POST',timeout=timeout,opener=opener)
     (out/'prr-chrt.csv').write_bytes(history_raw)
-    if quote is None:
-        payload=json.loads(quotes_raw.decode('utf-8-sig'))
-        actual_stamp=payload['data']['showDateCN']
-        if actual_stamp[:10]<=expected_date:raise quote_error
-        history=parse_history(history_raw,expected_date,clip_after=True)
-        (out/'partial-history.json').write_text(json.dumps(history,ensure_ascii=False),encoding='utf-8')
-        matched=next((row for row in history['rows'] if row['date']==expected_date),None)
-        if not matched or any(matched.get(key) is None or Decimal(str(matched[key]))<=0 for key in ('DR001','DR007')):
-            raise quote_error
-        # The CSV is an actual historical daily weighted-rate series. The
-        # 17:00 label denotes its session boundary, not an invented fetch time.
-        stamp=expected_date+' 17:00'
-        quote={'updated_at':stamp,'quote_date':expected_date,'source_actual_updated_at':actual_stamp,
-            'timestamp_kind':'daily_session_close_boundary','provenance':'official_published_daily_history',
-            'rows':[{'product':code,'weighted_rate':matched[code],'latest_rate':None,
-                     'average_term_days':None,'updated_at':stamp} for code in ('DR001','DR007')]}
-    else:history=parse_history(history_raw,expected_date)
+    quote=parse_quotes(quotes_raw,expected_date)
+    if not any(row.get('weighted_rate') not in (None,'') for row in quote['rows']):
+        raise SourceError('pending_close','盘口没有已公布的DR加权利率，不用日度历史冒充当前行情')
+    if quote['timestamp_kind']=='intraday':
+        # The daily file can already contain today's running print. Leave it off the curve.
+        cap=(date.fromisoformat(quote['quote_date'])-timedelta(days=1)).isoformat()
+        history=parse_history(history_raw,cap,clip_after=True)
+    else:
+        history=parse_history(history_raw,quote['quote_date'])
+    if quote['timestamp_kind']=='intraday' and any(row['date']>=quote['quote_date'] for row in history['rows']):
+        raise SourceError('date_mismatch','盘中行情不能写入日度曲线')
     result={'source':PAGE,'fetched_at':datetime.now(CHINA).isoformat(),'quotes':quote,'history':history,
             'source_requests':[quotes_meta,history_meta],'policy_rate':None,
             'history_is_separate_from_intraday_quotes':True}
@@ -145,7 +152,12 @@ def fetch_snapshot(output_dir,expected_date,*,timeout=25,opener=urlopen):
 
 
 def read_replay(quote_path,history_path,expected_date):
+    quotes=parse_quotes(Path(quote_path).read_bytes(),expected_date)
+    if quotes.get('timestamp_kind')=='intraday':
+        cap=(date.fromisoformat(quotes['quote_date'])-timedelta(days=1)).isoformat()
+        history=parse_history(Path(history_path).read_bytes(),cap,clip_after=True)
+    else:
+        history=parse_history(Path(history_path).read_bytes(),quotes['quote_date'])
     return {'source':PAGE,'fetched_at':None,'mode':'explicit_source_replay',
-            'quotes':parse_quotes(Path(quote_path).read_bytes(),expected_date),
-            'history':parse_history(Path(history_path).read_bytes(),expected_date),
+            'quotes':quotes,'history':history,
             'policy_rate':None,'history_is_separate_from_intraday_quotes':True}

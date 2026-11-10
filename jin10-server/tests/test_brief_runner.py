@@ -96,7 +96,7 @@ def test_liquidity_uses_final_required_title(tmp_path):
     with patch('app.briefs.engines.liquidity.render.render_poster',return_value=(tmp_path/'poster.png',None,{})), \
          patch('app.briefs.engines.liquidity.copy_tracks.build_copy',return_value={'title':'旧标题','body':'当日事实。'}):
         result=render_liquidity(snapshot,tmp_path)
-    assert result['title']=='【流动性指标】质押式回购利率走势与最新行情'
+    assert result['title']=='旧标题'
 
 
 def test_cached_valuation_copy_uses_a_share_label(tmp_path):

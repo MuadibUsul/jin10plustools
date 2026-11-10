@@ -137,7 +137,7 @@ def schedule(factory,now=None):
                 except CalendarUnavailable:continue
                 issue=find_issue(db,config.team_id,local.date(),category)
                 if issue and issue.version:
-                    if category!='oil_etf':continue
+                    if category not in ('oil_etf','liquidity'):continue
                     current=db.scalar(select(BriefVersion).where(BriefVersion.issue_id==issue.id,BriefVersion.number==issue.version))
                     if current is None or current.kind=='edited':continue
                     # The issuer can update after the first successful latest-value
@@ -235,7 +235,7 @@ def execute(factory,id):
         starting_version=starting_issue.version if starting_issue else 0
         render_source_id=None;render_payload=None
         render_version_changed = False
-        followup=category=='oil_etf' and ':latest-' in job.dedupe_key and scheduled_retry
+        followup=category in ('oil_etf','liquidity') and ':latest-' in job.dedupe_key and scheduled_retry
         generation_base=None;generation_payload=None
         if followup:
             issue=find_issue(db,team_id,day,category)

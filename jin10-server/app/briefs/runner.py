@@ -115,6 +115,15 @@ def rerender(category,previous,source,out,day):
     return payload
 
 
+def same_observation_day(category, requested, payload):
+    """Liquidity may publish today's board while the job still asks for the prior close."""
+    actual=(payload or {}).get('data_date')
+    if actual==requested or category=='oil_etf':return True
+    if category in ('token_cost','gpu_rental') and os.getenv('MANUAL_GENERATION')=='1':return True
+    return (category=='liquidity' and (payload or {}).get('data_date_policy')=='intraday_board'
+            and isinstance(actual,str) and actual>requested)
+
+
 def explain_result(out, category, payload):
     from .process_details import describe
     details = describe(category, payload)
@@ -159,9 +168,10 @@ def generate(category,day,root,run_id,action='produce',render_input=None):
     # An editor asking for a fresh production run wants the newest source state,
     # not an earlier same-day snapshot that may predate a source update.
     if previous and os.getenv('MANUAL_GENERATION')=='1' and action=='produce':previous=None
-    latest_manual = os.getenv('MANUAL_GENERATION')=='1' and category in ('token_cost','gpu_rental')
-    latest_available=category=='oil_etf'
-    if previous and previous['data_date']!=day and not (latest_manual or latest_available):raise ValueError('缓存日期不符')
+    if (previous and category=='liquidity' and action=='produce'
+            and ((previous.get('facts') or {}).get('quotes') or {}).get('timestamp_kind')=='intraday'):
+        previous=None
+    if previous and not same_observation_day(category, day, previous):raise ValueError('缓存日期不符')
     if action in ('render','ai') and not previous:raise ValueError('尚无已校验快照，请先生成稿件')
     if previous and action!='refresh':
         source=(root/previous['artifact_dir']).resolve()
@@ -220,7 +230,7 @@ def generate(category,day,root,run_id,action='produce',render_input=None):
                 payload.setdefault('warnings',[]).append('历史连续性特征未能核验，本期不写连续涨跌结论')
     record(out,4,'来源日期、标题、正文及图片已完成基础校验')
     explain_result(out,category,payload)
-    if payload['data_date']!=day and not (latest_manual or latest_available):raise ValueError('来源数据日与目标日期不符')
+    if not same_observation_day(category, day, payload):raise ValueError('来源数据日与目标日期不符')
     if not payload['title'].strip() or not payload['dynamic_body'].strip():raise ValueError('标题或正文缺失')
     if category!='oil_etf' and not payload['images'] and os.getenv('DATA_COLLECTION_ONLY')!='1':raise ValueError('栏目缺少配图')
     payload['artifact_dir']=out.relative_to(root).as_posix()

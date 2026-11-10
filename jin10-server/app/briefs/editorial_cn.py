@@ -189,7 +189,7 @@ def _liquidity(payload, actual, facts):
                 raise ValueError('invalid_previous_date')
             old = _number(prior.get('weighted_rate'), positive=True)
             delta = (current - old) * 100
-            fragment += f'；较{prior["date"]}的日加权利率'
+            fragment += f'；较{prior["date"]}已发布日度加权利率{prior["weighted_rate"]}%'
             fragment += (f'{"上行" if delta > 0 else "下行"}{_two(abs(delta))}个基点'
                          if delta else '持平')
         fragments.append(fragment + '。')

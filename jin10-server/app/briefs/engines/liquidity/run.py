@@ -83,11 +83,16 @@ def make_job(args,state):
         snapshot=read_replay(args.quotes,args.history,day)
     elif (data_dir/'snapshot.json').exists() and not args.refresh:
         snapshot=json.loads((data_dir/'snapshot.json').read_text(encoding='utf-8'))
-        # Validate stored source bytes; cached data never acquire a new source time.
-        check=read_replay(data_dir/'prr-md.json',data_dir/'prr-chrt.csv',day)
-        if check['quotes']!=snapshot['quotes'] or check['history']!=snapshot['history']:
-            raise SourceError('cache_corrupt','Saved normalized snapshot differs from its original response')
+        # An intraday board keeps changing. Reuse only a finished close.
+        if snapshot.get('quotes',{}).get('timestamp_kind')=='intraday':
+            snapshot=None
+        else:
+            check=read_replay(data_dir/'prr-md.json',data_dir/'prr-chrt.csv',day)
+            if check['quotes']!=snapshot['quotes'] or check['history']!=snapshot['history']:
+                raise SourceError('cache_corrupt','Saved normalized snapshot differs from its original response')
     else:
+        snapshot=None
+    if snapshot is None:
         errors=[]
         for attempt in range(args.retries+1):
             attempt_dir=state/'attempts'/f'{day}-{uuid4().hex[:10]}'
@@ -117,14 +122,15 @@ def make_job(args,state):
     copy_markdown(out/'规则版快讯.md',rule)
     save_json(out/'核验记录.json',audit);save_json(out/'数据快照.json',snapshot)
     save_json(out/'规则版快讯.json',rule)
-    manifest={'mode':'source-replay' if replay else 'live','data_date':day,'revision':key,
+    observed=snapshot['quotes'].get('quote_date') or day
+    manifest={'mode':'source-replay' if replay else 'live','data_date':observed,'revision':key,
               'output_dir':str(out),'phase':'rules_ready','chart':png.name,'vector':svg.name,
               'source_updated_at':snapshot['quotes']['updated_at'],
               'history_range':[snapshot['history']['start'],snapshot['history']['end']],
               'rules':{'status':'ok','file':'规则版快讯.md'},'deepseek':{'status':'pending'},
               'release_ready':audit['release_ready'],'published':False}
     save_json(manifest_path,manifest)
-    write_delivery(out,category='liquidity',data_date=day,rule=rule,images=[png],image_required=True,
+    write_delivery(out,category='liquidity',data_date=observed,rule=rule,images=[png],image_required=True,
                    deepseek={'status':'pending'})
     if not replay:save_json(state/'latest.json',manifest)
     print(json.dumps({'event':'rules_ready','output_dir':str(out)},ensure_ascii=False),flush=True)
@@ -133,7 +139,7 @@ def make_job(args,state):
     manifest['deepseek']={'status':ai['status']}
     if ai['status']=='ok':copy_markdown(out/'DeepSeek版快讯.md',ai);manifest['deepseek']['file']='DeepSeek版快讯.md'
     manifest['phase']='complete'
-    write_delivery(out,category='liquidity',data_date=day,rule=rule,images=[png],image_required=True,deepseek=ai)
+    write_delivery(out,category='liquidity',data_date=observed,rule=rule,images=[png],image_required=True,deepseek=ai)
     tracked=[png.name,svg.name,'核验记录.json','数据快照.json','规则版快讯.md','规则版快讯.json','DeepSeek状态.json']
     if ai['status']=='ok':tracked.append('DeepSeek版快讯.md')
     tracked+=['标题.txt','正文.txt','发布稿.md','交付清单.json']

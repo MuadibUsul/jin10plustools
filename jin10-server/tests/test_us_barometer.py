@@ -85,12 +85,52 @@ def test_render_builds_payload_and_snapshot_rerenders(tmp_path, monkeypatch):
     assert first['images'] == ['美股晴雨表.png']
     assert all((tmp_path / name).is_file() for name in first['images'])
     assert first['facts']['buffett_pct'] == '235.18' and first['facts']['erp_pct'] == '5.33'
+    assert first['facts']['previous_date'] == '2026-10-13'
+    assert '较前一交易日' in first['dynamic_body'].splitlines()[0]
+    assert '较前一交易日' in first['dynamic_body'].splitlines()[1]
     assert first['facts']['gdp_period'] == '2026-04-01'
     # Notes live on the delivered image now, so the body keeps only dynamic facts.
     body = complete_body('us_barometer', first['dynamic_body'])
     assert body == first['dynamic_body'] and FIXED_NOTES['us_barometer'] not in body
     again = run.render(snapshot, tmp_path)
     assert again['title'] == first['title'] and again['images'] == first['images']
+
+
+def test_history_downloads_use_the_selected_edition_snapshot(client, db_factory, seed):
+    from app.briefs.service import append_version, ensure_issue, root_for
+    from tests.conftest import login
+    day, wilshire, gdp, erp = fixtures()
+    with db_factory() as db:
+        issue = ensure_issue(db, seed['editor'].team_id, date(2026, 10, 15), 'us_barometer')
+        folder = root_for(issue.team_id) / 'runs' / 'barometer-history-download'
+        folder.mkdir(parents=True)
+        (folder / 'us-snapshot.json').write_text(json.dumps({
+            'target': day.isoformat(), 'wilshire': wilshire, 'gdp': gdp, 'erp': erp,
+        }), encoding='utf-8')
+        append_version(db, issue, {'title': '美股晴雨表', 'dynamic_body': '当日事实',
+            'images': [], 'data_date': day.isoformat(), 'valid': True,
+            'artifact_dir': folder.relative_to(root_for(issue.team_id)).as_posix()})
+        db.commit()
+        issue_id = issue.id
+    viewer = login(client, 'viewer@plus.test')
+    editor = login(client, 'editor@plus.test')
+    for metric, expected in (('buffett', '235.18'), ('erp', '5.33')):
+        url = f'/api/briefs/issues/{issue_id}/history/1/{metric}.csv'
+        assert client.get(url, headers=viewer).status_code == 403
+        response = client.get(url, headers=editor)
+        assert response.status_code == 200
+        assert 'attachment' in response.headers['content-disposition']
+        lines = list(__import__('csv').reader(io.StringIO(response.content.decode('utf-8-sig'))))
+        assert lines[0] == ['日期', '指标值（%）']
+        assert lines[-1] == [day.isoformat(), expected]
+
+
+def test_comparison_requires_actual_previous_session(tmp_path):
+    day, wilshire, gdp, erp = fixtures()
+    snapshot = {'target': day.isoformat(), 'wilshire': wilshire, 'gdp': gdp,
+                'erp': [row for row in erp if row['date'] != '2026-10-13']}
+    with pytest.raises(ValueError, match='前一交易日'):
+        run.render(snapshot, tmp_path, draw=False)
 
 
 def test_stale_cached_product_is_rebuilt_from_its_snapshot(tmp_path):

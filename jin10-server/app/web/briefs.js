@@ -371,6 +371,16 @@ async function loadImages(v) {
       button.disabled = actionBusy || dirty;
       button.onclick = () => safe(async () => { await download(file.url); toast('图片已开始下载。'); }); children.push(image, button);
     }
+    if (selected.category === 'us_barometer' && v.images.length) {
+      for (const [metric, label] of [['buffett', '下载巴菲特指数历史数据'], ['erp', '下载风险溢价历史数据']]) {
+        const button = node('button', label);
+        button.dataset.download = '';
+        button.disabled = actionBusy || dirty;
+        const url = `/api/briefs/issues/${selected.id}/history/${v.number}/${metric}.csv`;
+        button.onclick = () => safe(async () => { await download(url); toast('历史数据已开始下载。'); });
+        children.push(button);
+      }
+    }
     $('#images').replaceChildren(...children);
     for (const url of nextBlobs) blobs.add(url);
     nextBlobs.clear(); imageKey = key;

@@ -1,3 +1,4 @@
+import hashlib
 import io
 from datetime import date, timedelta
 
@@ -105,12 +106,40 @@ def test_small_cap_direction_drives_the_second_item(rut_close, expected):
 def test_chart_stays_inside_delivery_limits(tmp_path):
     result = structure(DAY, fixtures())
     from app.briefs.charts import us_structure_chart
+    from app.briefs.delivery import FIXED_NOTES, complete_body
     path = us_structure_chart(result['gap_rows'], tmp_path)
-    delivered = compose_image(path, dark=True)
+    delivered = compose_image(path, dark=True, notes=FIXED_NOTES['us_structure'])
     content, suffix, media = encode_image(delivered)
     assert len(content) <= MAX_BYTES and media.startswith('image/')
     with Image.open(io.BytesIO(content)) as image:
         assert image.width == 1408 and image.height > 700
+        assert image.getpixel((0, 750)) == (0, 0, 0)
+    assert complete_body('us_structure', result['body']) == result['body']
+
+
+def test_structure_edition_puts_notes_on_black_image_footer(db_factory, seed):
+    from datetime import date
+    from app.briefs.delivery import FIXED_NOTES
+    from app.briefs.service import append_version, delivered_image, ensure_issue, issue_out, root_for
+    with db_factory() as db:
+        issue = ensure_issue(db, seed['editor'].team_id, date(2026, 10, 15), 'us_structure')
+        folder = root_for(issue.team_id) / 'runs' / 'structure-note-layout'
+        folder.mkdir(parents=True)
+        source = folder / '美股市场结构.png'
+        Image.new('RGB', (1408, 700), 'black').save(source)
+        version = append_version(db, issue, {'title': '美股市场结构',
+            'dynamic_body': '当期事实\n\n--------\n\n' + FIXED_NOTES['us_structure'],
+            'images': [source.name], 'valid': True, 'data_date': '2026-10-14',
+            'image_sha256': {source.name: hashlib.sha256(source.read_bytes()).hexdigest()},
+            'artifact_dir': folder.relative_to(root_for(issue.team_id)).as_posix()})
+        db.commit()
+        shown = issue_out(db, issue)['versions'][0]
+        image, _ = delivered_image(issue, version, source.name)
+    assert shown['notes_placement'] == 'image' and shown['body'] == '当期事实'
+    expected = compose_image(source, dark=True, notes=FIXED_NOTES['us_structure'])
+    assert image.read_bytes() == encode_image(expected)[0]
+    with Image.open(image) as delivered:
+        assert delivered.getpixel((0, 750)) == (0, 0, 0)
 
 
 def test_fetch_rejects_missing_target_day(tmp_path, monkeypatch):

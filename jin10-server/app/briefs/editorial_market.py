@@ -172,7 +172,8 @@ def _token(payload: dict, actual: date, facts: dict) -> dict:
 
 
 def _barometer(payload: dict, actual: date, facts: dict) -> dict:
-    from .engines.us_barometer.calculate import grade, overall, BUFFETT_GRADES, ERP_GRADES
+    from .engines.us_barometer.calculate import grade, overall, daily_comparison, BUFFETT_GRADES, ERP_GRADES
+    from .trading_calendar import previous_session
 
     buffett = _num(facts.get('buffett_pct'))
     erp = _num(facts.get('erp_pct'))
@@ -190,14 +191,21 @@ def _barometer(payload: dict, actual: date, facts: dict) -> dict:
             raise ValueError('invalid_gdp_period')
     if facts.get('gdp_value') is not None and _num(facts['gdp_value']) <= 0:
         raise ValueError('invalid_gdp_value')
+    if _day(facts.get('previous_date'), 'invalid_baseline') != previous_session('xnys', actual):
+        raise ValueError('invalid_baseline')
+    previous_buffett = _num(facts.get('buffett_previous_pct'), 'invalid_baseline')
+    previous_erp = _num(facts.get('erp_previous_pct'), 'invalid_baseline')
+    if previous_buffett < 0 or previous_erp < 0:
+        raise ValueError('invalid_baseline')
     scenarios = {'高': 'high', '较高': 'relatively_high', '中性': 'neutral', '较低': 'relatively_low', '低': 'low'}
     return {'scenario': scenarios[verdict],
             'slots': {'data_day': _md(actual),
-                      'buffett': f'巴菲特指数为{facts["buffett_pct"]}%，按本栏目阈值处于{buffett_grade["label"]}区间。',
-                      'erp': f'标普500指数股权风险溢价（ERP）为{facts["erp_pct"]}%，分级为{erp_grade["label"]}。',
-                      'verdict': f'两项指标合并后的美股投资性价比分级为{verdict}。'},
+                      'buffett': f'巴菲特指数为{facts["buffett_pct"]}%，{daily_comparison(buffett, previous_buffett)}，按本栏目阈值处于{buffett_grade["label"]}区间。',
+                      'erp': f'标普500指数股权风险溢价（ERP）为{facts["erp_pct"]}%，{daily_comparison(erp, previous_erp)}，分级为{erp_grade["label"]}。',
+                      'verdict': f'综合两项指标来看，美股投资性价比相对{verdict}。'},
             'bindings': {key: facts.get(key) for key in ('buffett_pct', 'buffett_grade', 'erp_pct', 'erp_grade',
-                                                        'verdict', 'score', 'gdp_period', 'gdp_value')},
+                                                        'verdict', 'score', 'gdp_period', 'gdp_value',
+                                                        'previous_date', 'buffett_previous_pct', 'erp_previous_pct')},
             'writing_order': '先巴菲特指数及其分级，再给ERP与分级，最后交代本栏目综合性价比分级；不新增交易建议。'}
 
 
@@ -244,7 +252,7 @@ def _structure(payload: dict, actual: date, facts: dict) -> dict:
             raise ValueError('invalid_breadth')
         path = ('较前一交易日回升，' if gap_change > 0 else
                 '较前一交易日回落，' if gap_change < 0 else '与前一交易日持平，')
-    breadth = f'标普500等权指数与市值加权指数之差{path}处于近一年已收录区间的{level}水平。'
+    breadth = f'标普500等权指数与市值加权指数之差{path}处于近一年波动区间的{level}水平。'
     low_clause = ''
     if facts.get('rut_low_since_date'):
         since = _day(facts['rut_low_since_date'], 'invalid_low_since')
@@ -267,7 +275,7 @@ def _structure(payload: dict, actual: date, facts: dict) -> dict:
                   f'较本期已收录收盘高点回撤{approximate}{drawdown_text}%{low_clause}。')
     return {'scenario': labels[verdict],
             'slots': {'indices': indices, 'breadth': breadth, 'small_caps': small_caps,
-                      'verdict': f'按本栏目区间分级，{verdict}。'},
+                      'verdict': f'综合来看，{verdict}。'},
             'bindings': {key: facts.get(key) for key in ('ndx_change', 'spx_change', 'dji_change', 'rut_change',
                        'gap', 'gap_percentile', 'gap_low', 'gap_low_date', 'rut_drawdown', 'verdict',
                        'gap_previous', 'gap_change', 'rut_low_since_date', 'rut_low_since_month',

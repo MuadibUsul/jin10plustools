@@ -1220,6 +1220,9 @@
           "erp_grade": "偏低",
           "verdict": "较低",
           "score": -3,
+          "previous_date": "2026-10-29",
+          "buffett_previous_pct": "235.00",
+          "erp_previous_pct": "5.35",
           "gdp_period": "2026-04-01",
           "gdp_value": "32563.03"
         },
@@ -1252,6 +1255,9 @@
           "erp_grade": "很高",
           "verdict": "高",
           "score": 4,
+          "previous_date": "2026-10-29",
+          "buffett_previous_pct": "59.90",
+          "erp_previous_pct": "7.10",
           "gdp_period": "2026-04-01",
           "gdp_value": "32563.03"
         },
@@ -1284,6 +1290,9 @@
           "erp_grade": "中性",
           "verdict": "中性",
           "score": 0,
+          "previous_date": "2026-10-29",
+          "buffett_previous_pct": "120.00",
+          "erp_previous_pct": "5.60",
           "gdp_period": "2026-04-01",
           "gdp_value": "32563.03"
         },
@@ -1316,6 +1325,9 @@
           "erp_grade": "偏高",
           "verdict": "中性",
           "score": -1,
+          "previous_date": "2026-10-29",
+          "buffett_previous_pct": "200.10",
+          "erp_previous_pct": "6.10",
           "gdp_period": "2026-04-01",
           "gdp_value": "32563.03"
         },
@@ -1348,6 +1360,9 @@
           "erp_grade": "偏低",
           "verdict": "较低",
           "score": -3,
+          "previous_date": "2026-10-29",
+          "buffett_previous_pct": "235.00",
+          "erp_previous_pct": "5.35",
           "gdp_period": "2026-04-01",
           "gdp_value": "32563.03"
         },

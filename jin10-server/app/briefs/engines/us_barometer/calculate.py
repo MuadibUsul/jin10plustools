@@ -62,7 +62,16 @@ def overall(buffett_score, erp_score):
     return '低', total
 
 
-def verdict_copy(day, buffett, erp):
+def daily_comparison(current, previous):
+    change = q2(Decimal(str(current)) - Decimal(str(previous)))
+    if change > 0:
+        return f'较前一交易日上升{change:.2f}个百分点'
+    if change < 0:
+        return f'较前一交易日下降{abs(change):.2f}个百分点'
+    return '较前一交易日持平'
+
+
+def verdict_copy(day, buffett, erp, previous_buffett=None, previous_erp=None):
     """Title and body for the US barometer issue, matching the approved sample wording."""
     from datetime import date
     parsed = date.fromisoformat(day) if isinstance(day, str) else day
@@ -70,8 +79,12 @@ def verdict_copy(day, buffett, erp):
     erp_grade = grade(erp, ERP_GRADES)
     label, score = overall(buffett_grade['score'], erp_grade['score'])
     title = f'【美股晴雨表】美股{parsed.month}月{parsed.day}日投资性价比：{label}'
-    body = (f'1、巴菲特指数：{buffett}%，{buffett_grade["text"]}\n'
-            f'2、美国标普500指数股权风险溢价（ERP）：{erp}%，{erp_grade["text"]}')
+    if (previous_buffett is None) != (previous_erp is None):
+        raise ValueError('两项指标的前一交易日数据必须同时提供')
+    buffett_change = f'{daily_comparison(buffett, previous_buffett)}，' if previous_buffett is not None else ''
+    erp_change = f'{daily_comparison(erp, previous_erp)}，' if previous_erp is not None else ''
+    body = (f'1、巴菲特指数：{buffett}%，{buffett_change}{buffett_grade["text"]}\n'
+            f'2、美国标普500指数股权风险溢价（ERP）：{erp}%，{erp_change}{erp_grade["text"]}')
     return {
         'title': title, 'body': body, 'label': label,
         'buffett': {'value': str(buffett), 'grade': buffett_grade['label'], 'text': buffett_grade['text']},

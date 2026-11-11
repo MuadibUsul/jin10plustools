@@ -74,7 +74,8 @@ for row in rows:
     looping=(row['RestartCount']>10 and state['ExitCode']!=0 and not state['OOMKilled']
              and (datetime.now(timezone.utc)-started).total_seconds()<120)
     protected[row['Id']]={'name':row['Name'],'image':row['Image'],'started':state['StartedAt'],
-                         'restart_count':row['RestartCount'],'already_restarting':looping}
+                         'restart_count':row['RestartCount'],'already_restarting':looping,
+                         'oom_killed':state['OOMKilled']}
 with open(sys.argv[1],'w') as stream:json.dump(protected,stream)
 print('Protected running containers:',len(protected))
 PY
@@ -181,7 +182,7 @@ import json,subprocess,sys
 with open(sys.argv[1]) as stream:protected=json.load(stream)
 for key,before in protected.items():
     row=json.loads(subprocess.check_output(['docker','inspect',key],text=True))[0]
-    assert row['Image']==before['image'] and not row['State']['OOMKilled'], 'Protected service changed: '+before['name']
+    assert row['Image']==before['image'] and (before['oom_killed'] or not row['State']['OOMKilled']), 'Protected service changed: '+before['name']
     if before.get('already_restarting'):
         assert row['State']['Running'] or row['State']['Restarting'], 'Previously unstable service stopped: '+before['name']
         print('Pre-existing external restart loop remains; service was not modified:',before['name'],

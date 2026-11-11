@@ -135,6 +135,7 @@ def test_us_structure_keeps_three_index_changes_in_the_first_numbered_item():
     first_item = body.split('1、', 1)[1].split('\n', 1)[0]
     assert first_item.index('纳斯达克') < first_item.index('标普500') < first_item.index('道琼斯')
     assert '1.88%' in first_item and '1.12%' in first_item and '0.09%' in first_item
+    assert '波动区间' in body and '综合来看' in body
 
 
 def test_original_gpu_mode_remains_usable_through_suite(monkeypatch):

@@ -231,11 +231,11 @@ def delivered_image(issue,version,name):
     source=artifact_path(issue,version,name)
     # AI-compute notes are already drawn in the chart footer. A second delivery
     # band would repeat them under the watermark.
-    band_notes=issue.category in ('volume','valuation','turnover','us_barometer')
+    band_notes=issue.category in ('volume','valuation','turnover','us_barometer','us_structure')
     notes=version.payload.get('fixed_notes',default_notes(issue.category)) if band_notes else ''
     # Earlier us-barometer editions kept two images; notes belong only on the merged chart.
     if issue.category=='us_barometer' and name!='美股晴雨表.png':notes=''
-    policy=delivery_signature() + ('-turnover-notes-1' if issue.category=='turnover' else '-us-barometer-merged-1' if issue.category=='us_barometer' else '')
+    policy=delivery_signature() + ('-turnover-notes-1' if issue.category=='turnover' else '-us-barometer-merged-1' if issue.category=='us_barometer' else '-us-structure-black-notes-1' if issue.category=='us_structure' else '')
     key=hashlib.sha256(json.dumps([version.payload['image_sha256'][name],notes,issue.category,
         version.payload.get('unified_valuation',False),
         policy,hashlib.sha256(WATERMARK.read_bytes()).hexdigest()],ensure_ascii=False).encode()).hexdigest()
@@ -243,7 +243,7 @@ def delivered_image(issue,version,name):
     for suffix,media in (('.png','image/png'),('.jpg','image/jpeg')):
         cached=target.with_suffix(suffix)
         if cached.is_file() and 0<cached.stat().st_size<=MAX_BYTES:return cached,media
-    return store_image(source,target,notes=notes,dark=issue.category in ('valuation','turnover','us_barometer'),
+    return store_image(source,target,notes=notes,dark=issue.category in ('valuation','turnover','us_barometer','us_structure'),
                        remove_valuation_source=issue.category=='valuation' and not version.payload.get('unified_valuation'),
                        reuse_footer=issue.category=='liquidity',
                        turnover_snapshot=source.with_name('source.json') if issue.category=='turnover'

@@ -1,11 +1,13 @@
 from __future__ import annotations
 import shutil
+import json
 import uuid
 from datetime import date, datetime
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, HTTPException, Query
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
+from urllib.parse import quote
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 
@@ -13,7 +15,7 @@ from app.db.models import BriefAudit, BriefConfig, BriefIssue, BriefJob, BriefVe
 from app.services.team_settings import update_notes
 from app.deps import CurrentUser, DbSession, Editor
 from app.briefs.policy import CATEGORIES, CHINA
-from app.briefs.service import owned, find_issue, enqueue, issue_out, job_out, append_version, artifact_path, delivered_image, prepare_chart_notes_revision, edition_payload
+from app.briefs.service import owned, find_issue, enqueue, issue_out, job_out, append_version, artifact_path, delivered_image, prepare_chart_notes_revision, edition_payload, root_for
 from app.briefs.delivery import complete_body
 from app.services.image_delivery import download_name
 
@@ -251,7 +253,7 @@ def edit(id:uuid.UUID,body:EditRequest,db:DbSession,user:Editor):
     if issue.category in ('token_cost','gpu_rental','liquidity') and body.fixed_notes is not None and not edited_notes:
         raise HTTPException(422,'图片注释不能为空')
     dynamic_body=(complete_body(issue.category,body.dynamic_body,edited_notes)
-                  if issue.category in ('volume','token_cost','gpu_rental','liquidity') else body.dynamic_body.strip())
+                  if issue.category in ('volume','us_structure','token_cost','gpu_rental','liquidity') else body.dynamic_body.strip())
     if not dynamic_body:
         raise HTTPException(422,'动态正文不能为空')
     staged=None
@@ -338,3 +340,30 @@ def file(id:uuid.UUID,number:int,name:str,db:DbSession,user:CurrentUser):
     except ValueError as e:raise HTTPException(404,str(e)) from None
     return FileResponse(path,media_type=media_type,filename=download_name(issue.issue_date,version.title,path.suffix),
                         headers={'Cache-Control':'private, no-cache'})
+
+
+@router.get('/issues/{id}/history/{number}/{metric}.csv')
+def barometer_history(id:uuid.UUID,number:int,metric:Literal['buffett','erp'],db:DbSession,user:CurrentUser):
+    issue=get_issue(db,user,id)
+    if issue.category!='us_barometer':raise HTTPException(404,'该栏目没有此历史指标')
+    if user.role==Role.VIEWER and number!=issue.confirmed_version:raise HTTPException(403,'只读账号仅可下载已确认稿')
+    version=db.scalars(select(BriefVersion).where(BriefVersion.issue_id==id,BriefVersion.number==number)).first()
+    if not version:raise HTTPException(404,'版本不存在')
+    root=root_for(issue.team_id).resolve()
+    folder=(root/(version.payload or {}).get('artifact_dir','')).resolve()
+    source=(folder/'us-snapshot.json').resolve()
+    if not folder.is_relative_to(root) or source.parent!=folder or not source.is_file():
+        raise HTTPException(409,'所选版本缺少历史数据快照')
+    try:
+        snapshot=json.loads(source.read_text(encoding='utf-8'))
+        if snapshot['target']!=version.payload.get('data_date'):
+            raise ValueError('快照数据日与稿件版本不符')
+        from app.briefs.engines.us_barometer.run import history_csv
+        content=history_csv(snapshot,metric)
+    except (ValueError,KeyError,TypeError) as exc:
+        raise HTTPException(409,f'历史数据无法导出：{exc}') from None
+    label='巴菲特指数' if metric=='buffett' else '股权风险溢价'
+    filename=f'{version.payload["data_date"].replace("-", "")}_{label}_历史数据.csv'
+    return Response(content,media_type='text/csv; charset=utf-8',headers={
+        'Content-Disposition':f"attachment; filename*=UTF-8''{quote(filename)}",
+        'Cache-Control':'private, no-cache'})

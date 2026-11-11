@@ -1,6 +1,8 @@
 """Fetch, validate and render the US barometer brief (Wilshire 5000 + StreetStats ERP)."""
 from __future__ import annotations
 
+import csv
+import io
 from datetime import date
 
 from app.briefs.progress import record
@@ -14,6 +16,25 @@ SOURCES = {
     'gdp': 'https://fred.stlouisfed.org/series/GDP',
     'erp': 'https://streetstats.finance/valuation/market',
 }
+
+
+def history_csv(snapshot, metric):
+    """Export the exact calculated history saved with one brief edition."""
+    if metric == 'buffett':
+        rows = buffett_series(snapshot['wilshire'], snapshot['gdp'])
+    elif metric == 'erp':
+        rows = erp_series(snapshot['erp'])
+    else:
+        raise ValueError('未知的历史指标')
+    target = snapshot['target']
+    rows = [row for row in rows if row['date'] <= target]
+    if not rows or rows[-1]['date'] != target:
+        raise ValueError('所选版本的历史数据与数据日不符')
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(('日期', '指标值（%）'))
+    writer.writerows((row['date'], str(row['pct'])) for row in rows)
+    return ('\ufeff' + output.getvalue()).encode('utf-8')
 
 
 def window(rows, day, years=10):
@@ -52,7 +73,14 @@ def render(snapshot, out,*,draw=True):
     today_erp = next((row for row in erp if row['date'] == day), None)
     if today_buffett is None or today_erp is None:
         raise ValueError('目标日期的指标数据缺失')
-    copy = verdict_copy(day, today_buffett['pct'], today_erp['pct'])
+    from app.briefs.trading_calendar import previous_session
+    previous_day = previous_session('xnys', day).isoformat()
+    previous_buffett = next((row for row in buffett if row['date'] == previous_day), None)
+    previous_erp = next((row for row in erp if row['date'] == previous_day), None)
+    if previous_buffett is None or previous_erp is None:
+        raise ValueError('前一交易日的巴菲特指数或风险溢价数据缺失')
+    copy = verdict_copy(day, today_buffett['pct'], today_erp['pct'],
+                        previous_buffett['pct'], previous_erp['pct'])
     quarter = gdp_asof(snapshot['gdp'], day)
     from app.briefs.charts import us_barometer_chart
     record(out, 3, '指标与分级已校验，正在绘制双面板合成图')
@@ -63,6 +91,9 @@ def render(snapshot, out,*,draw=True):
         'facts': {
             'buffett_pct': str(today_buffett['pct']), 'buffett_grade': copy['buffett']['grade'],
             'erp_pct': str(today_erp['pct']), 'erp_grade': copy['erp']['grade'],
+            'previous_date': previous_day,
+            'buffett_previous_pct': str(previous_buffett['pct']),
+            'erp_previous_pct': str(previous_erp['pct']),
             'verdict': copy['label'], 'score': copy['score'],
             'gdp_period': quarter['period'], 'gdp_value': str(quarter['value']),
             'sources': dict(SOURCES),

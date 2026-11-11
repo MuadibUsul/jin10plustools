@@ -59,6 +59,8 @@ def test_token_missing_week_is_not_replaced_with_a_recent_price():
 def barometer(**changes):
     facts = {'buffett_pct': '235.18', 'buffett_grade': '严重高估', 'erp_pct': '5.33',
              'erp_grade': '偏低', 'verdict': '较低', 'score': -3,
+             'previous_date': '2026-10-13', 'buffett_previous_pct': '235.10',
+             'erp_previous_pct': '5.35',
              'gdp_period': '2026-04-01', 'gdp_value': '32563.03'}
     facts.update(changes)
     return {'data_date': '2026-10-14', 'facts': facts}
@@ -68,7 +70,9 @@ def test_us_barometer_binds_both_grade_values_without_trading_advice():
     result = build_context('us_barometer', barometer())
     text = ''.join(result['slots'].values())
     assert '235.18%' in text and '5.33%' in text
-    assert '性价比分级为较低' in text
+    assert '综合两项指标来看，美股投资性价比相对较低' in text
+    assert '较前一交易日上升0.08个百分点' in text
+    assert '较前一交易日下降0.02个百分点' in text
     assert '买入机会' not in text and '投资建议' not in text
     assert result['scenario'] == 'relatively_low'
 
@@ -99,6 +103,7 @@ def test_us_structure_additive_evidence_keeps_legacy_copy_and_fact_boundaries():
     text = ''.join(result['slots'].values())
     assert '回撤约11%' in text and '4月16日以来低位' in text
     assert '较前一交易日回升' in text
+    assert '近一年波动区间' in text and '综合来看' in text
     assert '资金' not in text
     assert '873.01' not in text  # Absolute gap was deliberately excluded from publication.
 

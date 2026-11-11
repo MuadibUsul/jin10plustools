@@ -26,7 +26,7 @@ FIXED_NOTES['gpu_rental']=(
 # US barometer are composed under the delivered image; the two AI-compute charts
 # draw the same notes inside the plot footer instead.
 IMAGE_NOTE_CATEGORIES=frozenset({
-    'volume','valuation','turnover','us_barometer','liquidity','token_cost','gpu_rental',
+    'volume','valuation','turnover','us_barometer','us_structure','liquidity','token_cost','gpu_rental',
 })
 
 OIL_CLOSING='点击查看完整持仓数据，捕捉油价之外的资金变化。'

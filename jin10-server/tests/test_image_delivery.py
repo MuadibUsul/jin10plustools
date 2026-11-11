@@ -85,7 +85,7 @@ def test_turnover_new_and_archived_images_have_one_standard_watermark(db_factory
 @pytest.mark.parametrize('category',['volume','turnover','valuation','liquidity'])
 def test_real_charts_have_bounded_readable_deliveries(category):
     source=next((Path('app/briefs/samples')/category).glob('*.png'))
-    notes=FIXED_NOTES[category] if category in ('valuation','turnover') else ''
+    notes=FIXED_NOTES[category] if category in ('volume','valuation','turnover') else ''
     image=compose_image(source,notes=notes,dark=category in ('valuation','turnover'),
                         remove_valuation_source=category=='valuation',reuse_footer=category=='liquidity')
     content,suffix,media=encode_image(image)
@@ -95,7 +95,7 @@ def test_real_charts_have_bounded_readable_deliveries(category):
         assert saved.height==image.height
         with Image.open(source) as original:
             assert saved.height>=original.height
-            if category=='turnover':
+            if category in ('volume','turnover'):
                 # The note block sits under the chart without stretching the page.
                 assert original.height+150<image.height<=original.height+420
         assert suffix in ('.png','.jpg') and media.startswith('image/')

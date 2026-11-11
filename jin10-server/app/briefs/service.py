@@ -231,7 +231,7 @@ def delivered_image(issue,version,name):
     source=artifact_path(issue,version,name)
     # AI-compute notes are already drawn in the chart footer. A second delivery
     # band would repeat them under the watermark.
-    band_notes=issue.category in ('valuation','turnover','us_barometer')
+    band_notes=issue.category in ('volume','valuation','turnover','us_barometer')
     notes=version.payload.get('fixed_notes',default_notes(issue.category)) if band_notes else ''
     # Earlier us-barometer editions kept two images; notes belong only on the merged chart.
     if issue.category=='us_barometer' and name!='美股晴雨表.png':notes=''

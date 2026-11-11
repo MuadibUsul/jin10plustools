@@ -251,7 +251,7 @@ def edit(id:uuid.UUID,body:EditRequest,db:DbSession,user:Editor):
     if issue.category in ('token_cost','gpu_rental','liquidity') and body.fixed_notes is not None and not edited_notes:
         raise HTTPException(422,'图片注释不能为空')
     dynamic_body=(complete_body(issue.category,body.dynamic_body,edited_notes)
-                  if issue.category in ('token_cost','gpu_rental','liquidity') else body.dynamic_body.strip())
+                  if issue.category in ('volume','token_cost','gpu_rental','liquidity') else body.dynamic_body.strip())
     if not dynamic_body:
         raise HTTPException(422,'动态正文不能为空')
     staged=None

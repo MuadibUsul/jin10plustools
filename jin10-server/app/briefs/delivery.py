@@ -22,11 +22,11 @@ FIXED_NOTES['gpu_rental']=(
     +chr(10)+'2、A100、H100、B200是英伟达从老到新三代芯片产品（GPU），通常代际越新的GPU性能越好、越能适应大规模复杂大模型，租赁价格也往往越高。'
     +chr(10)+'3、由于GPU价格太高、更新太快等原因，不少企业选择向云服务商、数据中心等租赁芯片，以节省资金投入。相关指数上涨通常意味着GPU更紧缺、需求更旺；下降则说明供应增加或需求降温。')
 
-# Notes for these categories stay off the dynamic body. Valuation, turnover and the
+# Notes for these categories stay off the dynamic body. Volume, valuation, turnover and the
 # US barometer are composed under the delivered image; the two AI-compute charts
 # draw the same notes inside the plot footer instead.
 IMAGE_NOTE_CATEGORIES=frozenset({
-    'valuation','turnover','us_barometer','liquidity','token_cost','gpu_rental',
+    'volume','valuation','turnover','us_barometer','liquidity','token_cost','gpu_rental',
 })
 
 OIL_CLOSING='点击查看完整持仓数据，捕捉油价之外的资金变化。'
@@ -41,7 +41,7 @@ def default_notes(category):
 def complete_body(category,body,notes=None):
     """Append verbatim user-supplied evergreen text, once, after dynamic facts.
 
-    Valuation, turnover, the US barometer and the two AI-compute briefs carry their
+    Volume, valuation, turnover, the US barometer and the two AI-compute briefs carry their
     notes on the delivered image, so their body keeps only the dynamic facts.
     """
     category=ALIASES.get(category,category);body=body.strip()

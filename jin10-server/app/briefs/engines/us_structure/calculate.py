@@ -27,10 +27,11 @@ def change(rows, day):
 
 def change_text(value):
     """Close-to-close wording; percentages come from the fetched series, never copy."""
-    if value > 0:
-        return f'收涨{q2(abs(value)):.2f}%'
-    if value < 0:
-        return f'收跌{q2(abs(value)):.2f}%'
+    rounded = q2(value)
+    if rounded > 0:
+        return f'收涨{rounded:.2f}%'
+    if rounded < 0:
+        return f'收跌{abs(rounded):.2f}%'
     return '收平'
 
 
@@ -90,8 +91,12 @@ def structure(day, data):
     today = rut[rut_index]
     # Durable observations preserve numeric text; a new fetch supplies floats.
     # Compare the values, never their JSON representation or lexical order.
-    lower = [row for row in rut[:rut_index] if Decimal(str(row['low'])) < Decimal(str(today['low']))]
-    low_clause = f'，一度刷新{int(lower[-1]["date"][5:7])}月以来新低' if lower else '，维持在阶段高位'
+    today_low = Decimal(str(today['low']))
+    prior_lows = [Decimal(str(row['low'])) for row in rut[:rut_index]]
+    lower = [row for row in rut[:rut_index] if Decimal(str(row['low'])) < today_low]
+    low_clause = (f'，一度刷新{int(lower[-1]["date"][5:7])}月以来新低' if lower
+                  else '，一度创下本期历史数据新低' if today_low < min(prior_lows)
+                  else '，一度触及本期历史数据低点')
     peak = max(Decimal(str(row['close'])) for row in rut[:rut_index + 1])
     drawdown = (Decimal(str(today['close'])) / Decimal(str(peak)) - 1) * 100
     drawdown_clause = (f'，从历史高点已经回调了{abs(drawdown):.0f}%' if drawdown < 0
@@ -104,13 +109,13 @@ def structure(day, data):
         compare, conclusion = '表现强于三大股指', '小盘股资金面有所修复'
     else:
         compare, conclusion = '与三大股指表现接近', '小盘股资金面未见明显改善'
-    route = '收跌' if changes['rut'] < 0 else '收涨'
+    rut_move = change_text(changes['rut'])
 
     lead_small = '小盘股率先进入调整区间' if drawdown <= -10 else '小盘股仍在高位区间'
     lead_mega = '但巨头也开始承压' if gap_up and not spx_up else '但权重股仍相对强势'
     body = (f'美股市场结构：{lead_small}，{lead_mega}。\n'
             f'1、{three}，标普500等权指数与市值加权指数之差{rebound}，{weight}，{level}，{improve}；\n'
-            f'2、代表小盘股的罗素2000指数也{route}{abs(changes["rut"]):.2f}%{low_clause}{drawdown_clause}，{compare}，{conclusion}。')
+            f'2、代表小盘股的罗素2000指数也{rut_move}{low_clause}{drawdown_clause}，{compare}，{conclusion}。')
     return {
         'title': f'【美股晴雨表】美股{target.month}月{target.day}日市场结构：{verdict}',
         'body': body, 'verdict': verdict, 'gap_rows': window,

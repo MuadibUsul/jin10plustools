@@ -117,6 +117,7 @@ def test_missing_dr007_does_not_backfill_the_previous_close(tmp_path, monkeypatc
     assert snapshot['history']['rows'][-1]['DR007'] == '1.358'
 
 
+@pytest.mark.skipif(not hasattr(time, 'tzset'), reason='time.tzset is unavailable on Windows')
 def test_source_stamp_is_not_shifted_by_the_server_zone():
     previous = os.environ.get('TZ')
     os.environ['TZ'] = 'America/New_York'

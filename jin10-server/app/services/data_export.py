@@ -201,7 +201,7 @@ BRIEF_ISSUES = build_dataset(
 
 BRIEF_VERSIONS = build_dataset(
     key='brief_versions', label='快讯版本', date_label='生产日期',
-    description='固定快讯全部稿件版本（含历史版本）；完整结构化数据见“稿件数据”列。',
+    description='固定快讯保留的稿件版本；已清理旧版的正文与事实见“快讯审核记录”。完整结构化数据见“稿件数据”列。',
     model=BriefVersion, team_column=BriefIssue.team_id, date_column=BriefIssue.issue_date, day=True,
     join=(BriefIssue, BriefVersion.issue_id == BriefIssue.id),
     extra_select=(BriefIssue.issue_date,),

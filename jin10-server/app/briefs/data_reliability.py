@@ -189,7 +189,8 @@ def fields_valid(category,series,values):
         'valuation':('marketCap','gdp','close') if series=='buffett' else ('erp_percent','close'),
         'liquidity':('weighted_rate',),'oil_etf':('barrels',),
         'us_barometer':('value',) if series=='gdp' else ('erp',) if series=='erp' else ('close',),
-        'us_structure':('close','low'),'token_cost':('price',),'gpu_rental':('price',)}[category]
+        'us_structure':('close','low') if series=='rut' else ('close',),
+        'token_cost':('price',),'gpu_rental':('price',)}[category]
     try:
         if any(isinstance(values.get(k),bool) or values.get(k) is None for k in required):return False
         numbers={k:Decimal(str(values[k])) for k in required}

@@ -9,7 +9,7 @@ from app.briefs.engines.us_barometer.fetch_data import UA, checked, get
 SYMBOLS = {'spx': '%5EGSPC', 'ndx': '%5EIXIC', 'dji': '%5EDJI', 'rut': '%5ERUT', 'spxew': '%5ESPXEW'}
 
 
-def series(symbol,start=None,end=None,*,require_low=True):
+def series(symbol,start=None,end=None,*,require_low=False,include_low=True):
     query='range=10y&interval=1d'
     if start is not None:
         first=int(datetime.combine(start,datetime.min.time(),tzinfo=timezone.utc).timestamp())
@@ -19,13 +19,15 @@ def series(symbol,start=None,end=None,*,require_low=True):
     result = json.loads(get(url, {'User-Agent': UA}))['chart']['result'][0]
     stamps = result['timestamp']
     quote = result['indicators']['quote'][0]
+    lows = quote.get('low') or []
     rows = []
     for index, stamp in enumerate(stamps):
-        close, low = quote['close'][index], quote['low'][index]
-        if close is None or require_low and low is None:
+        close = quote['close'][index]
+        low = lows[index] if index < len(lows) else None
+        if close is None or (require_low and low is None):
             continue
         row={'date':datetime.fromtimestamp(stamp,tz=timezone.utc).date().isoformat(),'close':round(float(close),4)}
-        if require_low and low is not None:row['low']=round(float(low),4)
+        if include_low and low is not None:row['low']=round(float(low),4)
         rows.append(row)
     return checked(rows, symbol)
 
@@ -40,7 +42,7 @@ def repair(name,rows,day,*,checkpoint=None,attempt_path=None,start=None,max_requ
     from app.briefs.sources import read,save
     attempts=read(attempt_path) if attempt_path and attempt_path.exists() else {}
     repaired,report=repair_ranges(rows,wanted,
-        lambda first,last:series(symbol,first,last,**({'require_low':False} if name=='wilshire' else {})),
+        lambda first,last:series(symbol,first,last,require_low=name=='rut',include_low=name!='wilshire'),
         checkpoint=checkpoint,attempts=attempts,max_requests=max_requests,
         attempt_checkpoint=(lambda entries:save(attempt_path,entries)) if attempt_path else None)
     return repaired,report
@@ -49,6 +51,6 @@ def repair(name,rows,day,*,checkpoint=None,attempt_path=None,start=None,max_requ
 def fetch(on_series=None):
     result={}
     for name,symbol in SYMBOLS.items():
-        result[name]=series(symbol)
+        result[name]=series(symbol,require_low=name=='rut')
         if on_series:on_series(name,result[name])
     return result

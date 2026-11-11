@@ -7,7 +7,7 @@ from PIL import Image
 
 from app.briefs.engines.us_structure import fetch_data
 from app.briefs.engines.us_structure import run
-from app.briefs.engines.us_structure.calculate import structure
+from app.briefs.engines.us_structure.calculate import change_text, structure
 from app.services.image_delivery import MAX_BYTES, compose_image, encode_image
 
 DAY = '2026-10-14'
@@ -85,6 +85,26 @@ def test_previous_session_changes_are_recomputed_from_each_fetch():
     assert result['facts']['dji_change'] == '0.00'
 
 
+def test_close_only_observation_keeps_the_day_for_indices_that_do_not_use_lows(monkeypatch):
+    import json
+    from datetime import datetime, timezone
+    from app.briefs.data_reliability import fields_valid
+
+    days = ('2026-11-05', '2026-11-06', '2026-11-09')
+    stamps = [int(datetime.fromisoformat(day).replace(tzinfo=timezone.utc).timestamp()) for day in days]
+    response = {'chart': {'result': [{'timestamp': stamps, 'indicators': {'quote': [{
+        'close': [6700.0, 6750.0, 6800.0], 'low': [6680.0, 6730.0, None],
+    }]}}]}}
+    monkeypatch.setattr(fetch_data, 'get', lambda *_: json.dumps(response))
+
+    data = fetch_data.fetch()
+    for name in ('spx', 'ndx', 'dji', 'spxew'):
+        assert data[name][-1]['date'] == days[-1]
+        assert fields_valid('us_structure', name, data[name][-1])
+    assert data['rut'][-1]['date'] == days[-2]
+    assert not fields_valid('us_structure', 'rut', {'close': 6800.0})
+
+
 def test_database_numeric_text_and_new_float_closes_produce_identical_metrics():
     original=fixtures();expected=structure(DAY,original)
     import copy
@@ -93,6 +113,32 @@ def test_database_numeric_text_and_new_float_closes_produce_identical_metrics():
         for row in rows[:-1]:
             row['close']=str(row['close']);row['low']=str(row['low'])
     assert structure(DAY,restored)==expected
+
+
+def test_new_historical_low_and_flat_close_use_accurate_wording():
+    data = fixtures()
+    data['rut'][-1]['low'] = 2600.0
+    data['rut'][-1]['close'] = data['rut'][-2]['close']
+
+    body = structure(DAY, data)['body']
+    assert '一度创下本期历史数据新低' in body
+    assert '罗素2000指数也收平' in body
+    assert '维持在阶段高位' not in body
+    assert '收涨0.00%' not in body
+
+
+def test_tied_historical_low_is_not_called_a_new_low():
+    data = fixtures()
+    data['rut'][-1]['low'] = min(row['low'] for row in data['rut'][:-1])
+
+    body = structure(DAY, data)['body']
+    assert '一度触及本期历史数据低点' in body
+    assert '一度创下本期历史数据新低' not in body
+
+
+@pytest.mark.parametrize('change', [0.004, -0.004, 0.0])
+def test_rounded_zero_change_is_called_flat(change):
+    assert change_text(change) == '收平'
 
 
 @pytest.mark.parametrize('rut_close,expected', [(2800.0, '收涨'), (2600.0, '收跌')])

@@ -19,11 +19,11 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 try:
-    from .calculate import calculate_row, load_history, number
+    from .calculate import calculate_row, display_movement, load_history, number
     from .fetch_free_pe import fetch_pe
     from .fetch_free_bond import fetch_bond, fetch_bond_history, METHOD_ID as BOND_METHOD_ID, CURVE_NAME
 except ImportError:
-    from calculate import calculate_row, load_history, number
+    from calculate import calculate_row, display_movement, load_history, number
     from fetch_free_pe import fetch_pe
     from fetch_free_bond import fetch_bond, fetch_bond_history, METHOD_ID as BOND_METHOD_ID, CURVE_NAME
 
@@ -262,15 +262,14 @@ def _write_csv(path, rows):
 def rule_copy(rows, mode):
     latest, previous = rows[-1], rows[-2]
     value = Decimal(latest['erp_percent'])
-    change = value - Decimal(previous['erp_percent'])
-    movement = '上升' if change > 0 else '下降' if change < 0 else '持平'
-    verb = '升至' if change > 0 else '降至' if change < 0 else '为'
+    scenario, movement = display_movement(value, previous['erp_percent'])
+    verb = '升至' if scenario == 'higher' else '降至' if scenario == 'lower' else '维持在'
     side = '高于' if Decimal(latest['erp']) > THRESHOLD else '低于' if Decimal(latest['erp']) < THRESHOLD else '等于'
     day = date.fromisoformat(latest['date'])
     title = f'【股债性价比】{day.month}月{day.day}日沪深300ERP{verb}{value:.2f}%，{side}6%参考线'
-    delta = f'较前一交易日{movement}{abs(change):.2f}个百分点' if change else '与前一交易日持平'
-    assessment = ('股债相对吸引力较前一交易日有所上升' if change > 0 else
-                  '股债相对吸引力较前一交易日有所下降' if change < 0 else '股债相对吸引力较前一交易日变化不大')
+    delta = f'较前一交易日{movement}'
+    assessment = ('股债相对吸引力较前一交易日有所上升' if scenario == 'higher' else
+                  '股债相对吸引力较前一交易日有所下降' if scenario == 'lower' else '股债相对吸引力较前一交易日变化不大')
     body = f'截至{day.year}年{day.month}月{day.day}日，沪深300股权风险溢价为{value:.2f}%，{delta}，{side}6%参考线。按本指标口径，{assessment}。'
     status = ('离线重放：数据来自用户上传工作簿，并非本次联网更新。' if mode == 'workbook-replay' else
               '免费源正式口径：国债使用中债国债收益率曲线，全历史已重算；PE最近两日来自雪球基金，历史保留原工作簿。' if mode == 'free-official' else

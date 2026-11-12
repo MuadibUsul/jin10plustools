@@ -398,11 +398,13 @@ def valuation(day,out,state,refresh=False):
     record(out,3,'估值输入数据已核验，正在按冻结模板绘制双面板')
     if os.getenv('DATA_COLLECTION_ONLY')!='1':valuation_chart(visible,rows,out)
     ratio=Decimal(updated[day]['market_cap_yi'])/Decimal(gdp['value_yi'])*100
-    erp=Decimal(current['erp_percent']);change=erp-Decimal(prior['erp_percent'])
+    from .engines.valuation.calculate import display_movement
+    erp=Decimal(current['erp_percent']);scenario,movement=display_movement(erp,prior['erp_percent'])
     title=f"【A股温度计】股债性价比指标更新，沪深300ERP报{erp:.2f}%"
     body=(f"{day}，巴菲特指数（A股总市值/上年度全年GDP）为{ratio:.2f}%；"
-          f"沪深300指数股权风险溢价（ERP）为{erp:.2f}%，较{prior['date']}变动{change:+.2f}个百分点，"
-          f"{'高于' if erp>6 else '等于' if erp==6 else '低于'}6%参考线。权益资产相对国债的估值优势较前日{'增强' if change>0 else '减弱' if change<0 else '变化不大'}。")
+          f"沪深300指数股权风险溢价（ERP）为{erp:.2f}%，较{prior['date']}{movement}，"
+          f"{'高于' if erp>6 else '等于' if erp==6 else '低于'}6%参考线。权益资产相对国债的估值优势较前日"
+          f"{'增强' if scenario=='higher' else '减弱' if scenario=='lower' else '变化不大'}。")
     warnings=['巴菲特指数最新值采用东方财富全A上市公司总市值，历史保留原站序列，来源过渡待核对；未宣称与乐咕数值一致',
               'ERP采用免费市值加权PE候选源和中债国债收益率曲线，已记录与原模板的来源差异']
     if cap.get('acquisition_warning'):warnings.append(cap['acquisition_warning'])

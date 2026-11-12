@@ -131,6 +131,7 @@ def _turnover(payload, actual, facts):
 
 
 def _valuation(payload, actual, facts):
+    from .engines.valuation.calculate import display_movement
     latest, prior = facts.get('erp_latest'), facts.get('erp_previous')
     if not isinstance(latest, dict) or not isinstance(prior, dict):
         raise ValueError('incomplete_facts')
@@ -138,16 +139,15 @@ def _valuation(payload, actual, facts):
         raise ValueError('inconsistent_valuation_date')
     buffett = _number(facts.get('buffett_percent'), positive=True)
     erp, previous = (_number(row.get('erp_percent')) for row in (latest, prior))
-    change = erp - previous
-    scenario = 'higher' if change > 0 else 'lower' if change < 0 else 'unchanged'
+    scenario, movement = display_movement(erp, previous)
     main = (f'巴菲特指数（A股总市值/上年度全年GDP）为{_two(buffett)}%；'
             f'沪深300指数股权风险溢价（ERP）为{_two(erp)}%，前值为{_two(previous)}%，较{prior["date"]}')
-    main += f'{"上升" if change > 0 else "下降"}{_two(abs(change))}个百分点。' if change else f'持平（变动{_two(change)}个百分点）。'
+    main += f'{movement}。'
     side = '高于' if erp > 6 else '低于' if erp < 6 else '等于'
     comparison = f'当前ERP{side}6%参考线。'
     return scenario, main, comparison, {'buffett': {'value': str(buffett), 'scope': 'A股总市值/上年度全年GDP'},
                                        'erp': {'value': str(erp), 'previous': str(previous),
-                                               'change_pp': str(change), 'previous_date': prior['date'], 'reference': '6'}}
+                                                'change_pp': str(erp - previous), 'previous_date': prior['date'], 'reference': '6'}}
 
 
 def _liquidity(payload, actual, facts):

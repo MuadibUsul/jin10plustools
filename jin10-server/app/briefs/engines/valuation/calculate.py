@@ -36,6 +36,24 @@ def calculate_row(row):
             'bond_yield_number': str(bond), 'erp': str(erp), 'erp_percent': str(erp*100)}
 
 
+def display_movement(current, previous):
+    """Describe ERP changes at the same two-decimal precision as the published values."""
+    latest = number(current, 'erp_percent')
+    prior = number(previous, 'previous_erp_percent')
+    change = latest - prior
+    shown_latest, shown_prior = f'{latest:.2f}', f'{prior:.2f}'
+    if shown_latest == shown_prior:
+        if change == 0:
+            return 'unchanged', '持平（变动0.00个百分点）'
+        direction = '升' if change > 0 else '降'
+        return 'unchanged', f'按两位小数显示持平（原始值略{direction}）'
+    scenario = 'higher' if change > 0 else 'lower'
+    magnitude = f'{abs(change):.2f}'
+    if magnitude == '0.00':
+        return scenario, f'微{"升" if change > 0 else "降"}，幅度不足两位小数的显示精度'
+    return scenario, f'{"上升" if change > 0 else "下降"}{magnitude}个百分点'
+
+
 def validate_history(rows):
     result = [calculate_row(row) for row in rows]
     days = [row['date'] for row in result]

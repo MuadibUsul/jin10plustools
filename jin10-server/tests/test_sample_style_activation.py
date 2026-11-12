@@ -69,3 +69,35 @@ def test_valuation_style_preserves_the_previous_erp_number_in_real_template_shap
     payload['dynamic_body']=f"{payload['data_date']}，巴菲特指数为{facts['buffett_percent']}%；沪深300ERP为{facts['erp_latest']['erp_percent']}%，前值为{facts['erp_previous']['erp_percent']}%。"
     candidate=editorial_suite.build_candidate('valuation',payload)
     assert f"前值为{float(facts['erp_previous']['erp_percent']):.2f}%" in candidate['body']
+
+
+def test_valuation_sub_display_change_does_not_claim_a_zero_point_drop():
+    from app.briefs.engines.valuation.calculate import display_movement
+    from app.briefs.engines.valuation.run_erp import rule_copy
+    from app.briefs.sample_story import fact_bank
+
+    previous = '5.832920505200594353640416048'
+    current = '5.831044237918215613382899628'
+    assert display_movement(current, previous) == (
+        'unchanged', '按两位小数显示持平（原始值略降）')
+    assert display_movement(previous, previous) == ('unchanged', '持平（变动0.00个百分点）')
+
+    payload = source('valuation')
+    payload['data_date'] = '2026-11-11'
+    payload['facts']['buffett_percent'] = '84.69'
+    payload['facts']['erp_latest'] = {'date': '2026-11-11', 'erp_percent': current}
+    payload['facts']['erp_previous'] = {'date': '2026-11-10', 'erp_percent': previous}
+    payload['dynamic_body'] = ('2026-11-11，巴菲特指数（A股总市值/上年度全年GDP）为84.69%；'
+        '沪深300指数股权风险溢价（ERP）为5.83%，较2026-11-10按两位小数显示持平（原始值略降），'
+        '低于6%参考线。权益资产相对国债的估值优势较前日变化不大。')
+
+    candidate = editorial_suite.build_candidate('valuation', payload)
+    assert candidate['scenario'] == 'unchanged'
+    assert '按两位小数显示持平（原始值略降）' in candidate['body']
+    bank, headlines = fact_bank('valuation', payload, editorial_suite._context('valuation', payload), candidate)
+    assert bank and '沪深300ERP维持在5.83%' in headlines[0]['text']
+    assert '下降0.00' not in candidate['body']
+
+    rows = [{'date': '2026-11-10', 'erp_percent': previous, 'erp': '0.058329205052'},
+            {'date': '2026-11-11', 'erp_percent': current, 'erp': '0.058310442379'}]
+    assert '下降0.00' not in rule_copy(rows, 'free-official')

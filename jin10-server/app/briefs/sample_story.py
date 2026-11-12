@@ -154,10 +154,12 @@ def fact_bank(category,payload,context,candidate):
         verb='回升' if Decimal(facts['change_yi'])>0 else '回落' if Decimal(facts['change_yi'])<0 else '持平'
         headlines.insert(0,f"{prefix}两市成交额{verb}至{Decimal(facts['amount_yi'])/10000:.2f}万亿元")
     elif category=='valuation':
+        from .engines.valuation.calculate import display_movement
         latest=Decimal(str(facts['erp_latest']['erp_percent']));previous=Decimal(str(facts['erp_previous']['erp_percent']))
+        scenario,_=display_movement(latest,previous)
         if previous>=6>latest:headlines.insert(0,f'{prefix}ERP回落至6%参考线下方，股债估值优势减弱')
         elif previous<6<=latest:headlines.insert(0,f'{prefix}ERP重返6%参考线，股债估值优势增强')
-        else:headlines.insert(0,f"{prefix}沪深300ERP{'升至' if latest>previous else '降至' if latest<previous else '维持'}{latest:.2f}%")
+        else:headlines.insert(0,f"{prefix}沪深300ERP{'升至' if scenario=='higher' else '降至' if scenario=='lower' else '维持在'}{latest:.2f}%")
     elif category=='liquidity':
         quotes={r['product']:r for r in facts['quotes']['rows']}
         headlines.insert(0,f"{prefix}DR007收盘加权利率报{quotes['DR007']['weighted_rate']}%")

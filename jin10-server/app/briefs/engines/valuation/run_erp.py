@@ -11,6 +11,7 @@ import argparse
 import csv
 import hashlib
 import json
+import re
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
@@ -31,7 +32,9 @@ CHINA = timezone(timedelta(hours=8))
 HISTORY_START = '2015-01-01'
 THRESHOLD = Decimal('0.06')
 CSI_ENDPOINT = 'https://www.csindex.com.cn/csindex-home/perf/index-perf'
+CSI_DAILY_REPORT = 'https://oss-ch.csindex.com.cn/static/html/csindex/public/uploads/researches/files/zh_CN/csiindexdailyreport{}.pdf'
 MAX_RESPONSE_BYTES = 4 * 1024 * 1024
+MAX_REPORT_BYTES = 8 * 1024 * 1024
 
 
 class ERPWorkflowError(RuntimeError):
@@ -58,7 +61,7 @@ def _day(value):
     return value
 
 
-def _normalize_close(raw, wanted_dates):
+def _normalize_close(raw, wanted_dates, *, require_all=True):
     try:
         payload = json.loads(raw.decode('utf-8-sig'), parse_float=Decimal,
                              parse_constant=lambda _: (_ for _ in ()).throw(ValueError('nonfinite')))
@@ -83,9 +86,65 @@ def _normalize_close(raw, wanted_dates):
         result[day] = {'date': day, 'close': str(close), 'source': 'CSI_official_index_performance'}
         # ``peg`` is deliberately ignored: it is not the requested PE-TTM source.
     missing = sorted(set(wanted_dates) - result.keys())
-    if missing:
+    if missing and require_all:
         raise ERPWorkflowError('missing_close_session', 'CSI lacks required sessions: ' + ', '.join(missing))
-    return [result[d] for d in sorted(wanted_dates)]
+    return [result[d] for d in sorted(set(wanted_dates) & result.keys())]
+
+
+def _daily_report_close(raw, day):
+    """Read the dated CSI 300 row from CSI's official daily market report."""
+    import pymupdf
+
+    if not raw.startswith(b'%PDF-'):
+        raise ERPWorkflowError('invalid_close_report', 'CSI daily report is not a PDF.')
+    try:
+        with pymupdf.open(stream=raw, filetype='pdf') as report:
+            if report.is_encrypted or report.page_count < 2:
+                raise ERPWorkflowError('invalid_close_report', 'CSI daily report is incomplete.')
+            year, month, number_day = (int(part) for part in day.split('-'))
+            cover = report[0].get_text()
+            dated = re.search(rf'(?<!\d){year}\D{{1,5}}{month}\D{{1,5}}{number_day}(?!\d)', cover)
+            if not dated:
+                raise ERPWorkflowError('invalid_close_report', f'CSI daily report does not identify {day}.')
+            matches = []
+            for page in report:
+                lines = [line.strip() for line in page.get_text().splitlines()]
+                for index, line in enumerate(lines):
+                    if line == '000300':
+                        matches.append(lines[index:index + 6])
+    except (pymupdf.FileDataError, IndexError) as exc:
+        raise ERPWorkflowError('invalid_close_report', 'CSI daily report cannot be read.') from exc
+    if len(matches) != 1 or len(matches[0]) != 6:
+        raise ERPWorkflowError('invalid_close_report', 'CSI daily report lacks a unique 000300 row.')
+    row = matches[0]
+    if ('300' not in row[1] or row[2] != '20041231 20050408 1000'
+            or not re.fullmatch(r'[\d,]+', row[3]) or not re.fullmatch(r'[\d,]+', row[4])):
+        raise ERPWorkflowError('invalid_close_report', 'CSI daily report 000300 row changed format.')
+    close = number(row[5], 'CSI daily report close')
+    if close <= 0:
+        raise ERPWorkflowError('invalid_close_report', 'CSI daily report close is not positive.')
+    return {'date': day, 'close': str(close), 'source': 'CSI_official_daily_report'}
+
+
+def fetch_daily_report_close(day, output_dir):
+    url = CSI_DAILY_REPORT.format(day.replace('-', ''))
+    try:
+        with urlopen(Request(url, headers={'User-Agent': 'Mozilla/5.0', 'Accept': 'application/pdf'}), timeout=30) as response:
+            raw = response.read(MAX_REPORT_BYTES + 1)
+    except HTTPError as exc:
+        raise ERPWorkflowError('missing_close_session', f'CSI daily report for {day} returned HTTP {exc.code}.') from None
+    except (URLError, TimeoutError, OSError):
+        raise ERPWorkflowError('close_network_error', f'CSI daily report acquisition failed for {day}.') from None
+    if len(raw) > MAX_REPORT_BYTES:
+        raise ERPWorkflowError('invalid_close_report', 'CSI daily report exceeds the size limit.')
+    output = Path(output_dir)
+    output.mkdir(parents=True, exist_ok=True)
+    digest = hashlib.sha256(raw).hexdigest()
+    path = output / f'csiindexdailyreport-{day.replace("-", "")}-{digest[:12]}.pdf'
+    path.write_bytes(raw)
+    return {'row': _daily_report_close(raw, day),
+            'raw_evidence': {'url': url, 'path': str(path.resolve()), 'sha256': digest},
+            'captured_at': datetime.now(CHINA).isoformat()}
 
 
 def fetch_close(expected_date, previous_date, output_dir,*,all_between=False):
@@ -110,7 +169,12 @@ def fetch_close(expected_date, previous_date, output_dir,*,all_between=False):
     if all_between:
         from app.briefs.trading_calendar import sessions
         wanted=set(sessions('xshg',min(wanted),max(wanted)))
-    return {'source': 'CSI_official_index_performance', 'rows': _normalize_close(raw, wanted),
+    rows = _normalize_close(raw, wanted, require_all=all_between)
+    missing = sorted(wanted - {row['date'] for row in rows})
+    reports = [fetch_daily_report_close(day, output / 'daily-reports') for day in missing] if not all_between else []
+    rows.extend(report['row'] for report in reports)
+    return {'source': 'CSI_official_index_performance_and_daily_report' if reports else 'CSI_official_index_performance',
+            'rows': sorted(rows, key=lambda row: row['date']), 'daily_reports': reports,
             'raw_evidence': {'url': url, 'path': str(path.resolve()),
                              'sha256': hashlib.sha256(raw).hexdigest()},
             'captured_at': datetime.now(CHINA).isoformat()}
@@ -404,7 +468,7 @@ def run_erp(workbook, out_dir, *, mode, expected_date, bond_history=None, force_
             by_date[day] = {**(original or {}), 'date': day, 'close': close_rows[day]['close'],
                             'pe_ttm_mcw': str(pe_input), 'pe_ttm_mcw_raw': str(pe_raw),
                             'pe_source': pe_rows[day].get('source', pe['source']),
-                            'close_source': close['source'],
+                            'close_source': close_rows[day].get('source', close['source']),
                             'source_status': 'free_sources_verified_latest_two_sessions',
                             'pe_input_precision_policy': 'two_decimal_places_matching_latest_uploaded_input_convention'}
             transitions.append({'date': day, 'old_close': original['close'] if original else None,

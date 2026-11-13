@@ -30,7 +30,7 @@ function showDetail() {
   if (detailDialog.showModal) detailDialog.showModal();
   else detailDialog.setAttribute('open', '');
 }
-function clearDetailState() { dirty = false; selected = current = null; clearImages(); }
+function clearDetailState() { dirty = false; selected = current = null; clearImages(); $('#history-exports').hidden = true; }
 function hideDetail() {
   if (!detailDialog || !detailDialog.open) return;
   if (detailDialog.close) { detailDialog.close(); return; }
@@ -140,6 +140,11 @@ function renderCards() {
     }
     const controls = node('div', undefined, 'toolbar');
     if (version) { const view = node('button', needsReview ? '核对新稿' : '查看确认稿', 'primary'); view.onclick = () => safe(() => open(item)); controls.append(view); }
+    if (version && category.id === 'us_barometer') {
+      const exports = node('button', '历史数据导出');
+      exports.onclick = () => safe(() => open(item, version.number));
+      controls.append(exports);
+    }
     if (needsReview && item.versions.some((entry) => entry.number === confirmed)) {
       const viewConfirmed = node('button', '查看确认稿');
       viewConfirmed.onclick = () => safe(() => open(item, confirmed));
@@ -332,8 +337,23 @@ async function showVersion() {
   $('#warnings').replaceChildren(...warnings.map((s) => node('p', s)));
   $('#facts').textContent = JSON.stringify(v.facts, null, 2);
   for (const id of ['save', 'confirm', 'unconfirm', 'rerender', 'refetch']) $(`#${id}`).hidden = !canEdit();
-  dirty = false; updateDetailControls();
+  dirty = false; renderHistoryExports(v); updateDetailControls();
   await loadImages(v);
+}
+function renderHistoryExports(v) {
+  const panel = $('#history-exports');
+  const actions = $('#history-export-actions');
+  actions.replaceChildren();
+  panel.hidden = selected?.category !== 'us_barometer' || !v?.data_date || (me.user.role === 'viewer' && selected.confirmed_version !== v.number);
+  if (panel.hidden) return;
+  $('#history-export-label').textContent = `历史数据导出（CSV）· 第 ${v.number} 版`;
+  for (const [metric, label] of [['buffett', '导出巴菲特指数历史数据'], ['erp', '导出风险溢价历史数据']]) {
+    const button = node('button', label);
+    button.dataset.download = '';
+    const url = `/api/briefs/issues/${selected.id}/history/${v.number}/${metric}.csv`;
+    button.onclick = () => safe(async () => { await download(url); toast('历史数据已开始下载。'); });
+    actions.append(button);
+  }
 }
 function updateDetailControls() {
   const latest = current?.number === selected?.version;
@@ -347,6 +367,7 @@ function updateDetailControls() {
   $('#rerender').title = !latest ? '仅可为当前最新版本重新制图' : dirty ? '请先保存修改' : '';
   $('#refetch').disabled = actionBusy || dirty;
   for (const button of $('#images').querySelectorAll('[data-download]')) button.disabled = actionBusy || dirty;
+  for (const button of $('#history-export-actions').querySelectorAll('[data-download]')) button.disabled = actionBusy || dirty;
 }
 async function loadImages(v) {
   const key = JSON.stringify([selected.id, v.number, v.images]);
@@ -370,16 +391,6 @@ async function loadImages(v) {
       button.dataset.download = '';
       button.disabled = actionBusy || dirty;
       button.onclick = () => safe(async () => { await download(file.url); toast('图片已开始下载。'); }); children.push(image, button);
-    }
-    if (selected.category === 'us_barometer' && v.images.length) {
-      for (const [metric, label] of [['buffett', '下载巴菲特指数历史数据'], ['erp', '下载风险溢价历史数据']]) {
-        const button = node('button', label);
-        button.dataset.download = '';
-        button.disabled = actionBusy || dirty;
-        const url = `/api/briefs/issues/${selected.id}/history/${v.number}/${metric}.csv`;
-        button.onclick = () => safe(async () => { await download(url); toast('历史数据已开始下载。'); });
-        children.push(button);
-      }
     }
     $('#images').replaceChildren(...children);
     for (const url of nextBlobs) blobs.add(url);

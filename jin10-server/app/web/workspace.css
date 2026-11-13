@@ -77,3 +77,6 @@ button.primary:active:not(:disabled){box-shadow:0 0 0 3px rgba(71,122,226,.18)}
 
 .model-picker select{display:block;width:100%;margin-top:8px}
 .model-picker input{margin-top:8px}
+.history-exports{padding:12px 14px;margin:0 0 14px;background:#f5f8fd;border:1px solid #dfe8f4;border-radius:10px}
+.history-exports strong{font-size:13px}
+.history-exports .toolbar{margin:10px 0 0}

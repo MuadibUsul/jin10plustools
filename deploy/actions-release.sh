@@ -24,6 +24,8 @@ grep -Fq 'PLUS_RELEASE_IMAGE' "$compose" || {
   exit 1
 }
 cd "$root"
+exec 9> "$root/.release.lock"
+flock -n 9 || { echo 'Another PLUS release is active' >&2; exit 1; }
 
 compose_cmd=(docker compose --env-file "$env_file" -f "$compose" -p plus)
 for service in api db brief-worker; do
@@ -137,6 +139,22 @@ docker exec plus-api python -c "from alembic.config import Config; from alembic.
 docker exec plus-api python -c "from app.db.session import get_session_factory; from app.services.team_settings import migrate_tokens; db=get_session_factory()(); print('Migrated legacy encrypted provider tokens:',migrate_tokens(db)); db.close()"
 
 release_stage=worker_replacing
+# Keep the site's existing Compose and enable the release's worker probe with
+# a service-scoped override. Subsequent releases reuse this managed override.
+health_override="$root/brief-worker-health.yml"
+[[ ! -L "$health_override" ]] || { echo 'Worker health override must not be a symlink' >&2; exit 1; }
+cat > "$health_override" <<'YAML'
+services:
+  brief-worker:
+    healthcheck:
+      disable: false
+      test: ["CMD", "python", "-m", "app.services.production_health", "--worker"]
+      interval: 30s
+      timeout: 10s
+      start_period: 60s
+      retries: 3
+YAML
+compose_cmd=(docker compose --env-file "$env_file" -f "$compose" -f "$health_override" -p plus)
 if ! PLUS_RELEASE_IMAGE="$release_image" "${compose_cmd[@]}" up -d --no-deps --no-build brief-worker; then
   exit 1
 fi

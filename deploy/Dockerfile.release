@@ -6,6 +6,9 @@ COPY jin10-server/pyproject.toml /srv/pyproject.toml
 COPY jin10-server/requirements.lock /srv/requirements.lock
 COPY runtime-wheels /opt/plus-runtime-wheels
 RUN python -m pip install --no-cache-dir --no-index --no-deps --find-links=/opt/plus-runtime-wheels -r /srv/requirements.lock
+# Reused runtime images may contain application files removed by this release.
+# Clear application directories in this build layer before copying the revision.
+RUN rm -rf /srv/app /srv/alembic /srv/templates /srv/skills
 COPY jin10-server/app /srv/app
 COPY jin10-server/alembic /srv/alembic
 COPY jin10-server/alembic.ini /srv/alembic.ini

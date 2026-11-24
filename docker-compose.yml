@@ -43,7 +43,11 @@ services:
     restart: unless-stopped
     command: ["python", "-m", "app.briefs.worker"]
     healthcheck:
-      disable: true
+      test: ["CMD", "python", "-m", "app.services.production_health", "--worker"]
+      interval: 30s
+      timeout: 10s
+      start_period: 60s
+      retries: 3
     depends_on:
       db:
         condition: service_healthy

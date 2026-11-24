@@ -162,6 +162,9 @@ def claim(factory,now=None):
     if drain_requested():return None
     now=now or utcnow()
     with factory() as db:
+        db.execute(update(BriefJob).where(BriefJob.status=='running',BriefJob.lease_until<now,
+                   BriefJob.attempts>=6).values(status='failed',active_key=None,
+                   error='任务连续中断6次，已停止自动恢复；请检查任务日志后重试',lease_until=None,updated_at=now))
         # Main loop has one advisory-locked runner; expired jobs survive restarts.
         db.execute(update(BriefJob).where(BriefJob.status=='running',BriefJob.lease_until<now)
                    .values(status='queued',error='上次运行中断，已重新排队',lease_until=None))
@@ -279,6 +282,7 @@ def execute(factory,id):
         save(out/'render-input.json',render_payload)
     record(out,1,f'任务开始：生产日 {day}，目标数据日 {target_day}')
     restored=0
+    history_restore_error=None
     try:
         with factory() as db:
             from .repair import recover_snapshots,restore_working_history
@@ -287,6 +291,9 @@ def execute(factory,id):
                 restored=restore_working_history(db,team_id,category,root/'history'/category)
             db.commit()
     except (ValueError,OSError) as exc:
+        history_restore_error=type(exc).__name__
+        log.exception('Historical evidence restoration failed for job %s',id)
+        record(out,1,'历史恢复失败（'+history_restore_error+'），继续读取原始来源；请检查本次历史恢复诊断')
         from .sources import save
         save(out/'history-restore-error.json',{'error':str(exc),'fresh_acquisition_continues':True})
     if restored:record(out,1,f'已从数据库恢复{restored}条真实历史记录')
@@ -463,6 +470,8 @@ def execute(factory,id):
                     save_payload(cache, cached)
     if payload and payload.get('valid'):
         from .sources import save
+        if history_restore_error:
+            payload.setdefault('warnings',[]).append('本次历史恢复失败（'+history_restore_error+'）；成稿已通过后续数据校验，历史恢复仍需排查')
         if ai.get('configuration_error'):
             payload.setdefault('warnings',[]).append('AI密钥无法解密，已保留完整风格规则稿；请管理员重新配置该接入')
         # The date cache deliberately keeps the validated pre-Skill rule product;
@@ -553,19 +562,45 @@ def execute(factory,id):
                '生成完成，稿件与快照已保存，可查看与取稿' if job.status=='succeeded' else job.error)
 
 
+def execute_safely(factory, job_id):
+    try:
+        execute(factory, job_id)
+    except Exception as exc:
+        log.exception('Brief task crashed %s',job_id)
+        # An unexpected exception must become a visible terminal result. If the
+        # database is down, the lease remains the recovery boundary on restart.
+        with factory() as db:
+            job=db.get(BriefJob,job_id)
+            if job is None or job.status!='running':
+                return
+            job.status='failed';job.active_key=None;job.lease_until=None
+            job.error='任务执行异常（'+type(exc).__name__+'）；请检查服务端日志，核对后重试'
+            job.updated_at=utcnow()
+            record(root_for(job.team_id)/'runs'/str(job_id),1,job.error)
+            db.commit()
+
+
 def main():
     logging.basicConfig(level=logging.INFO)
     factory=get_session_factory();engine=get_engine()
     # A session advisory lock also protects shared per-team historical snapshots.
     from .worker_lock import WorkerLock
+    from app.services.production_health import record_alerts
+    next_health_check=0
     with WorkerLock(engine,get_settings().storage_dir/'.brief-worker.lock',abort_on_lock_loss) as guard:
         while True:
             guard.check()
             try:
                 heartbeat('idle')
                 if drain_requested():time.sleep(5);continue
+                if time.monotonic()>=next_health_check:
+                    next_health_check=time.monotonic()+60
+                    try:
+                        record_alerts(factory)
+                    except Exception:
+                        log.exception('Production health inspection failed')
                 schedule(factory);schedule_reconciliation(factory);id=claim(factory)
-                if id:execute(factory,id);continue
+                if id:execute_safely(factory,id);continue
             except Exception:log.exception('Brief worker iteration failed')
             time.sleep(30)
 

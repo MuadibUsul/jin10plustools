@@ -208,9 +208,11 @@ def issue_out(db,issue):
 
 def job_out(item):
     from .progress import for_job
+    from .failures import job_failure
     return {'id':str(item.id),'category':item.category,'issue_date':item.issue_date,'action':item.action,
         'render_base_version':item.render_base_version,
         'preview':item.preview,'status':item.status,'attempts':item.attempts,'error':item.error,
+        'failure':job_failure(item,root_for(item.team_id)),
         'next_attempt_at':item.next_attempt_at,'created_at':item.created_at,'updated_at':item.updated_at,
         'progress':for_job(item,root_for(item.team_id))}
 

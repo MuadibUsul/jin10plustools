@@ -5,6 +5,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 from datetime import date, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
@@ -80,10 +81,13 @@ def volume(day,out,state,refresh=False):
     # historical runs. A shorter source response never replaces accumulated data.
     start=(date.fromisoformat(day)-timedelta(days=366)).isoformat()
     for page in range(1,51):
+        remaining=float(os.getenv('SOURCE_DEADLINE_MONOTONIC','inf'))-time.monotonic()
+        if remaining<=0:
+            page_error='本次来源读取预算已用完';break
         url='https://mp-api.jin10.com/api/dynamic-data/child?'+urlencode({'page':page,'limit':100,'tb_name':'_vir_64','order':'date,desc'})
         request=Request(url,headers={'x-app-id':'fiXF2nOnDycGutVA','x-version':'1.0','Referer':'https://www.jin10.com/','User-Agent':'Mozilla/5.0'})
         try:
-            with urlopen(request,timeout=25) as response:raw=response.read(4_000_001)
+            with urlopen(request,timeout=min(25,max(.1,remaining))) as response:raw=response.read(4_000_001)
         except (OSError,RuntimeError) as exc:
             page_error=str(exc);break
         if len(raw)>4_000_000:page_error='成交额来源过大';break
@@ -102,7 +106,17 @@ def volume(day,out,state,refresh=False):
     else:page_error='成交额达到分页上限，区间尚未覆盖'
     if page_error:save(out/'volume-pagination-error.json',{'page':page,'error':page_error})
     rows=[row for row in stored if row['date']<=day]
-    if not any(row['date']==day for row in fresh):raise ValueError('成交额目标日期尚未更新；已补存可取得的真实历史')
+    if not any(row['date']==day for row in fresh):
+        from .failures import MissingObservations,SourceUnavailable,SourceContractError
+        if day in seen:
+            raise SourceContractError('成交额来源已返回目标日期，但解析未得到完整沪深明细；请核查原始响应与解析程序',
+                                      source='jin10_hushen_turnover_yi_v1')
+        if page_error:
+            raise SourceUnavailable('成交额来源读取未完成：'+page_error[:200],source='jin10_hushen_turnover_yi_v1')
+        raise MissingObservations('成交额目标日期尚未更新；已补存可取得的真实历史',
+                                  source='jin10_hushen_turnover_yi_v1',missing_dates=[day],
+                                  latest_date=max((row['date'] for row in fresh),default=None),
+                                  publication_checked=not capture_errors)
     require_window(rows,'xshg',day,21,label='成交额20日均线及前日比较')
     result=render_volume(rows,out)
     if capture_errors:result['warnings'].append(f'来源有{len(capture_errors)}条不完整记录，已保留其余真实数据，未补填缺值')

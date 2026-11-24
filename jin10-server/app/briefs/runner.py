@@ -287,7 +287,8 @@ def main():
         # Never include request headers, model keys or raw response bodies.
         save(Path(args.root)/'runs'/args.run_id/'error.json',{'type':type(exc).__name__,
              'code':getattr(exc,'code',None),'message':getattr(exc,'user_message',str(exc))[:500],
-             'retryable':getattr(exc,'retryable',True),'missing_dates':getattr(exc,'missing_dates',[])})
+             'retryable':getattr(exc,'retryable',True),'missing_dates':getattr(exc,'missing_dates',[]),
+             'source':getattr(exc,'source',None),'latest_date':getattr(exc,'latest_date',None)})
         from .progress import read
         folder=Path(args.root)/'runs'/args.run_id
         record(folder,read(folder).get('step',1),'执行失败：'+str(exc)[:500])

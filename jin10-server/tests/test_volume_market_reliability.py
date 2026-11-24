@@ -155,3 +155,89 @@ def test_retained_flash_draft_cannot_be_confirmed_even_without_legacy_digest(db_
         reason=volume_edition_exclusion(db,seed['editor'].team_id,{
             'facts':{'source':'https://flash.jin10.com/detail/20261120150127681800'}},tmp_path)
         assert '已隔离' in reason
+
+
+def test_confirming_legacy_intraday_draft_quarantines_it_and_keeps_the_original(client, db_factory, seed):
+    """A retained noon print cannot be adopted before the next collection job."""
+    from PIL import Image
+    from app.briefs.service import append_version, enqueue, ensure_issue, root_for
+    from app.briefs.trading_calendar import previous_session
+    from app.db.models import BriefDataPoint, BriefIssue, BriefVersion
+    from tests.conftest import login
+    team = seed['editor'].team_id
+    end = date(2026, 11, 23)
+    days = [end]
+    while len(days) < 21:
+        days.append(previous_session('xshg', days[-1]))
+    days = [day.isoformat() for day in reversed(days)]
+    intraday = {'date': '2026-11-23', 'turn': '9163.71158132', 'vol': '671.614390'}
+    closing = {'date': '2026-11-23', 'turn': '15528.8017283684', 'vol': '1119.564804',
+               'source_kind': 'eastmoney_daily_index'}
+    raw = json.dumps({'data': [{
+        'date': '2026-11-23', 'sh_turn': '4000', 'sz_turn': '5163.71158132',
+        'sh_vol': '300', 'sz_vol': '371.614390', 'updated_at': '2026-11-23T11:59:00+08:00'}]}).encode()
+    with db_factory() as db:
+        job = enqueue(db, team, date(2026, 11, 24), 'volume')
+        save_points(db, team, 'volume', [
+            {'series': 'volume', 'method': 'jin10_hushen_turnover_yi_v1', 'date': intraday['date'],
+             'values': dict(intraday)}], job.id)
+        save_points(db, team, 'volume', [
+            {'series': 'volume', 'method': volume_market.SOURCE, 'date': closing['date'],
+             'values': dict(closing)}], job.id)
+        db.add(BriefSourceSnapshot(team_id=team, job_id=job.id, category='volume', attempt=1,
+            data_date=end, relative_path='volume-raw-page-1.json',
+            sha256=hashlib.sha256(raw).hexdigest(), content=raw, byte_count=len(raw)))
+        issue = ensure_issue(db, team, date(2026, 11, 24), 'volume')
+        root = root_for(team)
+        old = root / 'runs' / 'old-intraday'
+        old.mkdir(parents=True)
+        rows = [{'date': day, 'turn': f'{1000+index}.1', 'vol': f'{10+index}.1'} for index, day in enumerate(days)]
+        rows[-1] = dict(intraday)
+        (old / 'plot-data.json').write_text(json.dumps(rows), encoding='utf-8')
+        Image.new('RGB', (40, 20), 'white').save(old / 'chart.png')
+        old_payload = {'title': '原稿', 'dynamic_body': '盘中原稿保留。', 'data_date': '2026-11-23',
+            'images': ['chart.png'], 'image_sha256': {'chart.png': hashlib.sha256((old / 'chart.png').read_bytes()).hexdigest()},
+            'artifact_dir': 'runs/old-intraday', 'facts': {'source': 'https://www.jin10.com/example'},
+            'valid': True, 'preview': True}
+        append_version(db, issue, old_payload, user_id=seed['editor'].id)
+        db.commit()
+        issue_id = issue.id
+        intraday_id = db.scalar(select(BriefDataPoint.id).where(BriefDataPoint.team_id==team,
+            BriefDataPoint.method=='jin10_hushen_turnover_yi_v1'))
+        closing_id = db.scalar(select(BriefDataPoint.id).where(BriefDataPoint.team_id==team,
+            BriefDataPoint.method==volume_market.SOURCE))
+    headers = login(client, 'editor@plus.test')
+    blocked = client.post(f'/api/briefs/issues/{issue_id}/confirm', json={'version': 1}, headers=headers)
+    assert blocked.status_code == 409
+    assert '已隔离' in blocked.json()['detail'] and '重新生成' in blocked.json()['detail']
+    with db_factory() as db:
+        kept = db.get(BriefDataPoint, intraday_id)
+        assert kept.quality_status == 'rejected' and kept.values['turn'] == intraday['turn']
+        assert kept.values['vol'] == intraday['vol'] and '盘中' in kept.quality_reason
+        assert db.get(BriefDataPoint, closing_id).quality_status == 'accepted'
+        assert db.get(BriefDataPoint, closing_id).values['turn'] == closing['turn']
+        assert db.get(BriefIssue, issue_id).confirmed_version is None
+        original = db.scalar(select(BriefVersion).where(BriefVersion.issue_id==issue_id, BriefVersion.number==1))
+        assert original.payload['dynamic_body'] == '盘中原稿保留。'
+        assert original.payload['facts']['source'] == 'https://www.jin10.com/example'
+        assert json.loads((root_for(team)/'runs'/'old-intraday'/'plot-data.json').read_text(encoding='utf-8'))[-1]['turn'] == intraday['turn']
+        fresh = root_for(team) / 'runs' / 'verified-close'
+        fresh.mkdir(parents=True)
+        fresh_rows = [dict(row) for row in rows]
+        fresh_rows[-1] = dict(closing)
+        (fresh / 'plot-data.json').write_text(json.dumps(fresh_rows), encoding='utf-8')
+        Image.new('RGB', (40, 20), 'white').save(fresh / 'chart.png')
+        fresh_payload = {'title': '重生成稿', 'dynamic_body': '已核验收盘。', 'data_date': '2026-11-23',
+            'images': ['chart.png'], 'image_sha256': {'chart.png': hashlib.sha256((fresh / 'chart.png').read_bytes()).hexdigest()},
+            'artifact_dir': 'runs/verified-close', 'facts': {'source': 'https://quote.eastmoney.com/zs000001.html',
+            'amount_yi': closing['turn']}, 'valid': True, 'preview': True}
+        append_version(db, db.get(BriefIssue, issue_id), fresh_payload, user_id=seed['editor'].id)
+        db.commit()
+    adopted = client.post(f'/api/briefs/issues/{issue_id}/confirm', json={'version': 2}, headers=headers)
+    assert adopted.status_code == 200, adopted.text
+    assert adopted.json()['confirmed_version'] == 2
+    with db_factory() as db:
+        assert db.get(BriefDataPoint, intraday_id).values == {'date': intraday['date'], 'turn': intraday['turn'], 'vol': intraday['vol']}
+        assert db.get(BriefIssue, issue_id).confirmed_version == 2
+        original = db.scalar(select(BriefVersion).where(BriefVersion.issue_id==issue_id, BriefVersion.number==1))
+        assert original.payload['dynamic_body'] == '盘中原稿保留。'

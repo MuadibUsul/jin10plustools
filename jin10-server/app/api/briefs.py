@@ -287,14 +287,20 @@ def confirm(id:uuid.UUID,body:ConfirmRequest,db:DbSession,user:Editor):
     version=db.scalars(select(BriefVersion).where(BriefVersion.issue_id==id,BriefVersion.number==body.version)).first()
     if not version or not version.payload.get('valid'):raise HTTPException(409,'数据或图片未通过基础校验')
     if issue.category=='volume':
-        from app.briefs.observation_quality import volume_edition_exclusion
+        from app.briefs.observation_quality import quarantine_volume, volume_edition_exclusion
         from app.briefs.service import root_for
         root=root_for(user.team_id).resolve();folder=(root/version.payload.get('artifact_dir','')).resolve()
         if not folder.is_relative_to(root):raise HTTPException(409,'稿件来源路径无效')
-        try:exclusion=volume_edition_exclusion(db,user.team_id,version.payload,folder)
+        try:
+            # Mark retained intraday rows before the edition check. A later collection
+            # job must not be required, and the original values stay in place.
+            quarantine_volume(db,user.team_id)
+            exclusion=volume_edition_exclusion(db,user.team_id,version.payload,folder)
         except (ValueError,OSError,KeyError,TypeError):
             raise HTTPException(409,'稿件数据快照未通过质量核验，请重新生成') from None
-        if exclusion:raise HTTPException(409,exclusion)
+        if exclusion:
+            db.commit()
+            raise HTTPException(409,exclusion)
     reliability=version.payload.get('data_reliability') or {}
     if reliability.get('publication_digest'):
         source_day=date.fromisoformat(version.payload['data_date'])

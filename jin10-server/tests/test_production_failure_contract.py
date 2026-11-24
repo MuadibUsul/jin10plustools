@@ -96,11 +96,13 @@ def test_health_exposes_failed_job_with_team_scoped_diagnostics(db_factory,seed,
 
 def test_unexpected_task_crash_is_visible_and_releases_active_key(db_factory,seed,monkeypatch):
     from app.briefs import worker
-    from app.briefs.service import enqueue
-    from app.db.models import BriefJob
+    from app.briefs.service import enqueue,root_for
+    from app.db.models import BriefJob,BriefSourceSnapshot
+    from sqlalchemy import select
     with db_factory() as db:
         job=enqueue(db,seed['editor'].team_id,date(2026,11,24),'volume')
         job.status='running';db.commit();ident=job.id
+        save(root_for(job.team_id)/'runs'/str(ident)/'volume-collected.json',[])
     def crash(*args):
         raise RuntimeError('unexpected internal failure')
     monkeypatch.setattr(worker,'execute',crash)
@@ -109,6 +111,7 @@ def test_unexpected_task_crash_is_visible_and_releases_active_key(db_factory,see
         job=db.get(BriefJob,ident)
         assert job.status=='failed' and job.active_key is None and job.lease_until is None
         assert 'RuntimeError' in job.error
+        assert db.scalar(select(BriefSourceSnapshot).where(BriefSourceSnapshot.job_id==ident)) is not None
 
 
 @pytest.mark.parametrize('status,expected_calls',[(503,3),(429,3),(403,1)])

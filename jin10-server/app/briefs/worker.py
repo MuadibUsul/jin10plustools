@@ -563,10 +563,16 @@ def execute(factory,id):
 
 
 def execute_safely(factory, job_id):
+    global _active_process
     try:
         execute(factory, job_id)
     except Exception as exc:
         log.exception('Brief task crashed %s',job_id)
+        if _active_process is not None:
+            from app.services.processes import kill_tree
+            kill_tree(_active_process)
+            _active_process.wait(timeout=15)
+            _active_process=None
         # An unexpected exception must become a visible terminal result. If the
         # database is down, the lease remains the recovery boundary on restart.
         with factory() as db:
@@ -576,7 +582,17 @@ def execute_safely(factory, job_id):
             job.status='failed';job.active_key=None;job.lease_until=None
             job.error='任务执行异常（'+type(exc).__name__+'）；请检查服务端日志，核对后重试'
             job.updated_at=utcnow()
-            record(root_for(job.team_id)/'runs'/str(job_id),1,job.error)
+            folder=root_for(job.team_id)/'runs'/str(job_id)
+            # Preserve captured evidence even when later copy/render work crashes.
+            try:
+                with db.begin_nested():
+                    archive_run(db,job,folder)
+            except Exception:
+                log.exception('Could not archive crashed task %s',job_id)
+            try:
+                record(folder,read(folder).get('step',1),job.error)
+            except OSError:
+                log.exception('Could not write crashed task progress %s',job_id)
             db.commit()
 
 

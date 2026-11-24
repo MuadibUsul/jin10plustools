@@ -92,10 +92,19 @@ def production_status(db,team_id,now=None):
                 item['collection_status']=collected.status
                 item['collection_failure']=job_failure(collected,root_for(team_id))
                 if collected.status=='failed' and item['collection_failure']:
-                    failure=item['collection_failure']
-                    alerts.append({'code':'collection_'+failure['code'],'category':category,
-                        'job_id':str(collected.id),'target_date':target,
-                        'message':CATEGORIES[category]+'数据核查失败：'+failure['message']+'。'+failure['action']})
+                    verified=db.scalar(select(BriefDataCheck).join(BriefJob,
+                        BriefDataCheck.job_id==BriefJob.id).where(
+                        BriefDataCheck.team_id==team_id,BriefDataCheck.category==category,
+                        BriefDataCheck.data_date==date.fromisoformat(target),BriefJob.action!='render',
+                        BriefDataCheck.report['current_data_valid'].as_boolean().is_(True),
+                        BriefDataCheck.created_at>collected.updated_at).order_by(
+                            BriefDataCheck.created_at.desc()).limit(1))
+                    item['collection_recovered_at']=verified.created_at.isoformat() if verified else None
+                    if verified is None:
+                        failure=item['collection_failure']
+                        alerts.append({'code':'collection_'+failure['code'],'category':category,
+                            'job_id':str(collected.id),'target_date':target,
+                            'message':CATEGORIES[category]+'数据核查失败：'+failure['message']+'。'+failure['action']})
         if item['schedule_enabled'] and local.hour>=10 and item['status']=='awaiting_source':
             alerts.append({'code':'missing_daily_product','category':category,'message':CATEGORIES[category]+'尚无目标数据日的完整成稿'})
         pending=db.scalar(select(BriefJob).where(BriefJob.team_id==team_id,BriefJob.category==category,

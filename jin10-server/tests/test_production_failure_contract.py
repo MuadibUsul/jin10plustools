@@ -203,3 +203,31 @@ def test_volume_parse_failure_is_not_reported_as_waiting_for_publication(tmp_pat
     with pytest.raises(SourceContractError) as caught:
         sources.volume('2026-11-23',out,state)
     assert caught.value.code=='source_contract_error'
+
+
+@pytest.mark.parametrize('action,target,should_recover',[
+    ('produce',date(2026,11,23),True),
+    ('render',date(2026,11,23),False),
+    ('produce',date(2026,11,19),False)])
+def test_new_verified_capture_recovers_old_collection_alarm(db_factory,seed,action,target,should_recover):
+    from app.briefs.service import enqueue
+    from app.services.production_health import production_status
+    from app.db.models import BriefConfig,BriefDataCheck
+    with db_factory() as db:
+        team=seed['editor'].team_id
+        db.add(BriefConfig(team_id=team,enabled=True,data_enabled=True))
+        failed=enqueue(db,team,date(2026,11,24),'volume',action='reconcile')
+        failed.status='failed';failed.active_key=None;failed.error='必要交易日缺失'
+        failed.updated_at=datetime(2026,11,24,1,tzinfo=timezone.utc);db.flush()
+        newer=enqueue(db,team,date(2026,11,24),'volume',action=action,user_id=seed['editor'].id)
+        newer.status='succeeded';newer.active_key=None;db.flush()
+        db.add(BriefDataCheck(team_id=team,category='volume',data_date=target,
+            job_id=newer.id,attempt=1,status='complete',report={'current_data_valid':True},
+            created_at=datetime(2026,11,24,2,tzinfo=timezone.utc)))
+        db.commit()
+        report=production_status(db,team,datetime(2026,11,24,4,tzinfo=timezone.utc))
+        item=next(item for item in report['items'] if item['category']=='volume')
+        assert item['collection_status']=='failed' and item['collection_failure']
+        assert bool(item['collection_recovered_at']) is should_recover
+        assert any(a['code'].startswith('collection_') and a.get('category')=='volume'
+                   for a in report['alerts']) is not should_recover

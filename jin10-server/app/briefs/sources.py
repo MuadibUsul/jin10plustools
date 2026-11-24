@@ -6,13 +6,13 @@ import shutil
 import subprocess
 import sys
 import time
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, time as clock
 from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 from urllib.parse import urlencode
 from urllib.request import Request,urlopen
 
-from .policy import previous_weekday
+from .policy import previous_weekday, CHINA
 from .delivery import default_notes
 from . import central_bank
 from .progress import record
@@ -63,20 +63,34 @@ def volume(day,out,state,refresh=False):
     history_path=state/'volume-history.json'
     stored=read(history_path)['rows'] if history_path.is_file() else []
     seen=set();fresh=[];capture_errors=[];page_error=None;page_contract_error=False
+    intraday_dates=set()
     cutoff=completed_session('xshg').isoformat()
-    def checkpoint(batch):
+    def store_rows(incoming):
         nonlocal stored
-        for raw in batch:
-            try:fresh.extend(normalize_volume({'data':[raw]},cutoff,required=False))
-            except (ValueError,ArithmeticError,TypeError,KeyError) as exc:
-                capture_errors.append({'date':raw.get('date'),'error':str(exc)})
-        combined={row['date']:row for row in stored}
-        combined.update({row['date']:row for row in fresh})
+        combined={row['date']:row for row in stored if row['date'] not in intraday_dates
+                  or row.get('source_kind')=='jin10_published_closing_flash'}
+        combined.update({row['date']:row for row in incoming})
         stored=volume_averages([combined[stamp] for stamp in sorted(combined)])
         merge_history(history_path,stored,method='jin10_hushen_turnover_yi_v1')
         save(out/'volume-collected.json',stored)
         save(out/'plot-data.json',[row for row in stored if row['date']<=day])
         if capture_errors:save(out/'volume-capture-errors.json',capture_errors)
+    def checkpoint(batch):
+        for raw in batch:
+            try:
+                if raw.get('updated_at'):
+                    updated=datetime.fromisoformat(raw['updated_at'].replace('Z','+00:00'))
+                    if updated.tzinfo is None:raise ValueError('成交额更新时间缺少时区')
+                    closing=datetime.combine(date.fromisoformat(raw['date']),clock(15),CHINA)
+                    if updated<closing:
+                        intraday_dates.add(raw['date'])
+                        save(out/'volume-intraday-rejected.json',{'dates':sorted(intraday_dates),
+                             'reason':'来源更新时间早于当日15:00，不能作为收盘观察'})
+                        continue
+                fresh.extend(normalize_volume({'data':[raw]},cutoff,required=False))
+            except (ValueError,ArithmeticError,TypeError,KeyError) as exc:
+                capture_errors.append({'date':raw.get('date'),'error':str(exc)})
+        store_rows(fresh)
     # Always refresh an overlapping year, and page back to the requested day on
     # historical runs. A shorter source response never replaces accumulated data.
     start=(date.fromisoformat(day)-timedelta(days=366)).isoformat()
@@ -108,11 +122,25 @@ def volume(day,out,state,refresh=False):
     else:page_error='成交额达到分页上限，区间尚未覆盖'
     if page_error:save(out/'volume-pagination-error.json',{'page':page,'error':page_error})
     rows=[row for row in stored if row['date']<=day]
-    if not any(row['date']==day for row in fresh):
-        from .failures import MissingObservations,SourceUnavailable,SourceContractError
-        if day in seen:
-            raise SourceContractError('成交额来源已返回目标日期，但解析未得到完整沪深明细；请核查原始响应与解析程序',
-                                      source='jin10_hushen_turnover_yi_v1')
+    from .failures import MissingObservations,SourceUnavailable,SourceContractError
+    if page_error and not fresh:
+        problem=SourceContractError if page_contract_error else SourceUnavailable
+        raise problem('成交额来源读取未完成：'+page_error[:200],source='jin10_hushen_turnover_yi_v1')
+    missing=set()
+    try:require_window(rows,'xshg',day,21,label='成交额20日均线及前日比较')
+    except MissingObservations as exc:missing.update(exc.missing_dates)
+    if not any(row['date']==day for row in fresh):missing.add(day)
+    rejected=(missing & seen)-intraday_dates
+    if rejected:
+        raise SourceContractError('成交额来源已返回日期但解析缺少完整沪深明细：'+','.join(sorted(rejected)),
+                                  source='jin10_hushen_turnover_yi_v1')
+    recovered=[]
+    if missing:
+        from .volume_recovery import recover_dates
+        record(out,2,'原接口缺少必要交易日，正在核查金十公开收盘快讯：'+','.join(sorted(missing)))
+        recovered=recover_dates(missing,stored,out,lambda row:store_rows([row]))
+        rows=[row for row in stored if row['date']<=day]
+    if not any(row['date']==day for row in fresh+recovered):
         if page_error:
             problem=SourceContractError if page_contract_error else SourceUnavailable
             raise problem('成交额来源读取未完成：'+page_error[:200],source='jin10_hushen_turnover_yi_v1')
@@ -122,6 +150,14 @@ def volume(day,out,state,refresh=False):
                                   publication_checked=not capture_errors)
     require_window(rows,'xshg',day,21,label='成交额20日均线及前日比较')
     result=render_volume(rows,out)
+    if rows[-1].get('source_url'):
+        result['facts']['source']=rows[-1]['source_url']
+    supplements=[row for row in rows[-75:] if row.get('source_kind')=='jin10_published_closing_flash']
+    if supplements:
+        result['facts']['supplemental_sources']=[{'date':row['date'],'url':row['source_url'],
+            'precision':row['source_precision']} for row in supplements]
+        result['warnings'].append('部分历史点取自金十公开收盘快讯，保留原文公布精度；成交量由亿手换算为亿股：'+
+                                  '、'.join(row['date'] for row in supplements))
     if capture_errors:result['warnings'].append(f'来源有{len(capture_errors)}条不完整记录，已保留其余真实数据，未补填缺值')
     if page_error:result['warnings'].append('历史分页尚未完成，已保存可取得数据：'+page_error[:200])
     return result

@@ -62,7 +62,7 @@ def volume(day,out,state,refresh=False):
     from .series_store import merge_history
     history_path=state/'volume-history.json'
     stored=read(history_path)['rows'] if history_path.is_file() else []
-    seen=set();fresh=[];capture_errors=[];page_error=None
+    seen=set();fresh=[];capture_errors=[];page_error=None;page_contract_error=False
     cutoff=completed_session('xshg').isoformat()
     def checkpoint(batch):
         nonlocal stored
@@ -90,7 +90,8 @@ def volume(day,out,state,refresh=False):
             with urlopen(request,timeout=min(25,max(.1,remaining))) as response:raw=response.read(4_000_001)
         except (OSError,RuntimeError) as exc:
             page_error=str(exc);break
-        if len(raw)>4_000_000:page_error='成交额来源过大';break
+        if len(raw)>4_000_000:
+            page_error='成交额来源过大';page_contract_error=True;break
         (out/f'volume-raw-page-{page}.json').write_bytes(raw)
         try:
             batch=json.loads(raw,parse_float=Decimal).get('data')
@@ -98,9 +99,10 @@ def volume(day,out,state,refresh=False):
             dates={row['date'] for row in batch}
             if len(dates)!=len(batch):raise ValueError('成交额同页日期重复')
         except (ValueError,TypeError,KeyError,AttributeError) as exc:
-            page_error=str(exc);break
+            page_error=str(exc);page_contract_error=True;break
         if not batch:break
-        if dates & seen:page_error='成交额分页日期重复，停止不完整抓取';break
+        if dates & seen:
+            page_error='成交额分页日期重复，停止不完整抓取';page_contract_error=True;break
         seen.update(dates);checkpoint(batch)
         if min(dates)<=start or len(batch)<100:break
     else:page_error='成交额达到分页上限，区间尚未覆盖'
@@ -112,7 +114,8 @@ def volume(day,out,state,refresh=False):
             raise SourceContractError('成交额来源已返回目标日期，但解析未得到完整沪深明细；请核查原始响应与解析程序',
                                       source='jin10_hushen_turnover_yi_v1')
         if page_error:
-            raise SourceUnavailable('成交额来源读取未完成：'+page_error[:200],source='jin10_hushen_turnover_yi_v1')
+            problem=SourceContractError if page_contract_error else SourceUnavailable
+            raise problem('成交额来源读取未完成：'+page_error[:200],source='jin10_hushen_turnover_yi_v1')
         raise MissingObservations('成交额目标日期尚未更新；已补存可取得的真实历史',
                                   source='jin10_hushen_turnover_yi_v1',missing_dates=[day],
                                   latest_date=max((row['date'] for row in fresh),default=None),

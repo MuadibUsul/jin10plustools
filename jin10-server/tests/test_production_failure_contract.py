@@ -188,3 +188,18 @@ def test_compute_collection_failure_is_visible_without_enabling_automatic_drafts
         assert item['schedule_enabled'] is False and item['collection_status']=='failed'
         assert any(alert.get('job_id')==str(job.id) for alert in report['alerts'])
         assert not any(alert['code']=='missing_daily_product' and alert.get('category')=='token_cost' for alert in report['alerts'])
+
+
+def test_volume_parse_failure_is_not_reported_as_waiting_for_publication(tmp_path,monkeypatch):
+    from app.briefs import sources
+    from app.briefs.failures import SourceContractError
+    from contextlib import contextmanager
+    class Response:
+        def read(self,*args):return b'{"unexpected":"schema"}'
+    @contextmanager
+    def fetch(*args,**kwargs):yield Response()
+    monkeypatch.setattr(sources,'urlopen',fetch)
+    state=tmp_path/'state';state.mkdir();out=tmp_path/'out';out.mkdir()
+    with pytest.raises(SourceContractError) as caught:
+        sources.volume('2026-11-23',out,state)
+    assert caught.value.code=='source_contract_error'

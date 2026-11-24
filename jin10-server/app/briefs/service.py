@@ -67,7 +67,7 @@ def enqueue(db,team_id,day,category,*,action='produce',preview=False,user_id=Non
                           schedule_origin=user_id is None and not preview and action!='reconcile',
                           manual_capture=manual_capture,render_base_version=render_base_version)
             db.add(item);db.flush()
-        ensure_issue(db,team_id,day,category)
+        if action!='reconcile':ensure_issue(db,team_id,day,category)
         return item
     except IntegrityError:
         return db.scalars(select(BriefJob).where((BriefJob.active_key==active_key)|(BriefJob.dedupe_key==key))).first()

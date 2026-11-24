@@ -550,6 +550,7 @@ BRIEF_DATA_POINTS = build_dataset(
     columns=_columns(('id','记录ID','text'),('category','栏目','text'),('series','序列','text'),
         ('method','来源方法','text'),('data_date','数据日期','date'),('revision','修订号','int'),
         ('values','观测值','json'),('units','单位口径','json'),('sha256','内容哈希','text'),
+        ('quality_status','质量状态','text'),('quality_reason','隔离原因','text'),
         ('source_snapshot_id','来源证据ID','text'),('collected_at','采集记录时间','datetime'),('created_at','入库时间','datetime')))
 BRIEF_DATA_CHECKS = build_dataset(
     key='brief_data_checks',label='快讯数据覆盖检查',date_label='数据日期',

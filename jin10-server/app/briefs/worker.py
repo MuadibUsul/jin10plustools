@@ -9,6 +9,7 @@ import sys
 import time
 from pathlib import Path
 from datetime import date,datetime,timedelta,time as clock
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import case,select,text,update,func
 
@@ -162,14 +163,20 @@ def claim(factory,now=None):
     if drain_requested():return None
     now=now or utcnow()
     with factory() as db:
+        expired=list(db.scalars(select(BriefJob).where(BriefJob.status=='running',BriefJob.lease_until<now)))
+        for interrupted in expired:preserve_partial(db,interrupted,'处理进程中断，保存已采集数据后恢复任务')
         db.execute(update(BriefJob).where(BriefJob.status=='running',BriefJob.lease_until<now,
                    BriefJob.attempts>=6).values(status='failed',active_key=None,
-                   error='任务连续中断6次，已停止自动恢复；请检查任务日志后重试',lease_until=None,updated_at=now))
+                   error='任务连续中断6次，已停止自动恢复；请检查任务日志后重试',lease_until=None,updated_at=now)
+                   .execution_options(synchronize_session=False))
         # Main loop has one advisory-locked runner; expired jobs survive restarts.
         db.execute(update(BriefJob).where(BriefJob.status=='running',BriefJob.lease_until<now)
-                   .values(status='queued',error='上次运行中断，已重新排队',lease_until=None))
+                   .values(status='queued',error='上次运行中断，已重新排队',lease_until=None)
+                   .execution_options(synchronize_session=False))
+        db.expire_all()
         row=db.scalars(select(BriefJob).where(BriefJob.status.in_(['queued','waiting']),
             BriefJob.next_attempt_at<=now).order_by(
+                case((BriefJob.action=='reconcile',1),else_=0),
                 case((BriefJob.category=='liquidity',0),else_=1),
                 BriefJob.next_attempt_at,BriefJob.created_at)
             .with_for_update(skip_locked=True).limit(1)).first()
@@ -178,6 +185,70 @@ def claim(factory,now=None):
             row.status='skipped';row.active_key=None;row.error='已超过工作日上午生产窗口';row.updated_at=now;db.commit();return None
         row.status='running';row.attempts+=1;row.lease_until=now+timedelta(minutes=7);row.updated_at=now
         db.commit();return row.id
+
+
+def preserve_partial(db,job,message):
+    """A process restart or copy failure cannot discard successful acquisition."""
+    folder=root_for(job.team_id)/'runs'/str(job.id)
+    if not folder.is_dir() or job.action=='render':return
+    try:
+        with db.begin_nested():archive_run(db,job,folder)
+    except Exception:log.exception('Could not archive interrupted capture %s',job.id)
+    try:
+        from .data_reliability import record_run,link_sources
+        with db.begin_nested():
+            record_run(db,job,folder,None,message)
+            link_sources(db,job)
+    except Exception:log.exception('Could not ingest partial observations %s',job.id)
+
+
+def collection_plans(now):
+    """Close collection with two bounded retry slots, plus pre-opening revision check.
+
+    Collection never creates a draft. NY close is converted with its real DST
+    timezone; Friday's US close can be archived on Saturday for Monday's edition.
+    """
+    from .trading_calendar import completed_session,market_for,CalendarUnavailable
+    local=now.astimezone(CHINA)
+    for category in AUTO_CATEGORIES:
+        market=market_for(category)
+        try:target=completed_session(market,now)
+        except CalendarUnavailable:continue
+        zone,close={'xshg':(CHINA,clock(16)), 'cfets':(CHINA,clock(17,15)),
+                    'xnys':(ZoneInfo('America/New_York'),clock(16,15))}[market]
+        elapsed=(now-datetime.combine(target,close,zone)).total_seconds()
+        if 0<=elapsed<6*3600:
+            slot=2 if elapsed>=3600 else 1 if elapsed>=1800 else 0
+            yield category,target,'close-'+str(slot)
+        elif clock(7)<=local.time().replace(tzinfo=None)<clock(8) and local.weekday()<5:
+            yield category,target,'preopen-'+local.date().isoformat()
+
+
+def schedule_collection(factory,now=None):
+    if drain_requested():return 0
+    now=now or datetime.now(CHINA);count=0
+    plans=list(collection_plans(now))
+    with factory() as db:
+        for config in db.scalars(select(BriefConfig).where(BriefConfig.data_enabled.is_(True))):
+            for category,target,slot in plans:
+                issue_day=target+timedelta(days=1)
+                prefix=f'{config.team_id}:{issue_day}:{category}:reconcile:production:collection-'
+                cycle='collection-'+target.isoformat()+'-'+slot
+                existing=db.scalar(select(BriefJob.id).where(BriefJob.team_id==config.team_id,
+                    BriefJob.dedupe_key==prefix+target.isoformat()+'-'+slot))
+                if existing:continue
+                if db.scalar(select(BriefJob.id).where(BriefJob.team_id==config.team_id,
+                    BriefJob.issue_date==issue_day,BriefJob.category==category,
+                    BriefJob.status.in_(['queued','waiting','running'])).limit(1)):continue
+                if slot.startswith('close-'):
+                    succeeded=db.scalar(select(BriefJob.id).where(BriefJob.team_id==config.team_id,
+                        BriefJob.dedupe_key.startswith(prefix+target.isoformat()+'-close-'),
+                        BriefJob.status=='succeeded'))
+                    if succeeded:continue
+                job=enqueue(db,config.team_id,issue_day,category,action='reconcile',cycle=cycle)
+                if job.action=='reconcile':count+=1
+        db.commit()
+    return count
 
 
 def schedule_reconciliation(factory,now=None):
@@ -288,6 +359,11 @@ def execute(factory,id):
             from .repair import recover_snapshots,restore_working_history
             if action!='render':
                 recover_snapshots(db,team_id,category,out/'recovered-evidence')
+                if category=='volume':
+                    from .observation_quality import quarantine_volume
+                    from .sources import save
+                    rejected=quarantine_volume(db,team_id)
+                    if rejected:save(out/'volume-quality-exclusions.json',rejected)
                 restored=restore_working_history(db,team_id,category,root/'history'/category)
             db.commit()
     except (ValueError,OSError) as exc:
@@ -387,11 +463,12 @@ def execute(factory,id):
     # The runner keeps the fixed rule payload; Skill copy runs after it returns.
     env['SKILL_PRODUCTION']='1'
     env['DATA_COLLECTION_ONLY']='1' if action=='reconcile' else '0'
+    env['VERIFIED_DATABASE_INPUT']='1'  # The parent restored the canonical database projection.
     old_result=out/'result.json'
     if job.attempts>1 and old_result.exists():
         old_result.replace(out/f'prior-result-{job.attempts}-{time.time_ns()}.json')
     command=[sys.executable,'-m','app.briefs.runner','--category',category,'--date',expected_date(category,day).isoformat(),
-             '--root',str(root),'--run-id',str(id),'--action','refresh' if action=='reconcile' or automatic and action=='produce' else action]
+             '--root',str(root),'--run-id',str(id),'--action','refresh' if action=='reconcile' else action]
     if action=='render':command.extend(['--render-input',str(out/'render-input.json')])
     process=subprocess.Popen(command,env=env,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,start_new_session=os.name!='nt')
     _active_process=process
@@ -584,11 +661,7 @@ def execute_safely(factory, job_id):
             job.updated_at=utcnow()
             folder=root_for(job.team_id)/'runs'/str(job_id)
             # Preserve captured evidence even when later copy/render work crashes.
-            try:
-                with db.begin_nested():
-                    archive_run(db,job,folder)
-            except Exception:
-                log.exception('Could not archive crashed task %s',job_id)
+            preserve_partial(db,job,job.error)
             try:
                 record(folder,read(folder).get('step',1),job.error)
             except OSError:
@@ -615,7 +688,7 @@ def main():
                         record_alerts(factory)
                     except Exception:
                         log.exception('Production health inspection failed')
-                schedule(factory);schedule_reconciliation(factory);id=claim(factory)
+                schedule(factory);schedule_collection(factory);schedule_reconciliation(factory);id=claim(factory)
                 if id:execute_safely(factory,id);continue
             except Exception:log.exception('Brief worker iteration failed')
             time.sleep(30)

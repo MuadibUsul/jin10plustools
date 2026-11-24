@@ -51,7 +51,11 @@ def normalize_volume(payload,day,*,required=True):
         if any(r.get(k) is None for k in ('sh_turn','sz_turn','sh_vol','sz_vol')):raise ValueError('沪深明细缺失')
         values=[Decimal(str(r[k])) for k in ('sh_turn','sz_turn','sh_vol','sz_vol')]
         if any(not v.is_finite() or v<=0 for v in values):raise ValueError('成交额存在无效值')
-        result.append({'date':date.fromisoformat(r['date']).isoformat(),'turn':values[0]+values[1],'vol':values[2]+values[3]})
+        point={'date':date.fromisoformat(r['date']).isoformat(),'turn':values[0]+values[1],'vol':values[2]+values[3]}
+        if r.get('updated_at'):
+            point.update(source_kind='jin10_dynamic_close',source_updated_at=r['updated_at'],source_url=url_source(),
+                         source_components={key:r[key] for key in ('sh_turn','sz_turn','sh_vol','sz_vol')})
+        result.append(point)
     if required and (len(result)<21 or result[-1]['date']!=day):raise ValueError('成交额目标日期尚未更新或历史不足')
     if len({r['date'] for r in result})!=len(result):raise ValueError('成交额日期重复')
     if required:require_window(result,'xshg',day,21,label='成交额20日均线及前日比较')
@@ -59,19 +63,25 @@ def normalize_volume(payload,day,*,required=True):
 
 
 def volume(day,out,state,refresh=False):
-    from .series_store import merge_history
+    from .observation_quality import VOLUME_METHOD,VOLUME_METHODS,volume_exclusion
     history_path=state/'volume-history.json'
-    stored=read(history_path)['rows'] if history_path.is_file() else []
-    seen=set();fresh=[];capture_errors=[];page_error=None;page_contract_error=False
-    intraday_dates=set()
+    history=read(history_path) if history_path.is_file() else {'method':VOLUME_METHOD,'rows':[]}
+    if history.get('method') not in VOLUME_METHODS:raise ValueError('成交额历史来源方法不一致')
+    excluded=[row for row in history['rows'] if volume_exclusion(row)]
+    stored=[row for row in history['rows'] if not volume_exclusion(row)]
+    if excluded:save(out/'volume-excluded-observations.json',excluded)
+    seen=set();seen_rows={};fresh=[];capture_errors=[];page_error=None;page_contract_error=False
+    intraday_dates=set();intraday_values=set()
     cutoff=completed_session('xshg').isoformat()
     def store_rows(incoming):
         nonlocal stored
-        combined={row['date']:row for row in stored if row['date'] not in intraday_dates
-                  or row.get('source_kind')=='jin10_published_closing_flash'}
+        combined={row['date']:row for row in stored if
+                  (row['date'],Decimal(str(row['turn'])),Decimal(str(row['vol']))) not in intraday_values}
         combined.update({row['date']:row for row in incoming})
         stored=volume_averages([combined[stamp] for stamp in sorted(combined)])
-        merge_history(history_path,stored,method='jin10_hushen_turnover_yi_v1')
+        # This is a projection, not an additive evidence store. An additive merge
+        # resurrects rows deliberately excluded above; PostgreSQL retains revisions.
+        save(history_path,{'method':VOLUME_METHOD,'rows':stored})
         save(out/'volume-collected.json',stored)
         save(out/'plot-data.json',[row for row in stored if row['date']<=day])
         if capture_errors:save(out/'volume-capture-errors.json',capture_errors)
@@ -84,6 +94,9 @@ def volume(day,out,state,refresh=False):
                     closing=datetime.combine(date.fromisoformat(raw['date']),clock(15),CHINA)
                     if updated<closing:
                         intraday_dates.add(raw['date'])
+                        try:intraday_values.add((raw['date'],Decimal(str(raw['sh_turn']))+Decimal(str(raw['sz_turn'])),
+                                                Decimal(str(raw['sh_vol']))+Decimal(str(raw['sz_vol']))))
+                        except (KeyError,TypeError,ArithmeticError):pass
                         save(out/'volume-intraday-rejected.json',{'dates':sorted(intraday_dates),
                              'reason':'来源更新时间早于当日15:00，不能作为收盘观察'})
                         continue
@@ -91,6 +104,14 @@ def volume(day,out,state,refresh=False):
             except (ValueError,ArithmeticError,TypeError,KeyError) as exc:
                 capture_errors.append({'date':raw.get('date'),'error':str(exc)})
         store_rows(fresh)
+    store_rows([])
+    if not refresh and os.getenv('DATA_COLLECTION_ONLY')!='1':
+        try:require_window([row for row in stored if row['date']<=day],'xshg',day,21,label='成交额20日均线及前日比较')
+        except ValueError:pass
+        else:
+            result=render_volume([row for row in stored if row['date']<=day],out)
+            result['facts']['acquisition']='verified_observations_reused'
+            return result
     # Always refresh an overlapping year, and page back to the requested day on
     # historical runs. A shorter source response never replaces accumulated data.
     start=(date.fromisoformat(day)-timedelta(days=366)).isoformat()
@@ -108,16 +129,25 @@ def volume(day,out,state,refresh=False):
             page_error='成交额来源过大';page_contract_error=True;break
         (out/f'volume-raw-page-{page}.json').write_bytes(raw)
         try:
-            batch=json.loads(raw,parse_float=Decimal).get('data')
+            document=json.loads(raw,parse_float=Decimal)
+            if document.get('status') not in (None,200):
+                page_error='成交额接口返回非成功业务状态';break
+            batch=document.get('data')
             if not isinstance(batch,list):raise ValueError('成交额来源结构变化')
             dates={row['date'] for row in batch}
             if len(dates)!=len(batch):raise ValueError('成交额同页日期重复')
         except (ValueError,TypeError,KeyError,AttributeError) as exc:
             page_error=str(exc);page_contract_error=True;break
         if not batch:break
-        if dates & seen:
-            page_error='成交额分页日期重复，停止不完整抓取';page_contract_error=True;break
-        seen.update(dates);checkpoint(batch)
+        overlap=dates & seen
+        keys=('sh_turn','sz_turn','sh_vol','sz_vol','updated_at')
+        if any(any(raw.get(key)!=seen_rows[raw['date']].get(key) for key in keys)
+               for raw in batch if raw['date'] in overlap):
+            page_error='成交额分页重叠日期数值变化，停止不一致抓取';page_contract_error=True;break
+        if dates<=seen:
+            page_error='成交额分页未向历史推进';page_contract_error=True;break
+        unseen=[row for row in batch if row['date'] not in seen]
+        seen_rows.update({row['date']:row for row in unseen});seen.update(dates);checkpoint(unseen)
         if min(dates)<=start or len(batch)<100:break
     else:page_error='成交额达到分页上限，区间尚未覆盖'
     if page_error:save(out/'volume-pagination-error.json',{'page':page,'error':page_error})
@@ -136,9 +166,9 @@ def volume(day,out,state,refresh=False):
                                   source='jin10_hushen_turnover_yi_v1')
     recovered=[]
     if missing:
-        from .volume_recovery import recover_dates
-        record(out,2,'原接口缺少必要交易日，正在核查金十公开收盘快讯：'+','.join(sorted(missing)))
-        recovered=recover_dates(missing,stored,out,lambda row:store_rows([row]))
+        from .volume_market import recover_dates
+        record(out,2,'原始行情缺少完整收盘记录，正在核验独立行情明细：'+','.join(sorted(missing)))
+        recovered=recover_dates(missing,stored,out,cutoff,lambda row:store_rows([row]))
         rows=[row for row in stored if row['date']<=day]
     if not any(row['date']==day for row in fresh+recovered):
         if page_error:
@@ -150,14 +180,6 @@ def volume(day,out,state,refresh=False):
                                   publication_checked=not capture_errors)
     require_window(rows,'xshg',day,21,label='成交额20日均线及前日比较')
     result=render_volume(rows,out)
-    if rows[-1].get('source_url'):
-        result['facts']['source']=rows[-1]['source_url']
-    supplements=[row for row in rows[-75:] if row.get('source_kind')=='jin10_published_closing_flash']
-    if supplements:
-        result['facts']['supplemental_sources']=[{'date':row['date'],'url':row['source_url'],
-            'precision':row['source_precision']} for row in supplements]
-        result['warnings'].append('部分历史点取自金十公开收盘快讯，保留原文公布精度；成交量由亿手换算为亿股：'+
-                                  '、'.join(row['date'] for row in supplements))
     if capture_errors:result['warnings'].append(f'来源有{len(capture_errors)}条不完整记录，已保留其余真实数据，未补填缺值')
     if page_error:result['warnings'].append('历史分页尚未完成，已保存可取得数据：'+page_error[:200])
     return result
@@ -183,8 +205,12 @@ def render_volume(rows,out):
           f"连续{streak}条有效交易日{side}20日均线（{current['ma20']/10000:.2f}万亿元）。"
           f"成交活跃度较前日{'回升' if change>0 else '回落' if change<0 else '持平'}。")
     image=volume_chart([r for r in rows if r['ma20'] is not None],out) if os.getenv('DATA_COLLECTION_ONLY')!='1' else None
+    supplements=[{'date':row['date'],'url':row['source_url'],'method':row['source_method']}
+                 for row in rows[-75:] if row.get('source_kind')=='eastmoney_daily_index']
+    warnings=['部分收盘记录使用已通过重叠日期金额及成交量核验的东方财富日线行情，具体来源逐日留档'] if supplements else []
     return {'title':title,'dynamic_body':body,'images':[image.name] if image else [],'data_date':current['date'],
-            'facts':{'amount_yi':str(current['turn']),'amount_wan_yi':f"{current['turn']/10000:.2f}",'change_yi':f'{change:.2f}','change_pct':f'{percent:+.2f}','streak':streak,'side':side,'activity':'回升' if change>0 else '回落' if change<0 else '持平','ma20_yi':str(current['ma20']),'ma20_wan_yi':f"{current['ma20']/10000:.2f}",'previous_date':prior['date'],'source':url_source()},'warnings':[]}
+            'facts':{'amount_yi':str(current['turn']),'amount_wan_yi':f"{current['turn']/10000:.2f}",'change_yi':f'{change:.2f}','change_pct':f'{percent:+.2f}','streak':streak,'side':side,'activity':'回升' if change>0 else '回落' if change<0 else '持平','ma20_yi':str(current['ma20']),'ma20_wan_yi':f"{current['ma20']/10000:.2f}",'previous_date':prior['date'],'source':current.get('source_url') or url_source(),
+                     'supplemental_sources':supplements},'warnings':warnings}
 
 
 def url_source():return 'https://www.jin10.com/minipro/index.html#/pages_sub/huShenVolume/huShenVolume?category=hu_shen_volume&id=550059&type=4'

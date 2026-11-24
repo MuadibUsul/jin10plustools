@@ -85,6 +85,26 @@ def test_migration_preserves_existing_daily_cover(postgres):
     assert 'notes' in {column['name'] for column in inspect(engine).get_columns('brief_configs')}
 
 
+@pytest.mark.parametrize('postgres',['0022'],indirect=True)
+def test_observation_quality_migration_preserves_original_values(postgres):
+    from app.db.models import BriefDataPoint
+    engine,factory,team_id=postgres
+    ident=uuid.uuid4();stamp=datetime.now(timezone.utc)
+    with engine.begin() as connection:
+        points=Table('brief_data_points',MetaData(),autoload_with=connection)
+        connection.execute(points.insert().values(id=ident,team_id=team_id,category='volume',series='volume',
+            method='jin10_hushen_turnover_yi_v1',data_date=date(2026,11,23),revision=1,
+            values={'date':'2026-11-23','turn':'9163.71158132','vol':'671.614390'},units={},
+            sha256='a'*64,collected_at=stamp,created_at=stamp))
+    command.upgrade(Config('alembic.ini'),'head')
+    with factory() as db:
+        point=db.get(BriefDataPoint,ident)
+        assert point.values['turn']=='9163.71158132' and point.sha256=='a'*64
+        assert point.quality_status=='accepted' and point.quality_reason is None
+        point.quality_status='rejected';point.quality_reason='已核验为盘中值';db.commit()
+        assert db.get(BriefDataPoint,ident).values['turn']=='9163.71158132'
+
+
 @pytest.mark.parametrize('postgres',['0018'],indirect=True)
 def test_production_boundary_migration_preserves_legacy_evidence_and_retry(postgres):
     import hashlib

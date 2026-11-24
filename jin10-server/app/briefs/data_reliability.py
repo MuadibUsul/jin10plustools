@@ -16,7 +16,7 @@ EXPECTED={'volume':('volume',),'turnover':('turnover',),'valuation':('erp','buff
           'liquidity':('DR001','DR007'),'oil_etf':('USO','BNO'),
           'us_barometer':('wilshire','erp','gdp'),'us_structure':('spx','ndx','dji','rut','spxew'),
           'token_cost':('token',),'gpu_rental':('a100','h100','b200')}
-UNITS={'volume':{'turn':'CNY_100_million','vol':'source_native','ma20':'CNY_100_million'},
+UNITS={'volume':{'turn':'CNY_100_million','vol':'shares_100_million','ma20':'CNY_100_million'},
        'turnover':{'totalCompany':'company_count','belowPercent3':'company_count','belowPercent5':'company_count','close':'index_points'},
        'valuation':{'close':'index_points','pe_ttm_mcw':'times','pe_ttm_mcw_raw':'times','bond_yield_number':'percent_number',
            'erp':'fraction','erp_percent':'percent_number','marketCap':'CNY_100_million','market_cap_yi':'CNY_100_million','gdp':'CNY_100_million'},
@@ -61,7 +61,12 @@ def extract(category,folder,payload=None,*,only_file=None):
         for row in rows or []:
             stamp=date.fromisoformat(row[key]).isoformat()
             result.append({'series':series,'date':stamp,'method':method,'values':plain(row)})
-    if category=='volume':add('volume',load('volume-collected.json') or load('plot-data.json'),'jin10_hushen_turnover_yi_v1')
+    if category=='volume':
+        for row in load('volume-collected.json') or load('plot-data.json') or []:
+            method=('eastmoney_hushen_index_turnover_yi_v1' if row.get('source_kind')=='eastmoney_daily_index'
+                    else 'jin10_published_closing_flash_v1' if row.get('source_kind')=='jin10_published_closing_flash'
+                    else 'jin10_hushen_turnover_yi_v1')
+            add('volume',[row],method)
     elif category=='turnover':
         raw=load('turnover-collected.json') or load('source.json') or {}
         add('turnover',raw.get('rows',raw.get('data',[])) if isinstance(raw,dict) else raw,'legu_count_ratios_ma9_v1')
@@ -135,9 +140,14 @@ def save_points(db,team_id,category,points,job_id=None,*,source_snapshot_id=None
         units={key:unit for key,unit in UNITS[category].items() if key in item['values']}
         sha=digest({'values':item['values'],'units':units})
         if old and old.sha256==sha:continue
+        reason=None
+        if category=='volume':
+            from .observation_quality import volume_exclusion
+            reason=volume_exclusion(item['values'])
         new=BriefDataPoint(team_id=team_id,category=category,series=item['series'],method=item['method'],
             data_date=date.fromisoformat(item['date']),revision=max_revision.get(key,0)+1,
-            values=item['values'],units=units,sha256=sha,job_id=job_id,source_snapshot_id=source_snapshot_id)
+            values=item['values'],units=units,sha256=sha,job_id=job_id,source_snapshot_id=source_snapshot_id,
+            quality_status='rejected' if reason else 'accepted',quality_reason=reason)
         new.collected_at=effective
         db.add(new);history.setdefault(key,[]).append(new)
         history[key].sort(key=lambda row:(stamp(row.collected_at),row.revision),reverse=True)
@@ -179,6 +189,7 @@ def read_series(db,team_id,category,series,start,end,*,as_of=None,limit=5000):
     rows=list(db.scalars(select(point).where(ranked.c.rank==1).order_by(point.data_date,point.method).limit(limit+1)))
     return {'items':[{'data_date':row.data_date.isoformat(),'method':row.method,'revision':row.revision,
         'values':row.values,'units':row.units,'collected_at':row.collected_at.isoformat(),
+        'quality_status':row.quality_status,'quality_reason':row.quality_reason,
         'source_snapshot_id':str(row.source_snapshot_id) if row.source_snapshot_id else None,
         'job_id':str(row.job_id) if row.job_id else None} for row in rows[:limit]],'truncated':len(rows)>limit}
 
@@ -215,7 +226,7 @@ def coverage(db,team_id,category,target):
         BriefDataPoint.collected_at.desc(),BriefDataPoint.revision.desc())))
     latest={}
     for row in rows:latest.setdefault((row.series,row.method,row.data_date),row)
-    rows=list(latest.values())
+    rows=[row for row in latest.values() if row.quality_status=='accepted']
     for series in EXPECTED[category]:
         chosen=[row for row in rows if row.series==series]
         days={row.data_date.isoformat() for row in chosen};methods=sorted({row.method for row in chosen})
@@ -239,6 +250,8 @@ def coverage(db,team_id,category,target):
             limitations.append('部分估值为事后回算，GDP公布日晚于市场日期；不可作为当时已知数据')
         if any(row.values.get('source_status')=='user_supplied_published_archive' for row in chosen):
             limitations.append('部分持仓来自已发布快讯存档，按原文披露精度保存，未冒充发行方完整明细')
+    rejected=[row for row in latest.values() if row.quality_status!='accepted']
+    if rejected:limitations.append(f'已隔离{len(rejected)}条未通过质量核验的记录，原始证据及数值保留')
     return {'target_date':target.isoformat(),'market':market,'metrics':metrics,
             'limitations':sorted(set(limitations)),
             'status':'complete' if metrics and all(item['complete'] is True and item['comparable_history']

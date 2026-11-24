@@ -750,6 +750,8 @@ class BriefDataPoint(Base):
     values: Mapped[dict[str,Any]] = mapped_column(JsonType)
     units: Mapped[dict[str,Any]] = mapped_column(JsonType,default=dict)
     sha256: Mapped[str] = mapped_column(String(64))
+    quality_status: Mapped[str] = mapped_column(String(20),default='accepted',server_default='accepted')
+    quality_reason: Mapped[str | None] = mapped_column(String(500))
     job_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey('brief_jobs.id',ondelete='SET NULL'))
     source_snapshot_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey('brief_source_snapshots.id',ondelete='SET NULL'))
     collected_at: Mapped[dt.datetime] = mapped_column(default=utcnow)

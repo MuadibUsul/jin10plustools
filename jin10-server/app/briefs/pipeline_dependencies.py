@@ -40,7 +40,10 @@ def dependencies(here,category):
         yield 'ai_compute/functions',function_slice(here/'ai_compute.py',[category])
         yield 'ai_compute_charts/functions',function_slice(here/'ai_compute_charts.py',['token_chart' if category=='token_cost' else 'gpu_chart'])
         yield 'ai_compute_style.py',(here/'ai_compute_style.py').read_bytes()
-    if category=='volume':yield 'volume_recovery.py',(here/'volume_recovery.py').read_bytes()
+    if category=='volume':
+        for name in ('volume_market.py','observation_quality.py'):
+            yield name,(here/name).read_bytes()
+        yield 'volume/normalization',function_slice(here/'sources.py',['normalize_volume','volume_averages','render_volume'])
     if category=='valuation':yield 'valuation_repair.py',(here/'valuation_repair.py').read_bytes()
     if category=='valuation':
         for path in sorted((here/'seed').glob('*')):

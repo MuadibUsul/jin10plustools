@@ -47,6 +47,12 @@ def production_status(db,team_id,now=None):
             BriefIssue.version>0).order_by(BriefIssue.issue_date.desc()).limit(1))
         version=db.scalar(select(BriefVersion).where(BriefVersion.issue_id==issue.id,BriefVersion.number==issue.version)) if issue else None
         actual=(version.payload or {}).get('data_date') if version else None
+        if category=='volume' and version:
+            facts=version.payload.get('facts') or {}
+            source_urls=[facts.get('source',''),*[row.get('url','') for row in facts.get('supplemental_sources') or []]]
+            if any('flash.jin10.com' in url for url in source_urls):
+                alerts.append({'code':'quarantined_product_source','category':category,
+                    'message':'成交额当前稿使用已隔离的快讯反补数据，请重新生成并核对'})
         try:target=expected_date(category,local.date()).isoformat()
         except CalendarUnavailable as exc:
             alerts.append({'code':'calendar','category':category,'message':str(exc)});continue
@@ -84,18 +90,21 @@ def production_status(db,team_id,now=None):
                 alerts.append({'code':'source_check_failed','category':category,'message':'原油发行方最新核查失败，已保留最近可用数据；请检查取数任务'})
         if collecting:
             collected=db.scalar(select(BriefJob).where(BriefJob.team_id==team_id,
-                BriefJob.category==category,BriefJob.issue_date==local.date(),
+                BriefJob.category==category,BriefJob.issue_date>=local.date()-timedelta(days=3),
+                BriefJob.issue_date<=local.date()+timedelta(days=1),
                 BriefJob.action=='reconcile').order_by(BriefJob.updated_at.desc()).limit(1))
             if collected:
                 from app.briefs.service import root_for
+                collection_target=expected_date(category,collected.issue_date).isoformat()
                 item['collection_job_id']=str(collected.id)
+                item['collection_target_date']=collection_target
                 item['collection_status']=collected.status
                 item['collection_failure']=job_failure(collected,root_for(team_id))
                 if collected.status=='failed' and item['collection_failure']:
                     verified=db.scalar(select(BriefDataCheck).join(BriefJob,
                         BriefDataCheck.job_id==BriefJob.id).where(
                         BriefDataCheck.team_id==team_id,BriefDataCheck.category==category,
-                        BriefDataCheck.data_date==date.fromisoformat(target),BriefJob.action!='render',
+                        BriefDataCheck.data_date==date.fromisoformat(collection_target),BriefJob.action!='render',
                         BriefDataCheck.report['current_data_valid'].as_boolean().is_(True),
                         BriefDataCheck.created_at>collected.updated_at).order_by(
                             BriefDataCheck.created_at.desc()).limit(1))
@@ -103,7 +112,7 @@ def production_status(db,team_id,now=None):
                     if verified is None:
                         failure=item['collection_failure']
                         alerts.append({'code':'collection_'+failure['code'],'category':category,
-                            'job_id':str(collected.id),'target_date':target,
+                            'job_id':str(collected.id),'target_date':collection_target,
                             'message':CATEGORIES[category]+'数据核查失败：'+failure['message']+'。'+failure['action']})
         if item['schedule_enabled'] and local.hour>=10 and item['status']=='awaiting_source':
             alerts.append({'code':'missing_daily_product','category':category,'message':CATEGORIES[category]+'尚无目标数据日的完整成稿'})

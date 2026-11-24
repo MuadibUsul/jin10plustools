@@ -152,6 +152,7 @@ def generate(category,day,root,run_id,action='produce',render_input=None):
     record(out,1,'正在检查同日期的数据与图片快照')
     cache=root/'cache'/category/f'{day}.json'
     ignore_cache=(action=='refresh' or os.getenv('DATA_COLLECTION_ONLY')=='1'
+        or category=='volume' and action not in ('render','ai') and os.getenv('VERIFIED_DATABASE_INPUT')=='1'
         or action=='produce' and os.getenv('MANUAL_GENERATION')=='1'
         or action=='render' and render_input is not None)
     previous=read(cache) if cache.exists() and not ignore_cache else None

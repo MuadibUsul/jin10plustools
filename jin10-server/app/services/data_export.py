@@ -19,7 +19,7 @@ from decimal import Decimal
 from typing import Callable, Iterable, Iterator
 
 from sqlalchemy import Select, func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, aliased
 
 from app.briefs.policy import CHINA
 from app.db.models import (
@@ -565,10 +565,77 @@ BRIEF_BLOBS = build_dataset(
     model=BriefSourceBlob,team_column=BriefSourceBlob.team_id,date_column=BriefSourceBlob.created_at,
     columns=_columns(('id','证据ID','text'),('sha256','SHA-256','text'),('byte_count','原始字节数','int'),('created_at','首次归档时间','datetime')))
 
+
+def buffett_dataset(key,label,category):
+    """A flat, dated export from durable observations; no live source requests.
+
+    Preserve separate methods for a date instead of silently joining incompatible
+    historical sources. The raw revision dataset remains available independently.
+    """
+    columns=_columns(('id','记录ID','text'),('date','数据日期','date'),
+        ('buffett_pct','巴菲特指数（%）','decimal'),('buffett_ratio','巴菲特指数比值','text'),
+        ('market_cap','市值分子','text'),('market_cap_unit','市值单位','text'),
+        ('gdp','GDP分母','text'),('gdp_unit','GDP单位','text'),('gdp_period','GDP期间','text'),
+        ('market_source','市值来源','text'),('gdp_source','GDP来源','text'),
+        ('gdp_vintage_policy','GDP版本说明','text'),('source_status','来源状态','text'),
+        ('method','来源方法','text'),('revision','修订号','int'),
+        ('quality_status','质量状态','text'),('source_snapshot_id','来源证据ID','text'),
+        ('market_source_snapshot_id','市值证据ID','text'),('gdp_source_snapshot_id','GDP证据ID','text'),
+        ('collected_at','采集记录时间','datetime'))
+    def latest(team_id,start,end):
+        filters=[BriefDataPoint.team_id==team_id,BriefDataPoint.category==category,
+            BriefDataPoint.series=='buffett',BriefDataPoint.quality_status=='accepted',
+            *day_conditions(BriefDataPoint.data_date,start,end)]
+        ranked=select(BriefDataPoint,func.row_number().over(
+            partition_by=(BriefDataPoint.data_date,BriefDataPoint.method),
+            order_by=(BriefDataPoint.collected_at.desc(),BriefDataPoint.revision.desc())).label('rank')).where(*filters).subquery()
+        point=aliased(BriefDataPoint,ranked)
+        return ranked,point
+    def count(db,team_id,start,end):
+        ranked,_=latest(team_id,start,end)
+        return int(db.scalar(select(func.count()).select_from(ranked).where(ranked.c.rank==1)) or 0)
+    def rows(db,team_id,start,end):
+        ranked,point=latest(team_id,start,end)
+        query=select(point).where(ranked.c.rank==1).order_by(point.data_date,point.method).limit(MAX_ROWS+1)
+        for observation in db.scalars(query.execution_options(yield_per=200)):
+            values=observation.values;american=category=='us_barometer'
+            numerator=values.get('market_cap_usd_billion') if american else values.get('marketCap')
+            denominator=values.get('gdp_usd_billion') if american else values.get('gdp')
+            ratio=values.get('ratio');pct=values.get('pct');status=values.get('source_status')
+            if numerator is not None and denominator is not None:
+                try:
+                    n,d=Decimal(str(numerator)),Decimal(str(denominator))
+                    if not n.is_finite() or not d.is_finite() or n<=0 or d<=0:raise ValueError()
+                    ratio=str(n/d)
+                    if pct is None:pct=f'{n/d*100:.2f}'
+                except (ValueError,ArithmeticError):ratio=pct=None;status='inputs_incomplete'
+            else:ratio=pct=None;status='inputs_incomplete'
+            vintage=values.get('gdp_vintage') or {}
+            yield {'id':observation.id,'date':observation.data_date,'buffett_pct':str(pct) if pct is not None else None,
+                'buffett_ratio':ratio,'market_cap':numerator,'market_cap_unit':'十亿美元' if american else '亿元人民币',
+                'gdp':denominator,'gdp_unit':'十亿美元，季度年化名义GDP' if american else '亿元人民币，全年名义GDP',
+                'gdp_period':values.get('gdp_period') or vintage.get('period'),
+                'market_source':values.get('market_source') or values.get('source'),
+                'gdp_source':values.get('gdp_source') or vintage.get('source'),
+                'gdp_vintage_policy':values.get('gdp_vintage_policy') or vintage.get('vintage_policy') or vintage.get('revision_policy') or '历史GDP版本未完整留存',
+                'source_status':status or ('legacy_method_unverified' if 'unverified' in observation.method else 'stored_observation'),
+                'method':observation.method,'revision':observation.revision,'quality_status':observation.quality_status,
+                'source_snapshot_id':observation.source_snapshot_id,
+                'market_source_snapshot_id':values.get('market_source_snapshot_id') or observation.source_snapshot_id,
+                'gdp_source_snapshot_id':values.get('gdp_source_snapshot_id') or observation.source_snapshot_id,
+                'collected_at':observation.collected_at}
+    return Dataset(key=key,label=label,
+        description='按数据日期导出已接受观测的指数、分子分母及来源；每个日期和来源方法取最新修订，缺失输入留空。',
+        date_label='数据日期',day=True,columns=columns,count=count,rows=rows)
+
+
+A_SHARE_BUFFETT=buffett_dataset('a_share_buffett','A股巴菲特指数','valuation')
+US_BUFFETT=buffett_dataset('us_buffett','美股巴菲特指数','us_barometer')
+
 DATASETS: dict[str, Dataset] = {dataset.key: dataset for dataset in (
     MATERIALS, ASSETS, ISSUES, BOARDS, PARSE_REPORTS,
     BRIEF_ISSUES, BRIEF_VERSIONS, BRIEF_JOBS, BRIEF_SNAPSHOTS, VALUATION_OBSERVATIONS,
-    BRIEF_AUDITS, FEEDBACK,
+    BRIEF_AUDITS, FEEDBACK,A_SHARE_BUFFETT,US_BUFFETT,
     NEWS_EVENTS, NEWS_EVENT_REVISIONS, NEWS_EVENT_EVIDENCE, NEWS_EVENT_CLAIMS,
     NEWS_EVENT_LINKS, NEWS_EVENT_ANALYSES, NEWS_DRAFTS, NEWS_DRAFT_REVISIONS,
     NEWS_SKILL_VERSIONS, NEWS_WORKFLOW_RUNS, NEWS_WORKFLOW_NODES, NEWS_AUDIT,

@@ -24,7 +24,8 @@ UNITS={'volume':{'turn':'CNY_100_million','vol':'shares_100_million','ma20':'CNY
        'oil_etf':{'barrels':'barrels','futures_barrels':'barrels','change_barrels':'barrels','reference_price':'USD_per_barrel',
                   'reported_value_wan_barrels':'10000_barrels','reported_quantum_barrels':'barrels'},
        'us_structure':{'close':'index_points','low':'index_points'},
-       'us_barometer':{'close':'index_points','erp':'fraction','value':'USD_billion_SAAR'},
+       'us_barometer':{'close':'index_points','erp':'fraction','value':'USD_billion_SAAR',
+           'pct':'percent_number','ratio':'fraction','market_cap_usd_billion':'USD_billion','gdp_usd_billion':'USD_billion_SAAR'},
        'gpu_rental':{'price':'USD_per_GPU_hour'},'token_cost':{'price':'USD_per_million_tokens'}}
 
 
@@ -97,6 +98,13 @@ def extract(category,folder,payload=None,*,only_file=None):
         add('wilshire',raw.get('wilshire',[]),'yahoo_w5000_v1')
         add('erp',raw.get('erp',[]),'streetstats_erp_v1')
         add('gdp',raw.get('gdp',[]),'fred_current_revised_not_point_in_time',key='period')
+        if raw.get('wilshire') and raw.get('gdp'):
+            from .engines.us_barometer.calculate import buffett_series
+            from .engines.us_barometer.run import SOURCES
+            first=min(row['period'] for row in raw['gdp'])
+            derived=buffett_series([row for row in raw['wilshire'] if row['date']>=first],raw['gdp'])
+            add('buffett',[{**row,'market_source':SOURCES['wilshire'],'gdp_source':SOURCES['gdp']}
+                           for row in derived],'yahoo_w5000_fred_current_revised_buffett_v1')
     elif category=='us_structure':
         raw=load('us-structure-collected.json') or load('us-structure-snapshot.json') or {}
         for series,rows in raw.get('data',{}).items():add(series,rows,'yahoo_daily_close_low_v1')

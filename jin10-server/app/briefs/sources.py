@@ -459,7 +459,7 @@ def valuation(day,out,state,refresh=False):
     originals=read(HERE/'seed/buffett-history.json')
     history_path=state/'buffett-history.json'
     history=read(history_path) if history_path.exists() else originals
-    gdp_table=read(HERE/'seed/gdp.json')
+    gdp_table=gdp_catalog(HERE/'seed')
     gdp=gdp_table.get(str(date.fromisoformat(day).year-1))
     if not gdp:raise ValueError('上年度GDP尚未配置，不能沿用过期分母')
     updated={r['date']:r for r in cap['rows']}
@@ -468,7 +468,11 @@ def valuation(day,out,state,refresh=False):
     for r in cap['rows']:
         close=next((x['close'] for x in rows if x['date']==r['date']),None)
         if close is None:raise ValueError('估值图缺少对应日期沪深300点位')
-        history.append({'date':r['date'],'marketCap':r['market_cap_yi'],'gdp':gdp['value_yi'],'close':close,'source':cap['source']})
+        dated_gdp=gdp_table.get(str(date.fromisoformat(r['date']).year-1))
+        if not dated_gdp:raise ValueError('对应数据日的上年度GDP缺失，不能跨年混用分母')
+        history.append({'date':r['date'],'marketCap':r['market_cap_yi'],'gdp':dated_gdp['value_yi'],
+                        'gdp_vintage':dated_gdp,'gdp_available_on_observation_date':dated_gdp.get('published_on',r['date'])<=r['date'],
+                        'close':close,'source':cap['source']})
     history.sort(key=lambda r:r['date']);save(history_path,history)
     visible=[r for r in history if r['date']<=day]
     save(out/'buffett-plot-data.json',visible);save(out/'erp-plot-data.json',rows)

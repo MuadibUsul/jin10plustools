@@ -119,7 +119,8 @@ def production_status(db,team_id,now=None):
             collected=db.scalar(select(BriefJob).where(BriefJob.team_id==team_id,
                 BriefJob.category==category,BriefJob.issue_date>=local.date()-timedelta(days=3),
                 BriefJob.issue_date<=local.date()+timedelta(days=1),
-                BriefJob.action=='reconcile').order_by(BriefJob.updated_at.desc()).limit(1))
+                BriefJob.action=='reconcile').order_by(
+                    BriefJob.issue_date.desc(),BriefJob.updated_at.desc()).limit(1))
             if collected:
                 from app.briefs.service import root_for
                 collection_target=expected_date(category,collected.issue_date).isoformat()

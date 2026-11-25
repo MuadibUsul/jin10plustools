@@ -268,3 +268,28 @@ def test_source_recovery_does_not_hide_metric_block_or_old_job(db_factory,seed,a
         assert any(a.get('job_id')==str(failed.id) for a in report['alerts']) is not should_recover
         assert any(a['code']=='unverified_metric_contract' and a.get('category')=='us_barometer' for a in report['alerts'])
         assert not any(a['code']=='missing_daily_product' and a.get('category')=='us_barometer' for a in report['alerts'])
+
+
+def test_later_historical_reconciliation_cannot_hide_todays_close_failure(db_factory,seed):
+    from app.briefs.service import enqueue
+    from app.services.production_health import production_status
+    from app.db.models import BriefConfig,BriefDataCheck
+    with db_factory() as db:
+        team=seed['editor'].team_id
+        db.add(BriefConfig(team_id=team,data_enabled=True))
+        current=enqueue(db,team,date(2026,11,26),'turnover',action='reconcile')
+        current.status='failed';current.active_key=None;current.error='今日收盘缺少必要交易日'
+        current.updated_at=datetime(2026,11,25,9,tzinfo=timezone.utc)
+        historical=enqueue(db,team,date(2026,11,25),'turnover',action='reconcile')
+        historical.status='succeeded';historical.active_key=None
+        historical.updated_at=datetime(2026,11,25,10,tzinfo=timezone.utc);db.flush()
+        db.add(BriefDataCheck(team_id=team,category='turnover',data_date=date(2026,11,24),
+            job_id=historical.id,attempt=1,status='complete',report={'current_data_valid':True},
+            created_at=datetime(2026,11,25,10,tzinfo=timezone.utc)))
+        db.commit()
+        report=production_status(db,team,datetime(2026,11,25,12,tzinfo=timezone.utc))
+        item=next(item for item in report['items'] if item['category']=='turnover')
+        assert item['collection_job_id']==str(current.id)
+        assert item['collection_target_date']=='2026-11-25' and item['collection_status']=='failed'
+        assert not item['collection_recovered_at']
+        assert any(a.get('job_id')==str(current.id) and a['code'].startswith('collection_') for a in report['alerts'])

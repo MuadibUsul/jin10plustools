@@ -286,6 +286,20 @@ def confirm(id:uuid.UUID,body:ConfirmRequest,db:DbSession,user:Editor):
     if issue.version!=body.version:raise HTTPException(409,'只能确认当前版本，请刷新核对')
     version=db.scalars(select(BriefVersion).where(BriefVersion.issue_id==id,BriefVersion.number==body.version)).first()
     if not version or not version.payload.get('valid'):raise HTTPException(409,'数据或图片未通过基础校验')
+    if issue.category=='volume':
+        from app.briefs.service import root_for
+        from app.briefs.volume_close import draft_block, mark_rejected_closes
+        root=root_for(user.team_id).resolve()
+        folder=(root/str(version.payload.get('artifact_dir') or '')).resolve()
+        if not folder.is_relative_to(root):raise HTTPException(409,'稿件来源路径无效')
+        try:block=draft_block(version.payload,folder)
+        except (ValueError,OSError,KeyError,TypeError):
+            raise HTTPException(409,'稿件数据快照未通过收盘时点核验，请重新生成') from None
+        if block:
+            message,matched=block
+            mark_rejected_closes(db,user.team_id,matched)
+            db.commit()
+            raise HTTPException(409,message)
     reliability=version.payload.get('data_reliability') or {}
     if reliability.get('publication_digest'):
         source_day=date.fromisoformat(version.payload['data_date'])

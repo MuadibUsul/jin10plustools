@@ -18,7 +18,7 @@ from app.db.models import BriefConfig,BriefIssue,BriefJob,BriefVersion,BriefSour
 from app.services.team_settings import briefs_ai
 from .delivery import default_notes
 from app.db.session import get_session_factory,get_engine
-from .policy import AUTO_CATEGORIES,CATEGORIES,CHINA,expected_date,first_run,production_window,next_slot
+from .policy import AUTO_CATEGORIES,CATEGORIES,CHINA,expected_date,first_run,production_window,next_slot,MANUAL_SOURCE_CATEGORIES,PUBLIC_COMPUTE_MAX_AGE_DAYS
 from .service import enqueue,ensure_issue,owned,append_version,root_for,find_issue,edition_payload
 from .source_archive import archive_run,restore_pe_capture
 from .progress import record,read
@@ -35,7 +35,7 @@ def abort_on_lock_loss():
         except Exception:log.exception('Could not terminate active source process')
     os._exit(75)
 
-PUBLIC_COMPUTE_CATEGORIES = frozenset({'token_cost', 'gpu_rental'})
+PUBLIC_COMPUTE_CATEGORIES = MANUAL_SOURCE_CATEGORIES
 
 
 def drain_requested():
@@ -70,22 +70,21 @@ def capture_public_for_job(factory, job_id, out):
         if not public_read_requested(job) and not background:
             return None
         category, issue_day, team_id = job.category, job.issue_date, job.team_id
-    target_day = expected_date(category, issue_day) if category == 'gpu_rental' else None
+    # These columns publish the source's actual latest observation, on click.
+    # A calendar's "yesterday" is not proof that a weekly source owes that date.
     partial={'category':category,'readings':[],'history':{},'captured_at':utcnow().isoformat()}
     def page_captured(metric,reading,history):
         partial['readings'].append(reading);partial['history'][metric]=history
         partial['data_date']=max(row['date'] for row in partial['readings'])
         save(out/'public-compute-read.json',partial)
     capture = fetch_visible(category, today=datetime.now(CHINA).date(),
-                            target_date=target_day,on_page=page_captured,
+                            target_date=None,on_page=page_captured,
                             allow_missing_week=True)
     save(out/'public-compute-read.json',capture)
     source_day = date.fromisoformat(capture['data_date'])
-    if target_day is not None and source_day != target_day and not background:
-        raise ValueError(f'GPU公开数据日{source_day}与目标数据日{target_day}不一致')
     if source_day > issue_day and not background:
         raise ValueError('网页数据日晚于所选生产日，请选择当前生产日后再生成')
-    if (datetime.now(CHINA).date() - source_day).days > 7 and not background:
+    if (datetime.now(CHINA).date() - source_day).days > PUBLIC_COMPUTE_MAX_AGE_DAYS and not background:
         raise ValueError(f'公开网页仍停留在{source_day}，超过七日；为避免旧稿，本次停止生成')
     with factory() as db:
         restored_workbook=restore_workbook_history(db,team_id,before=capture['data_date'])
@@ -255,10 +254,18 @@ def schedule_reconciliation(factory,now=None):
     """One queued repair per team; bounded cycles, no AI and no draft overwrite."""
     from .trading_calendar import CalendarUnavailable
     now=now or datetime.now(CHINA);local=now.astimezone(CHINA)
-    if local.hour<10:return 0  # Morning production keeps queue priority.
+    if drain_requested():return 0
     cycle=local.strftime('%Y%m%d')+'-'+str(local.hour//6)
     count=0
     with factory() as db:
+        # Retire only queued jobs from the obsolete automatic AI-source policy.
+        # Running captures finish and historical failures remain inspectable.
+        db.execute(update(BriefJob).where(BriefJob.category.in_(PUBLIC_COMPUTE_CATEGORIES),
+            BriefJob.action=='reconcile',BriefJob.created_by.is_(None),
+            BriefJob.status.in_(['queued','waiting'])).values(status='skipped',active_key=None,
+            lease_until=None,error='按原始栏目规则仅点击生成时采集；已停止旧的后台定时任务',updated_at=utcnow()))
+        if local.hour<10:
+            db.commit();return 0  # Retire obsolete jobs before morning claims, without adding work.
         for config in db.scalars(select(BriefConfig).where(BriefConfig.data_enabled.is_(True))):
             attempts=db.scalar(select(func.count()).select_from(BriefJob).where(BriefJob.team_id==config.team_id,
                 BriefJob.action=='reconcile',BriefJob.dedupe_key.endswith(':'+cycle)))
@@ -270,7 +277,7 @@ def schedule_reconciliation(factory,now=None):
             queued=False;seen=set()
             for offset in range(8):
                 issue_day=local.date()-timedelta(days=offset)
-                for category in CATEGORIES:
+                for category in AUTO_CATEGORIES:
                     try:target=expected_date(category,issue_day)
                     except CalendarUnavailable:continue
                     if (category,target) in seen:continue
@@ -391,13 +398,19 @@ def execute(factory,id):
                     'public_display':row.public_display,'manual_display':row.manual_display} for row in observed]
                 save(out/'ai-compute-source.json',rows)
                 fields=('a100','h100','b200') if category=='gpu_rental' else ('token_price',)
-                matched=next((row for row in rows if row['date']==target_day.isoformat()),None)
+                actual_day=date.fromisoformat(capture['data_date'])
+                matched=next((row for row in rows if row['date']==actual_day.isoformat()),None)
                 complete=bool(matched and all(matched[key] is not None for key in fields))
-                payload={'data_date':target_day.isoformat(),'valid':complete,'source_latest_date':capture['data_date']}
+                age=(datetime.now(CHINA).date()-actual_day).days
+                recent=0<=age<=PUBLIC_COMPUTE_MAX_AGE_DAYS
+                payload={'data_date':actual_day.isoformat(),'valid':complete,'source_latest_date':capture['data_date'],
+                         'data_date_policy':'source_published_observation',
+                         'data_contract':{'version':1,'status':'validated_by_adapter' if recent else 'archive_only',
+                            'errors':[] if recent else ['历史观察已保存，但超过七日，不可作为当前稿件数据']}}
                 current_job=db.get(BriefJob,id)
                 report=record_run(db,current_job,out,payload,
-                    None if complete else '目标日尚未发布；本次已补回来源能提供的真实历史')
-                archive_run(db,current_job,out,data_date=target_day.isoformat())
+                    None if complete else '公开来源的同日指标未齐全；已保留实际历史，需核对原始卡片')
+                archive_run(db,current_job,out,data_date=actual_day.isoformat())
                 from .data_reliability import link_sources
                 link_sources(db,current_job)
                 current_job.status='succeeded' if complete else 'failed'

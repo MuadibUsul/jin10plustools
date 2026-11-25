@@ -100,3 +100,16 @@ def test_afternoon_collection_failure_is_visible_before_next_morning(db_factory,
         report=production_status(db,team,datetime(2026,11,24,18,tzinfo=CHINA))
         alert=next(row for row in report['alerts'] if row.get('job_id')==str(job.id))
         assert alert['target_date']=='2026-11-24'
+
+
+def test_retired_automatic_ai_jobs_cannot_run_in_the_morning(db_factory,seed):
+    from app.briefs.worker import schedule_reconciliation
+    team=seed['editor'].team_id
+    with db_factory() as db:
+        job=enqueue(db,team,date(2026,11,25),'token_cost',action='reconcile',cycle='obsolete')
+        manual=enqueue(db,team,date(2026,11,25),'gpu_rental',user_id=seed['editor'].id)
+        db.commit();ident=job.id;manual_id=manual.id
+    assert schedule_reconciliation(db_factory,datetime(2026,11,25,8,tzinfo=CHINA))==0
+    with db_factory() as db:
+        assert db.get(BriefJob,ident).status=='skipped' and db.get(BriefJob,ident).active_key is None
+        assert db.get(BriefJob,manual_id).status=='queued'

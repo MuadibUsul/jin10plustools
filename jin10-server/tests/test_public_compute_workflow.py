@@ -40,6 +40,25 @@ def test_scope_is_only_editor_generate_for_two_compute_briefs():
     assert not wants('gpu_rental', user=None)
 
 
+def test_gpu_keeps_actual_latest_date_instead_of_inventing_a_yesterday_requirement(db_factory,seed,monkeypatch,tmp_path):
+    monkeypatch.setattr(worker,'datetime',SimpleNamespace(now=lambda zone:datetime(2026,10,22,tzinfo=zone)))
+    with db_factory() as db:
+        job=enqueue(db,seed['editor'].team_id,date(2026,10,22),'gpu_rental',user_id=seed['editor'].id)
+        db.commit();ident=job.id
+    visible=capture('gpu_rental');visible['data_date']='2026-10-20'
+    for reading in visible['readings']:reading['date']='2026-10-20'
+    def fetch(category,**kwargs):
+        assert kwargs['target_date'] is None
+        return visible
+    monkeypatch.setattr('app.briefs.public_compute.fetch_visible',fetch)
+    result=worker.capture_public_for_job(db_factory,ident,tmp_path)
+    assert result['data_date']=='2026-10-20'
+    with db_factory() as db:
+        row=db.scalar(select(AIComputeObservation).where(AIComputeObservation.team_id==seed['editor'].team_id,
+            AIComputeObservation.kind=='gpu',AIComputeObservation.date==date(2026,10,20)))
+        assert row.a100==Decimal('1.55')
+
+
 def test_gpu_copy_distinguishes_visible_history_change_from_card_change(monkeypatch, tmp_path):
     readings = [
         {'metric': 'a100', 'date': '2026-10-27', 'price': '1.56',
@@ -93,7 +112,7 @@ def test_click_capture_persists_visible_precision_and_generates_both_briefs(
         path.mkdir()
         worker.capture_public_for_job(db_factory, ids[category], path)
         assert (path/'public-compute-read.json').is_file()
-    assert calls == [('token_cost', None), ('gpu_rental', date(2026, 10, 21))]
+    assert calls == [('token_cost', None), ('gpu_rental', None)]
     with db_factory() as db:
         token = db.scalar(select(AIComputeObservation).where(
             AIComputeObservation.team_id == team_id, AIComputeObservation.kind == 'token')

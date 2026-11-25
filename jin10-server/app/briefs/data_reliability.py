@@ -231,6 +231,10 @@ def coverage(db,team_id,category,target):
     try:wanted=set(sessions(market,start,target))
     except CalendarUnavailable as exc:
         wanted=None;limitations.append(str(exc))
+    from .policy import MANUAL_SOURCE_CATEGORIES
+    if category in MANUAL_SOURCE_CATEGORIES:
+        wanted=None
+        limitations.append('按来源实际发布日期保存，来源未承诺逐日发布；未推测未发布日为缺数')
     rows=list(db.scalars(select(BriefDataPoint).where(BriefDataPoint.team_id==team_id,
         BriefDataPoint.category==category,BriefDataPoint.data_date>=start,BriefDataPoint.data_date<=target).order_by(
         BriefDataPoint.collected_at.desc(),BriefDataPoint.revision.desc())))
@@ -254,6 +258,9 @@ def coverage(db,team_id,category,target):
             metrics[series]['frequency']='quarterly'
             metrics[series]['complete']=None
             limitations.append('GDP为当前修订序列，不能证明历史时点已公布的原始版本')
+        if category in MANUAL_SOURCE_CATEGORIES:
+            metrics[series]['frequency']='source_published'
+            metrics[series]['complete']=None
         if len(methods)>1:limitations.append(f'{series}存在多种来源/方法，未认定历史同口径')
         if invalid:limitations.append(f'{series}有{len(invalid)}个日期的必要字段尚未通过核验')
         if any(row.values.get('gdp_available_on_observation_date') is False for row in chosen):

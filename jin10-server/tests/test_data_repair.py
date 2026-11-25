@@ -349,13 +349,13 @@ def test_editor_can_resume_an_existing_waiting_job(client,db_factory,seed):
     assert response.json()['id']==str(job_id) and response.json()['status']=='queued'
 
 
-def test_background_ai_collection_stores_data_without_generating_content(db_factory,seed,monkeypatch):
+def test_explicit_ai_history_collection_stores_data_without_generating_content(db_factory,seed,monkeypatch):
     from app.briefs.worker import execute
     from app.briefs.service import enqueue
     from app.db.models import BriefVersion
     team=seed['editor'].team_id
     with db_factory() as db:
-        job=enqueue(db,team,date(2026,10,30),'token_cost',action='reconcile',cycle='test')
+        job=enqueue(db,team,date(2026,10,30),'token_cost',action='reconcile',cycle='test',user_id=seed['editor'].id)
         job.status='running';job.attempts=1;db.commit();job_id=job.id
     def capture(factory,id,out):
         with factory() as db:
@@ -373,19 +373,20 @@ def test_background_ai_collection_stores_data_without_generating_content(db_fact
         assert db.scalar(select(BriefDataPoint)).values['price']=='0.960000'
 
 
-def test_both_ai_sources_get_data_repair_jobs_but_not_morning_generation(db_factory,seed):
+def test_manual_ai_sources_do_not_enter_automatic_collection_or_generation(db_factory,seed):
     from app.briefs.worker import schedule_reconciliation
     from app.briefs.policy import AUTO_CATEGORIES,CATEGORIES
     assert not {'token_cost','gpu_rental'} & set(AUTO_CATEGORIES)
     team=seed['editor'].team_id;now=datetime(2026,10,30,14,tzinfo=CHINA)
     with db_factory() as db:db.add(BriefConfig(team_id=team,enabled=True));db.commit()
     categories=set()
-    for _ in range(9):
+    for _ in AUTO_CATEGORIES:
         assert schedule_reconciliation(db_factory,now)==1
         with db_factory() as db:
             job=db.scalar(select(BriefJob).where(BriefJob.status=='queued'))
             categories.add(job.category);job.status='succeeded';job.active_key=None;db.commit()
-    assert categories==set(CATEGORIES)
+    assert categories==set(AUTO_CATEGORIES)
+    assert not categories & {'token_cost','gpu_rental'}
 
 
 def test_as_of_replay_retains_original_values_after_correction_and_exports_units(db_factory,seed):

@@ -4,7 +4,7 @@ from datetime import datetime,timedelta,date
 from sqlalchemy import select
 from app.config import get_settings
 from app.db.models import BriefIssue,BriefVersion,BriefJob,BriefConfig,BriefDataCheck,utcnow
-from app.briefs.policy import AUTO_CATEGORIES,CATEGORIES,CHINA,expected_date
+from app.briefs.policy import AUTO_CATEGORIES,CATEGORIES,CHINA,expected_date,MANUAL_SOURCE_CATEGORIES,PUBLIC_COMPUTE_MAX_AGE_DAYS
 from app.briefs.trading_calendar import calendars,CalendarUnavailable
 
 
@@ -61,8 +61,14 @@ def production_status(db,team_id,now=None):
         except CalendarUnavailable as exc:
             alerts.append({'code':'calendar','category':category,'message':str(exc)});continue
         fresh=actual==target or (category=='liquidity' and actual==local.date().isoformat())
+        if category in MANUAL_SOURCE_CATEGORIES:
+            fresh=bool(actual and 0<=(local.date()-date.fromisoformat(actual)).days<=PUBLIC_COMPUTE_MAX_AGE_DAYS)
         item={'category':category,'data_date':actual,'target_date':target,'status':'current' if fresh else 'awaiting_source'}
+        if category in MANUAL_SOURCE_CATEGORIES:
+            item['target_date']=actual
+            item['date_policy']='latest_published_within_7_days'
         item['schedule_enabled']=scheduled and category in AUTO_CATEGORIES
+        item['acquisition_mode']='on_generate' if category in MANUAL_SOURCE_CATEGORIES else 'scheduled_and_manual'
         from app.briefs.failures import job_failure
         latest_job=db.scalar(select(BriefJob).where(BriefJob.team_id==team_id,
             BriefJob.category==category,BriefJob.issue_date==local.date(),
@@ -92,7 +98,7 @@ def production_status(db,team_id,now=None):
                 alerts.append({'code':'source_verification_stale','category':category,'message':'原油发行方最近成功核查超过26小时或尚无可验证记录；请检查抓取任务'})
             elif (scheduled or collecting) and recent and item['last_attempt_ok'] is False and now-aware(checked.created_at)>timedelta(hours=2):
                 alerts.append({'code':'source_check_failed','category':category,'message':'原油发行方最新核查失败，已保留最近可用数据；请检查取数任务'})
-        if collecting:
+        if collecting and category in AUTO_CATEGORIES:
             collected=db.scalar(select(BriefJob).where(BriefJob.team_id==team_id,
                 BriefJob.category==category,BriefJob.issue_date>=local.date()-timedelta(days=3),
                 BriefJob.issue_date<=local.date()+timedelta(days=1),

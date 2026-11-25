@@ -13,6 +13,8 @@ CATEGORIES = {
 }
 AUTO_CATEGORIES = ('liquidity', 'volume', 'turnover', 'valuation', 'oil_etf',
                    'us_barometer', 'us_structure')
+MANUAL_SOURCE_CATEGORIES=frozenset({'token_cost','gpu_rental'})
+PUBLIC_COMPUTE_MAX_AGE_DAYS=7
 
 
 def previous_weekday(day: date) -> date:

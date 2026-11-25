@@ -181,11 +181,12 @@ def test_compute_collection_failure_is_visible_without_enabling_automatic_drafts
     with db_factory() as db:
         team=seed['editor'].team_id
         db.add(BriefConfig(team_id=team,enabled=True,data_enabled=True))
-        job=enqueue(db,team,date(2026,11,24),'token_cost',action='reconcile')
+        job=enqueue(db,team,date(2026,11,24),'token_cost',user_id=seed['editor'].id)
         job.status='failed';job.error='目标日尚未发布；本次已补回来源能提供的真实历史';db.commit()
         report=production_status(db,team,datetime(2026,11,24,4,tzinfo=timezone.utc))
         item=next(item for item in report['items'] if item['category']=='token_cost')
-        assert item['schedule_enabled'] is False and item['collection_status']=='failed'
+        assert item['schedule_enabled'] is False and item['acquisition_mode']=='on_generate'
+        assert item['job_status']=='failed' and item['failure']
         assert any(alert.get('job_id')==str(job.id) for alert in report['alerts'])
         assert not any(alert['code']=='missing_daily_product' and alert.get('category')=='token_cost' for alert in report['alerts'])
 

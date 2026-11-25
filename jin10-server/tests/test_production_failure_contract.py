@@ -232,3 +232,39 @@ def test_new_verified_capture_recovers_old_collection_alarm(db_factory,seed,acti
         assert bool(item['collection_recovered_at']) is should_recover
         assert any(a['code'].startswith('collection_') and a.get('category')=='volume'
                    for a in report['alerts']) is not should_recover
+
+
+@pytest.mark.parametrize('action,target,code,should_recover',[
+    ('reconcile',date(2026,11,23),'required_data_missing',True),
+    ('render',date(2026,11,23),'required_data_missing',False),
+    ('reconcile',date(2026,11,20),'required_data_missing',False),
+    ('reconcile',date(2026,11,23),'source_contract_error',False),
+])
+def test_source_recovery_does_not_hide_metric_block_or_old_job(db_factory,seed,action,target,code,should_recover):
+    from app.briefs.service import enqueue,root_for
+    from app.services.production_health import production_status
+    from app.db.models import BriefConfig,BriefDataCheck
+    with db_factory() as db:
+        team=seed['editor'].team_id
+        db.add(BriefConfig(team_id=team,enabled=True,data_enabled=True))
+        failed=enqueue(db,team,date(2026,11,24),'us_barometer')
+        failed.status='failed';failed.active_key=None;failed.error='旧出稿任务失败'
+        failed.updated_at=datetime(2026,11,24,1,tzinfo=timezone.utc);db.flush()
+        save(root_for(team)/'runs'/str(failed.id)/'error.json',{'message':failed.error,'code':code})
+        # Rebuilding an older edition is not recovery of today's source failure.
+        newer=enqueue(db,team,date(2026,11,23) if action=='render' else date(2026,11,24),
+                      'us_barometer',action=action,unique=True)
+        newer.status='succeeded';newer.active_key=None;db.flush()
+        db.add(BriefDataCheck(team_id=team,category='us_barometer',data_date=target,
+            job_id=newer.id,attempt=1,status='complete',report={
+                'current_data_valid':True,'product_contract_valid':False},
+            created_at=datetime(2026,11,24,2,tzinfo=timezone.utc)))
+        db.commit()
+        report=production_status(db,team,datetime(2026,11,24,4,tzinfo=timezone.utc))
+        item=next(item for item in report['items'] if item['category']=='us_barometer')
+        assert item['status']=='blocked_contract' and item['metric_contract']['errors']
+        assert item['job_status']=='failed' and item['failure']['code']==code
+        assert bool(item['failure_recovered_at']) is should_recover
+        assert any(a.get('job_id')==str(failed.id) for a in report['alerts']) is not should_recover
+        assert any(a['code']=='unverified_metric_contract' and a.get('category')=='us_barometer' for a in report['alerts'])
+        assert not any(a['code']=='missing_daily_product' and a.get('category')=='us_barometer' for a in report['alerts'])

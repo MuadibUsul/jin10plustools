@@ -8,6 +8,16 @@ from app.briefs.policy import AUTO_CATEGORIES,CATEGORIES,CHINA,expected_date,MAN
 from app.briefs.trading_calendar import calendars,CalendarUnavailable
 
 
+def verified_capture_after(db,team_id,category,target,after):
+    """Only a later, dated source validation can resolve an acquisition failure."""
+    return db.scalar(select(BriefDataCheck).join(BriefJob,
+        BriefDataCheck.job_id==BriefJob.id).where(
+        BriefDataCheck.team_id==team_id,BriefDataCheck.category==category,
+        BriefDataCheck.data_date==target,BriefJob.action!='render',
+        BriefDataCheck.report['current_data_valid'].as_boolean().is_(True),
+        BriefDataCheck.created_at>after).order_by(BriefDataCheck.created_at.desc()).limit(1))
+
+
 def worker_status(now=None):
     now=now or utcnow()
     path=get_settings().storage_dir/'.brief-worker-heartbeat.json'
@@ -47,10 +57,10 @@ def production_status(db,team_id,now=None):
             BriefIssue.version>0).order_by(BriefIssue.issue_date.desc()).limit(1))
         version=db.scalar(select(BriefVersion).where(BriefVersion.issue_id==issue.id,BriefVersion.number==issue.version)) if issue else None
         actual=(version.payload or {}).get('data_date') if version else None
-        if version:
-            from app.briefs.metric_contracts import production_contract
-            for error in production_contract(category,version.payload)['errors']:
-                alerts.append({'code':'unverified_metric_contract','category':category,'message':error})
+        from app.briefs.metric_contracts import production_contract
+        contract=production_contract(category,version.payload if version else {})
+        for error in contract['errors']:
+            alerts.append({'code':'unverified_metric_contract','category':category,'message':error})
         if category=='volume' and version:
             facts=version.payload.get('facts') or {}
             source_urls=[facts.get('source',''),*[row.get('url','') for row in facts.get('supplemental_sources') or []]]
@@ -64,6 +74,8 @@ def production_status(db,team_id,now=None):
         if category in MANUAL_SOURCE_CATEGORIES:
             fresh=bool(actual and 0<=(local.date()-date.fromisoformat(actual)).days<=PUBLIC_COMPUTE_MAX_AGE_DAYS)
         item={'category':category,'data_date':actual,'target_date':target,'status':'current' if fresh else 'awaiting_source'}
+        item['metric_contract']=contract
+        if contract['errors']:item['status']='blocked_contract'
         if category in MANUAL_SOURCE_CATEGORIES:
             item['target_date']=actual
             item['date_policy']='latest_published_within_7_days'
@@ -82,9 +94,14 @@ def production_status(db,team_id,now=None):
             item['failure']=job_failure(latest_job,root_for(team_id))
             if item['failure'] and latest_job.status in ('waiting','failed'):
                 failure=item['failure']
-                alerts.append({'code':failure['code'],'category':category,
-                    'job_id':str(latest_job.id),'target_date':target,
-                    'message':CATEGORIES[category]+'：'+failure['message']+'。'+failure['action']})
+                recovered=None
+                if failure['code'] in ('required_data_missing','awaiting_source','source_unavailable'):
+                    recovered=verified_capture_after(db,team_id,category,date.fromisoformat(target),latest_job.updated_at)
+                item['failure_recovered_at']=recovered.created_at.isoformat() if recovered else None
+                if recovered is None:
+                    alerts.append({'code':failure['code'],'category':category,
+                        'job_id':str(latest_job.id),'target_date':target,
+                        'message':CATEGORIES[category]+'：'+failure['message']+'。'+failure['action']})
         if category=='oil_etf':
             query=select(BriefDataCheck).where(BriefDataCheck.team_id==team_id,BriefDataCheck.category==category)
             attempt=db.scalar(query.order_by(BriefDataCheck.created_at.desc()).limit(1))
@@ -111,13 +128,7 @@ def production_status(db,team_id,now=None):
                 item['collection_status']=collected.status
                 item['collection_failure']=job_failure(collected,root_for(team_id))
                 if collected.status=='failed' and item['collection_failure']:
-                    verified=db.scalar(select(BriefDataCheck).join(BriefJob,
-                        BriefDataCheck.job_id==BriefJob.id).where(
-                        BriefDataCheck.team_id==team_id,BriefDataCheck.category==category,
-                        BriefDataCheck.data_date==date.fromisoformat(collection_target),BriefJob.action!='render',
-                        BriefDataCheck.report['current_data_valid'].as_boolean().is_(True),
-                        BriefDataCheck.created_at>collected.updated_at).order_by(
-                            BriefDataCheck.created_at.desc()).limit(1))
+                    verified=verified_capture_after(db,team_id,category,date.fromisoformat(collection_target),collected.updated_at)
                     item['collection_recovered_at']=verified.created_at.isoformat() if verified else None
                     if verified is None:
                         failure=item['collection_failure']

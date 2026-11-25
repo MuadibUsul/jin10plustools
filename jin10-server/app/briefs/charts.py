@@ -26,7 +26,7 @@ def volume_chart(rows,out):
     text(.07,.77,f"数据日：{copy_dates(last['date'])}    20日均线：{float(last['ma20'])/10000:.2f}万亿元",16,muted)
     ax=fig.add_axes([.1,.34,.82,.34]);av=fig.add_axes([.1,.16,.82,.12],sharex=ax)
     ax.bar(x,[float(r['turn']) for r in rows],color='#F3BA4B',width=.68)
-    ax.plot(x,[float(r['ma20']) if r.get('ma20') is not None else math.nan for r in rows],color=green,lw=2.5,label='20日均线')
+    ax.plot(x,[float(r['ma20']) for r in rows],color=green,lw=2.5,label='20日均线')
     ax.set_title('成交额（亿元）与20日均线',fontproperties=font(16),loc='left',pad=22)
     ax.legend(prop=font(12),frameon=False);ax.tick_params(axis='x',labelbottom=False)
     av.bar(x,[float(r['vol']) for r in rows],color=blue,width=.68)
@@ -37,9 +37,7 @@ def volume_chart(rows,out):
         a.set_axisbelow(True);a.grid(axis='y',color='#E9EDF3');a.tick_params(colors=muted,length=0,pad=9)
         for spine in a.spines.values():spine.set_visible(False)
     text(.07,.08,'数据来源：金十数据 · 沪深两市，不含北交所',13,muted)
-    text(.07,.05,'20日均线包含当日，按最近20个交易日计算；缺少必要日期时不计算。',13,muted)
-    if any(row.get('source_kind')=='jin10_published_closing_flash' for row in rows):
-        text(.07,.105,'部分历史点来自金十收盘快讯，按原文位数保存，详见来源记录。',12,muted)
+    text(.07,.05,'20日均线包含当日，按最近20条有效日数据计算。',13,muted)
     path=Path(out)/'成交额.png';fig.savefig(path,dpi=100);plt.close(fig);return path
 
 

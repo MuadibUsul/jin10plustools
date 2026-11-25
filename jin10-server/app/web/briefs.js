@@ -129,7 +129,6 @@ function renderCards() {
     }
     if (job) body.append(node('p', `${job.status === 'failed' && version ? '最近一次任务失败；已有预览图可查看' : labels[job.status] || job.status}${job.error ? '：' + job.error : ''}`, job.status === 'failed' ? 'error' : 'muted'));
     if (job?.status === 'waiting' && job.next_attempt_at) body.append(node('p', `下次重试：${displayTime(job.next_attempt_at)}`, 'muted'));
-    if (job?.failure?.action) body.append(node('p', job.failure.action, 'muted'));
     if (visibleWarnings(version).length) body.append(node('p', '有来源或口径说明，请核对', 'warning'));
     if (version && dataState?.report?.current_data_valid && dataState.target_date > version.data_date) {
       body.append(node('p',`来源已更新至 ${copyDate(dataState.target_date)}，请生成并核对新稿`,'warning'));

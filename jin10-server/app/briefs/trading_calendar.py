@@ -114,9 +114,5 @@ def require_window(rows, market, end, count, *, label='数据'):
         cursor=previous_session(market,cursor)
     available={row['date'] for row in rows}
     missing=sorted(set(wanted)-available)
-    if missing:
-        from .failures import MissingObservations
-        raise MissingObservations(f'{label}缺少必要交易日：'+','.join(missing),
-                                  source=label, missing_dates=missing,
-                                  latest_date=max(available) if available else None)
+    if missing: raise ValueError(f'{label}缺少必要交易日：'+','.join(missing))
     return sorted(wanted)

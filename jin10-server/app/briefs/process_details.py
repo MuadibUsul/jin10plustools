@@ -65,10 +65,7 @@ def describe(category, payload):
 
     try:
         if category == 'volume':
-            source('东方财富 · 沪深日线行情' if 'eastmoney.com' in str(facts.get('source'))
-                   else '金十小程序 · 沪深成交额明细', facts.get('source'))
-            for supplement in facts.get('supplemental_sources') or []:
-                source('独立行情收盘记录 · '+supplement['date'],supplement.get('url'))
+            source('金十数据 · 沪深成交额', facts.get('source'))
             value('沪深合计成交额', facts.get('amount_yi'), '亿元')
             value('20日成交额均线', facts.get('ma20_yi'), '亿元')
             value('对比交易日', facts.get('previous_date'))
@@ -258,7 +255,7 @@ def for_job(job, root, payload=None):
                     data['inputs'].append({'label': label,'value': str(row.get(key)), 'unit': '亿元'})
         if name == 'liquidity-snapshot.json' and isinstance(parsed, dict):
             data['fetched_at'] = parsed.get('fetched_at')
-    actions = {'produce': '生成稿件', 'refresh': '重新取数', 'render': '从快照重新制图', 'ai': '补跑AI文案','reconcile':'采集与核验数据'}
+    actions = {'produce': '生成稿件', 'refresh': '重新取数', 'render': '从快照重新制图', 'ai': '补跑AI文案'}
     reused = bool(payload and artifact != folder.resolve())
     ai = payload.get('skill') or payload.get('deepseek') or {}
     return {**data, 'evidence': evidence, 'action': actions.get(job.action, job.action),

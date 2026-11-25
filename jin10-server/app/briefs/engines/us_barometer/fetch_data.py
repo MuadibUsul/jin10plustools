@@ -10,28 +10,13 @@ import csv
 import io
 import json
 import os
-import hashlib
-from contextlib import contextmanager
-from contextvars import ContextVar
-from pathlib import Path
-from datetime import date,datetime,timezone
+from datetime import date
 from urllib.parse import urlencode
 
 import httpx
-from app.briefs.failures import SourceUnavailable
 
 UA = 'Mozilla/5.0'  # Yahoo rejects requests without a User-Agent
 LIMIT = 8_000_000
-CAPTURE_DIR = ContextVar('us_source_capture_dir', default=None)
-
-
-@contextmanager
-def capture(folder):
-    token=CAPTURE_DIR.set(Path(folder))
-    try:
-        yield
-    finally:
-        CAPTURE_DIR.reset(token)
 
 
 def get(url, headers=None):
@@ -45,7 +30,7 @@ def get(url, headers=None):
     last = None
     for attempt in range(3):
         remaining=float(os.getenv('SOURCE_DEADLINE_MONOTONIC','inf'))-time.monotonic()
-        if remaining<=0:raise SourceUnavailable('本次来源读取预算已用完；已保存完成的真实数据，等待下一次重试')
+        if remaining<=0:raise ValueError('本次来源读取预算已用完；已保存完成的真实数据，等待下一次重试')
         try:
             with httpx.Client(timeout=min(30,max(.1,remaining)), follow_redirects=True) as client:
                 response = client.get(url, headers=merged)
@@ -53,35 +38,11 @@ def get(url, headers=None):
             raw = response.content
             if len(raw) > LIMIT:
                 raise ValueError('来源数据过大')
-            folder=CAPTURE_DIR.get()
-            # Guest token replies and request authorization headers are never
-            # evidence. Persist only these public numeric source responses.
-            from urllib.parse import urlsplit
-            path=urlsplit(url).path
-            if folder is not None and (path.startswith('/v8/finance/chart/') or
-                    path in ('/graph/fredgraph.csv','/api/valuation/market/risk')):
-                folder.mkdir(parents=True,exist_ok=True)
-                extension='.csv' if path.endswith('.csv') else '.json'
-                name='us-source-'+hashlib.sha256(url.encode()).hexdigest()[:16]+extension
-                (folder/name).write_bytes(raw)
-                metadata={'host':urlsplit(url).hostname,'path':path,
-                          'captured_at':datetime.now(timezone.utc).isoformat(),
-                          'status_code':response.status_code,'sha256':hashlib.sha256(raw).hexdigest(),
-                          'response_date':response.headers.get('date'),
-                          'cache_age':response.headers.get('age'),
-                          'content_type':response.headers.get('content-type')}
-                (folder/(name+'.metadata.json')).write_text(json.dumps(metadata),encoding='utf-8')
             return raw
-        except httpx.HTTPStatusError as error:
-            if error.response.status_code not in (408,429,500,502,503,504):
-                raise SourceUnavailable(f'来源返回 HTTP {error.response.status_code}',source=response.url.host) from None
-            last = error
-            delay=min(1.5*(attempt+1),max(0,float(os.getenv('SOURCE_DEADLINE_MONOTONIC','inf'))-time.monotonic()))
-            time.sleep(delay)
         except (httpx.TimeoutException, httpx.TransportError) as error:
             last = error
             time.sleep(min(1.5 * (attempt + 1),max(0,float(os.getenv('SOURCE_DEADLINE_MONOTONIC','inf'))-time.monotonic())))
-    raise SourceUnavailable('来源连接失败或暂不可用，请稍后重试') from last
+    raise ValueError('来源连接超时，请稍后重试') from last
 
 
 def checked(rows, label, key='date'):

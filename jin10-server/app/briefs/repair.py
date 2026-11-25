@@ -106,40 +106,12 @@ def restore_working_history(db,team_id,category,state):
                         'gdp':('gdp-history.json','fred_current_revised_not_point_in_time')}}
     state=Path(state);state.mkdir(parents=True,exist_ok=True);count=0
     rows=list(db.scalars(select(BriefDataPoint).where(BriefDataPoint.team_id==team_id,
-        BriefDataPoint.category==category,BriefDataPoint.quality_status=='accepted').order_by(
-        BriefDataPoint.collected_at.desc(),BriefDataPoint.revision.desc())))
-    def projection(path,default):
-        if not path.is_file():return default
-        try:return read(path)
-        except (ValueError,OSError):
-            if not rows:raise
-            save(state/(path.stem+'-recovery-diagnostic.json'),
-                 {'file':path.name,'sha256':hashlib.sha256(path.read_bytes()).hexdigest(),
-                  'reason':'工作文件损坏；从数据库重建，不修改原始采集证据'})
-            return default
-    if category=='volume':
-        from .observation_quality import VOLUME_METHOD,VOLUME_METHODS,volume_exclusion
-        chosen={}
-        for row in rows:
-            if row.series=='volume' and row.method in VOLUME_METHODS and not volume_exclusion(row.values):
-                chosen.setdefault(row.data_date.isoformat(),dict(row.values))
-        path=state/'volume-history.json'
-        before=projection(path,{'method':VOLUME_METHOD,'rows':[]})
-        if before.get('method') not in VOLUME_METHODS:raise ValueError('成交额历史来源方法不一致')
-        # Once observations exist in PostgreSQL, files are a disposable projection.
-        # Rejected or file-only rows cannot be resurrected by an additive merge.
-        existing={row['date']:row for row in before['rows']}
-        all_points=db.scalar(select(BriefDataPoint.id).where(BriefDataPoint.team_id==team_id,
-            BriefDataPoint.category=='volume').limit(1))
-        if all_points is None:
-            chosen={day:row for day,row in existing.items() if not volume_exclusion(row)}
-        save(path,{'method':VOLUME_METHOD,'rows':[chosen[day] for day in sorted(chosen)]})
-        return len(set(chosen)-set(existing))
+        BriefDataPoint.category==category).order_by(BriefDataPoint.collected_at.desc(),BriefDataPoint.revision.desc())))
     for series,(filename,method) in specs.get(category,{}).items():
         chosen={}
         for row in rows:
             if row.series==series and row.method==method:chosen.setdefault(row.data_date.isoformat(),row.values)
-        path=state/filename;before=projection(path,{'method':method,'rows':[]})
+        path=state/filename;before=read(path) if path.is_file() else {'method':method,'rows':[]}
         # The GDP working file intentionally identifies the current revised series.
         file_method='fred_current_revised' if series=='gdp' else method
         if before.get('method') not in (method,file_method):raise ValueError('恢复历史时来源方法不一致')
@@ -150,15 +122,15 @@ def restore_working_history(db,team_id,category,state):
     if category=='liquidity':
         points={}
         for row in rows:
-            if row.series in ('DR001','DR007') and row.method=='cfets_dr_close_v1':
+            if row.series in ('DR001','DR007'):
                 point=points.setdefault(row.data_date.isoformat(),{'date':row.data_date.isoformat()})
                 point.setdefault(row.series,row.values['weighted_rate'])
-        path=state/'dr-history.json';existing=projection(path,{'rows':[]})['rows']
+        path=state/'dr-history.json';existing=read(path)['rows'] if path.exists() else []
         for row in existing:
             points[row['date']]={**row,**points.get(row['date'],{})}
         if points:save(path,{'method':'cfets_dr_close_v1','rows':[points[day] for day in sorted(points)]})
     if category=='oil_etf':
-        path=state/'oil-history.json';history=projection(path,{})
+        path=state/'oil-history.json';history=read(path) if path.exists() else {}
         chosen={}
         for row in rows:
             if row.method=='issuer_futures_and_swap_estimate_v1':ticker=row.series
@@ -176,7 +148,7 @@ def restore_working_history(db,team_id,category,state):
     if category=='valuation':
         method_conflicts=[]
         for series,filename in (('buffett','buffett-history.json'),('erp','erp-history.json')):
-            path=state/filename;history=projection(path,[])
+            path=state/filename;history=read(path) if path.exists() else []
             candidates={}
             for row in rows:
                 if row.series==series:candidates.setdefault(row.data_date.isoformat(),{}).setdefault(row.method,row)
@@ -201,12 +173,12 @@ def restore_working_history(db,team_id,category,state):
         raw_path=state/'all-a-history.json';raw_values={}
         for row in rows:
             if row.series=='all_a_market_cap':raw_values.setdefault(row.data_date.isoformat(),dict(row.values))
-        if raw_path.exists():raw_values={**{row['date']:row for row in projection(raw_path,[])},**raw_values}
+        if raw_path.exists():raw_values={**{row['date']:row for row in read(raw_path)},**raw_values}
         if raw_values:save(raw_path,[raw_values[day] for day in sorted(raw_values)])
         path=state/'pe-published-history.json';known={}
         for row in rows:
             if row.series=='csi300_pe':known.setdefault(row.data_date.isoformat(),dict(row.values))
-        if path.exists():known={**{row['date']:row for row in projection(path,[])},**known}
+        if path.exists():known={**{row['date']:row for row in read(path)},**known}
         restored_files={}
         for day in sorted(known,reverse=True):
             row=known[day];sha=row.get('source_sha256')

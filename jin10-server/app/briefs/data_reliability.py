@@ -286,6 +286,9 @@ def record_run(db,job,folder,payload,error=None):
         report['publication_digest']=publication;report['publication_digest_version']=VERSION
     report['archive_digest']=digest(points)
     report['current_data_valid']=bool(payload and payload.get('valid'))
+    if payload and payload.get('data_contract'):
+        report['metric_contract']=payload['data_contract']
+        report['product_contract_valid']=not payload['data_contract'].get('errors')
     if job.category=='oil_etf' and payload and payload.get('data_date_policy')=='latest_available':
         report.update(data_date_policy='latest_available',fund_data_dates=payload.get('fund_data_dates',{}),
             requested_data_date=payload.get('requested_data_date'),history_required_for_production=False)

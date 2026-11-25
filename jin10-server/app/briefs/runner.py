@@ -233,8 +233,9 @@ def generate(category,day,root,run_id,action='produce',render_input=None):
                 payload.setdefault('warnings',[]).append('历史连续性特征未能核验，本期不写连续涨跌结论')
     record(out,4,'来源日期、标题、正文及图片已完成基础校验')
     if action!='render':
-        from .metric_contracts import require_production_contract
-        payload['data_contract']=require_production_contract(category,payload)
+        from .metric_contracts import require_production_contract,production_contract
+        payload['data_contract']=(production_contract(category,payload) if os.getenv('DATA_COLLECTION_ONLY')=='1'
+                                  else require_production_contract(category,payload))
     explain_result(out,category,payload)
     if not same_observation_day(category, day, payload):raise ValueError('来源数据日与目标日期不符')
     if not payload['title'].strip() or not payload['dynamic_body'].strip():raise ValueError('标题或正文缺失')

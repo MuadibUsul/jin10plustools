@@ -36,6 +36,10 @@ def abort_on_lock_loss():
     os._exit(75)
 
 PUBLIC_COMPUTE_CATEGORIES = MANUAL_SOURCE_CATEGORIES
+# Closing the exchange is not the same as publication of every derived source.
+# Cover the declared six-hour collection window with bounded attempts. Successful
+# captures stop this cycle; a persistent failure stays visible through pre-open.
+COLLECTION_RETRY_OFFSETS=(0,30*60,60*60,3*60*60,5*60*60)
 
 
 def drain_requested():
@@ -202,7 +206,7 @@ def preserve_partial(db,job,message):
 
 
 def collection_plans(now):
-    """Close collection with two bounded retry slots, plus pre-opening revision check.
+    """Close collection with bounded publication-window retries and pre-open check.
 
     Collection never creates a draft. NY close is converted with its real DST
     timezone; Friday's US close can be archived on Saturday for Monday's edition.
@@ -217,7 +221,7 @@ def collection_plans(now):
                     'xnys':(ZoneInfo('America/New_York'),clock(16,15))}[market]
         elapsed=(now-datetime.combine(target,close,zone)).total_seconds()
         if 0<=elapsed<6*3600:
-            slot=2 if elapsed>=3600 else 1 if elapsed>=1800 else 0
+            slot=max(index for index,offset in enumerate(COLLECTION_RETRY_OFFSETS) if elapsed>=offset)
             yield category,target,'close-'+str(slot)
         elif clock(7)<=local.time().replace(tzinfo=None)<clock(8) and local.weekday()<5:
             yield category,target,'preopen-'+local.date().isoformat()

@@ -55,6 +55,28 @@ def test_close_failure_gets_only_due_retry_slots(db_factory, seed):
     assert ('liquidity', date(2026, 11, 24), 'close-0') in plans
 
 
+def test_late_published_close_gets_bounded_evening_checks_until_success(db_factory,seed):
+    team=seed['editor'].team_id
+    now=datetime(2026,11,24,16,5,tzinfo=CHINA)
+    with db_factory() as db:
+        db.add(BriefConfig(team_id=team,data_enabled=True));db.commit()
+    # A source missing at 16:00, 16:30 and 17:00 must be checked again
+    # during the declared publication window rather than wait for a manual click.
+    for hour,minute,slot in [(16,5,0),(16,35,1),(17,5,2),(19,5,3),(21,5,4)]:
+        assert ('turnover',date(2026,11,24),'close-'+str(slot)) in list(collection_plans(now.replace(hour=hour,minute=minute)))
+        schedule_collection(db_factory,now.replace(hour=hour,minute=minute))
+        assert schedule_collection(db_factory,now.replace(hour=hour,minute=minute))==0
+        with db_factory() as db:
+            for job in db.scalars(select(BriefJob).where(BriefJob.status=='queued')):
+                job.status='succeeded' if job.category=='volume' else 'failed';job.active_key=None
+            db.commit()
+    with db_factory() as db:
+        jobs=list(db.scalars(select(BriefJob)))
+        assert len([j for j in jobs if j.category=='turnover'])==5
+        assert len([j for j in jobs if j.category=='volume'])==1
+    assert not list(collection_plans(now.replace(hour=23,minute=30)))
+
+
 def test_us_close_collection_handles_dst_and_friday_after_midnight_in_china():
     # 16:15 New York is 04:15 China during DST, 05:15 after the DST change.
     for now, target in [

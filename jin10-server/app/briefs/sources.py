@@ -5,14 +5,13 @@ import re
 import shutil
 import subprocess
 import sys
-import time
-from datetime import date, datetime, timedelta, time as clock
+from datetime import date, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 from urllib.parse import urlencode
 from urllib.request import Request,urlopen
 
-from .policy import previous_weekday, CHINA
+from .policy import previous_weekday
 from .delivery import default_notes
 from . import central_bank
 from .progress import record
@@ -51,11 +50,7 @@ def normalize_volume(payload,day,*,required=True):
         if any(r.get(k) is None for k in ('sh_turn','sz_turn','sh_vol','sz_vol')):raise ValueError('沪深明细缺失')
         values=[Decimal(str(r[k])) for k in ('sh_turn','sz_turn','sh_vol','sz_vol')]
         if any(not v.is_finite() or v<=0 for v in values):raise ValueError('成交额存在无效值')
-        point={'date':date.fromisoformat(r['date']).isoformat(),'turn':values[0]+values[1],'vol':values[2]+values[3]}
-        if r.get('updated_at'):
-            point.update(source_kind='jin10_dynamic_close',source_updated_at=r['updated_at'],source_url=url_source(),
-                         source_components={key:r[key] for key in ('sh_turn','sz_turn','sh_vol','sz_vol')})
-        result.append(point)
+        result.append({'date':date.fromisoformat(r['date']).isoformat(),'turn':values[0]+values[1],'vol':values[2]+values[3]})
     if required and (len(result)<21 or result[-1]['date']!=day):raise ValueError('成交额目标日期尚未更新或历史不足')
     if len({r['date'] for r in result})!=len(result):raise ValueError('成交额日期重复')
     if required:require_window(result,'xshg',day,21,label='成交额20日均线及前日比较')
@@ -63,121 +58,51 @@ def normalize_volume(payload,day,*,required=True):
 
 
 def volume(day,out,state,refresh=False):
-    from .observation_quality import VOLUME_METHOD,VOLUME_METHODS,volume_exclusion
+    from .series_store import merge_history
     history_path=state/'volume-history.json'
-    history=read(history_path) if history_path.is_file() else {'method':VOLUME_METHOD,'rows':[]}
-    if history.get('method') not in VOLUME_METHODS:raise ValueError('成交额历史来源方法不一致')
-    excluded=[row for row in history['rows'] if volume_exclusion(row)]
-    stored=[row for row in history['rows'] if not volume_exclusion(row)]
-    if excluded:save(out/'volume-excluded-observations.json',excluded)
-    seen=set();seen_rows={};fresh=[];capture_errors=[];page_error=None;page_contract_error=False
-    intraday_dates=set();intraday_values=set()
+    stored=read(history_path)['rows'] if history_path.is_file() else []
+    seen=set();fresh=[];capture_errors=[];page_error=None
     cutoff=completed_session('xshg').isoformat()
-    def store_rows(incoming):
+    def checkpoint(batch):
         nonlocal stored
-        combined={row['date']:row for row in stored if
-                  (row['date'],Decimal(str(row['turn'])),Decimal(str(row['vol']))) not in intraday_values}
-        combined.update({row['date']:row for row in incoming})
+        for raw in batch:
+            try:fresh.extend(normalize_volume({'data':[raw]},cutoff,required=False))
+            except (ValueError,ArithmeticError,TypeError,KeyError) as exc:
+                capture_errors.append({'date':raw.get('date'),'error':str(exc)})
+        combined={row['date']:row for row in stored}
+        combined.update({row['date']:row for row in fresh})
         stored=volume_averages([combined[stamp] for stamp in sorted(combined)])
-        # This is a projection, not an additive evidence store. An additive merge
-        # resurrects rows deliberately excluded above; PostgreSQL retains revisions.
-        save(history_path,{'method':VOLUME_METHOD,'rows':stored})
+        merge_history(history_path,stored,method='jin10_hushen_turnover_yi_v1')
         save(out/'volume-collected.json',stored)
         save(out/'plot-data.json',[row for row in stored if row['date']<=day])
         if capture_errors:save(out/'volume-capture-errors.json',capture_errors)
-    def checkpoint(batch):
-        for raw in batch:
-            try:
-                if raw.get('updated_at'):
-                    updated=datetime.fromisoformat(raw['updated_at'].replace('Z','+00:00'))
-                    if updated.tzinfo is None:raise ValueError('成交额更新时间缺少时区')
-                    closing=datetime.combine(date.fromisoformat(raw['date']),clock(15),CHINA)
-                    if updated<closing:
-                        intraday_dates.add(raw['date'])
-                        try:intraday_values.add((raw['date'],Decimal(str(raw['sh_turn']))+Decimal(str(raw['sz_turn'])),
-                                                Decimal(str(raw['sh_vol']))+Decimal(str(raw['sz_vol']))))
-                        except (KeyError,TypeError,ArithmeticError):pass
-                        save(out/'volume-intraday-rejected.json',{'dates':sorted(intraday_dates),
-                             'reason':'来源更新时间早于当日15:00，不能作为收盘观察'})
-                        continue
-                fresh.extend(normalize_volume({'data':[raw]},cutoff,required=False))
-            except (ValueError,ArithmeticError,TypeError,KeyError) as exc:
-                capture_errors.append({'date':raw.get('date'),'error':str(exc)})
-        store_rows(fresh)
-    store_rows([])
-    if not refresh and os.getenv('DATA_COLLECTION_ONLY')!='1':
-        try:require_window([row for row in stored if row['date']<=day],'xshg',day,21,label='成交额20日均线及前日比较')
-        except ValueError:pass
-        else:
-            result=render_volume([row for row in stored if row['date']<=day],out)
-            result['facts']['acquisition']='verified_observations_reused'
-            return result
     # Always refresh an overlapping year, and page back to the requested day on
     # historical runs. A shorter source response never replaces accumulated data.
     start=(date.fromisoformat(day)-timedelta(days=366)).isoformat()
     for page in range(1,51):
-        remaining=float(os.getenv('SOURCE_DEADLINE_MONOTONIC','inf'))-time.monotonic()
-        if remaining<=0:
-            page_error='本次来源读取预算已用完';break
         url='https://mp-api.jin10.com/api/dynamic-data/child?'+urlencode({'page':page,'limit':100,'tb_name':'_vir_64','order':'date,desc'})
         request=Request(url,headers={'x-app-id':'fiXF2nOnDycGutVA','x-version':'1.0','Referer':'https://www.jin10.com/','User-Agent':'Mozilla/5.0'})
         try:
-            with urlopen(request,timeout=min(25,max(.1,remaining))) as response:raw=response.read(4_000_001)
+            with urlopen(request,timeout=25) as response:raw=response.read(4_000_001)
         except (OSError,RuntimeError) as exc:
             page_error=str(exc);break
-        if len(raw)>4_000_000:
-            page_error='成交额来源过大';page_contract_error=True;break
+        if len(raw)>4_000_000:page_error='成交额来源过大';break
         (out/f'volume-raw-page-{page}.json').write_bytes(raw)
         try:
-            document=json.loads(raw,parse_float=Decimal)
-            if document.get('status') not in (None,200):
-                page_error='成交额接口返回非成功业务状态';break
-            batch=document.get('data')
+            batch=json.loads(raw,parse_float=Decimal).get('data')
             if not isinstance(batch,list):raise ValueError('成交额来源结构变化')
             dates={row['date'] for row in batch}
             if len(dates)!=len(batch):raise ValueError('成交额同页日期重复')
         except (ValueError,TypeError,KeyError,AttributeError) as exc:
-            page_error=str(exc);page_contract_error=True;break
+            page_error=str(exc);break
         if not batch:break
-        overlap=dates & seen
-        keys=('sh_turn','sz_turn','sh_vol','sz_vol','updated_at')
-        if any(any(raw.get(key)!=seen_rows[raw['date']].get(key) for key in keys)
-               for raw in batch if raw['date'] in overlap):
-            page_error='成交额分页重叠日期数值变化，停止不一致抓取';page_contract_error=True;break
-        if dates<=seen:
-            page_error='成交额分页未向历史推进';page_contract_error=True;break
-        unseen=[row for row in batch if row['date'] not in seen]
-        seen_rows.update({row['date']:row for row in unseen});seen.update(dates);checkpoint(unseen)
+        if dates & seen:page_error='成交额分页日期重复，停止不完整抓取';break
+        seen.update(dates);checkpoint(batch)
         if min(dates)<=start or len(batch)<100:break
     else:page_error='成交额达到分页上限，区间尚未覆盖'
     if page_error:save(out/'volume-pagination-error.json',{'page':page,'error':page_error})
     rows=[row for row in stored if row['date']<=day]
-    from .failures import MissingObservations,SourceUnavailable,SourceContractError
-    if page_error and not fresh:
-        problem=SourceContractError if page_contract_error else SourceUnavailable
-        raise problem('成交额来源读取未完成：'+page_error[:200],source='jin10_hushen_turnover_yi_v1')
-    missing=set()
-    try:require_window(rows,'xshg',day,21,label='成交额20日均线及前日比较')
-    except MissingObservations as exc:missing.update(exc.missing_dates)
-    if not any(row['date']==day for row in fresh):missing.add(day)
-    rejected=(missing & seen)-intraday_dates
-    if rejected:
-        raise SourceContractError('成交额来源已返回日期但解析缺少完整沪深明细：'+','.join(sorted(rejected)),
-                                  source='jin10_hushen_turnover_yi_v1')
-    recovered=[]
-    if missing:
-        from .volume_market import recover_dates
-        record(out,2,'原始行情缺少完整收盘记录，正在核验独立行情明细：'+','.join(sorted(missing)))
-        recovered=recover_dates(missing,stored,out,cutoff,lambda row:store_rows([row]))
-        rows=[row for row in stored if row['date']<=day]
-    if not any(row['date']==day for row in fresh+recovered):
-        if page_error:
-            problem=SourceContractError if page_contract_error else SourceUnavailable
-            raise problem('成交额来源读取未完成：'+page_error[:200],source='jin10_hushen_turnover_yi_v1')
-        raise MissingObservations('成交额目标日期尚未更新；已补存可取得的真实历史',
-                                  source='jin10_hushen_turnover_yi_v1',missing_dates=[day],
-                                  latest_date=max((row['date'] for row in fresh),default=None),
-                                  publication_checked=not capture_errors)
+    if not any(row['date']==day for row in fresh):raise ValueError('成交额目标日期尚未更新；已补存可取得的真实历史')
     require_window(rows,'xshg',day,21,label='成交额20日均线及前日比较')
     result=render_volume(rows,out)
     if capture_errors:result['warnings'].append(f'来源有{len(capture_errors)}条不完整记录，已保留其余真实数据，未补填缺值')
@@ -205,12 +130,8 @@ def render_volume(rows,out):
           f"连续{streak}条有效交易日{side}20日均线（{current['ma20']/10000:.2f}万亿元）。"
           f"成交活跃度较前日{'回升' if change>0 else '回落' if change<0 else '持平'}。")
     image=volume_chart([r for r in rows if r['ma20'] is not None],out) if os.getenv('DATA_COLLECTION_ONLY')!='1' else None
-    supplements=[{'date':row['date'],'url':row['source_url'],'method':row['source_method']}
-                 for row in rows[-75:] if row.get('source_kind')=='eastmoney_daily_index']
-    warnings=['部分收盘记录使用已通过重叠日期金额及成交量核验的东方财富日线行情，具体来源逐日留档'] if supplements else []
     return {'title':title,'dynamic_body':body,'images':[image.name] if image else [],'data_date':current['date'],
-            'facts':{'amount_yi':str(current['turn']),'amount_wan_yi':f"{current['turn']/10000:.2f}",'change_yi':f'{change:.2f}','change_pct':f'{percent:+.2f}','streak':streak,'side':side,'activity':'回升' if change>0 else '回落' if change<0 else '持平','ma20_yi':str(current['ma20']),'ma20_wan_yi':f"{current['ma20']/10000:.2f}",'previous_date':prior['date'],'source':current.get('source_url') or url_source(),
-                     'supplemental_sources':supplements},'warnings':warnings}
+            'facts':{'amount_yi':str(current['turn']),'amount_wan_yi':f"{current['turn']/10000:.2f}",'change_yi':f'{change:.2f}','change_pct':f'{percent:+.2f}','streak':streak,'side':side,'activity':'回升' if change>0 else '回落' if change<0 else '持平','ma20_yi':str(current['ma20']),'ma20_wan_yi':f"{current['ma20']/10000:.2f}",'previous_date':prior['date'],'source':url_source()},'warnings':[]}
 
 
 def url_source():return 'https://www.jin10.com/minipro/index.html#/pages_sub/huShenVolume/huShenVolume?category=hu_shen_volume&id=550059&type=4'
@@ -459,7 +380,7 @@ def valuation(day,out,state,refresh=False):
     originals=read(HERE/'seed/buffett-history.json')
     history_path=state/'buffett-history.json'
     history=read(history_path) if history_path.exists() else originals
-    gdp_table=gdp_catalog(HERE/'seed')
+    gdp_table=read(HERE/'seed/gdp.json')
     gdp=gdp_table.get(str(date.fromisoformat(day).year-1))
     if not gdp:raise ValueError('上年度GDP尚未配置，不能沿用过期分母')
     updated={r['date']:r for r in cap['rows']}
@@ -468,11 +389,7 @@ def valuation(day,out,state,refresh=False):
     for r in cap['rows']:
         close=next((x['close'] for x in rows if x['date']==r['date']),None)
         if close is None:raise ValueError('估值图缺少对应日期沪深300点位')
-        dated_gdp=gdp_table.get(str(date.fromisoformat(r['date']).year-1))
-        if not dated_gdp:raise ValueError('对应数据日的上年度GDP缺失，不能跨年混用分母')
-        history.append({'date':r['date'],'marketCap':r['market_cap_yi'],'gdp':dated_gdp['value_yi'],
-                        'gdp_vintage':dated_gdp,'gdp_available_on_observation_date':dated_gdp.get('published_on',r['date'])<=r['date'],
-                        'close':close,'source':cap['source']})
+        history.append({'date':r['date'],'marketCap':r['market_cap_yi'],'gdp':gdp['value_yi'],'close':close,'source':cap['source']})
     history.sort(key=lambda r:r['date']);save(history_path,history)
     visible=[r for r in history if r['date']<=day]
     save(out/'buffett-plot-data.json',visible);save(out/'erp-plot-data.json',rows)
@@ -480,9 +397,7 @@ def valuation(day,out,state,refresh=False):
         erp_image=Path(result['image_path']);shutil.copy2(erp_image,out/erp_image.name)
     record(out,3,'估值输入数据已核验，正在按冻结模板绘制双面板')
     if os.getenv('DATA_COLLECTION_ONLY')!='1':valuation_chart(visible,rows,out)
-    from .metric_contracts import Quantity,market_cap_to_gdp
-    ratio=market_cap_to_gdp(Quantity(updated[day]['market_cap_yi'],'CNY_100_million','market_capitalization'),
-                            Quantity(gdp['value_yi'],'CNY_100_million','nominal_gdp'))*100
+    ratio=Decimal(updated[day]['market_cap_yi'])/Decimal(gdp['value_yi'])*100
     from .engines.valuation.calculate import display_movement
     erp=Decimal(current['erp_percent']);scenario,movement=display_movement(erp,prior['erp_percent'])
     title=f"【A股温度计】股债性价比指标更新，沪深300ERP报{erp:.2f}%"

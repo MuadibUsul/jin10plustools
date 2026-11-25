@@ -9,7 +9,6 @@ import sys
 import time
 from pathlib import Path
 from datetime import date,datetime,timedelta,time as clock
-from zoneinfo import ZoneInfo
 
 from sqlalchemy import case,select,text,update,func
 
@@ -18,7 +17,7 @@ from app.db.models import BriefConfig,BriefIssue,BriefJob,BriefVersion,BriefSour
 from app.services.team_settings import briefs_ai
 from .delivery import default_notes
 from app.db.session import get_session_factory,get_engine
-from .policy import AUTO_CATEGORIES,CATEGORIES,CHINA,expected_date,first_run,production_window,next_slot,MANUAL_SOURCE_CATEGORIES,PUBLIC_COMPUTE_MAX_AGE_DAYS
+from .policy import AUTO_CATEGORIES,CATEGORIES,CHINA,expected_date,first_run,production_window,next_slot
 from .service import enqueue,ensure_issue,owned,append_version,root_for,find_issue,edition_payload
 from .source_archive import archive_run,restore_pe_capture
 from .progress import record,read
@@ -35,11 +34,7 @@ def abort_on_lock_loss():
         except Exception:log.exception('Could not terminate active source process')
     os._exit(75)
 
-PUBLIC_COMPUTE_CATEGORIES = MANUAL_SOURCE_CATEGORIES
-# Closing the exchange is not the same as publication of every derived source.
-# Cover the declared six-hour collection window with bounded attempts. Successful
-# captures stop this cycle; a persistent failure stays visible through pre-open.
-COLLECTION_RETRY_OFFSETS=(0,30*60,60*60,3*60*60,5*60*60)
+PUBLIC_COMPUTE_CATEGORIES = frozenset({'token_cost', 'gpu_rental'})
 
 
 def drain_requested():
@@ -74,21 +69,22 @@ def capture_public_for_job(factory, job_id, out):
         if not public_read_requested(job) and not background:
             return None
         category, issue_day, team_id = job.category, job.issue_date, job.team_id
-    # These columns publish the source's actual latest observation, on click.
-    # A calendar's "yesterday" is not proof that a weekly source owes that date.
+    target_day = expected_date(category, issue_day) if category == 'gpu_rental' else None
     partial={'category':category,'readings':[],'history':{},'captured_at':utcnow().isoformat()}
     def page_captured(metric,reading,history):
         partial['readings'].append(reading);partial['history'][metric]=history
         partial['data_date']=max(row['date'] for row in partial['readings'])
         save(out/'public-compute-read.json',partial)
     capture = fetch_visible(category, today=datetime.now(CHINA).date(),
-                            target_date=None,on_page=page_captured,
+                            target_date=target_day,on_page=page_captured,
                             allow_missing_week=True)
     save(out/'public-compute-read.json',capture)
     source_day = date.fromisoformat(capture['data_date'])
+    if target_day is not None and source_day != target_day and not background:
+        raise ValueError(f'GPU公开数据日{source_day}与目标数据日{target_day}不一致')
     if source_day > issue_day and not background:
         raise ValueError('网页数据日晚于所选生产日，请选择当前生产日后再生成')
-    if (datetime.now(CHINA).date() - source_day).days > PUBLIC_COMPUTE_MAX_AGE_DAYS and not background:
+    if (datetime.now(CHINA).date() - source_day).days > 7 and not background:
         raise ValueError(f'公开网页仍停留在{source_day}，超过七日；为避免旧稿，本次停止生成')
     with factory() as db:
         restored_workbook=restore_workbook_history(db,team_id,before=capture['data_date'])
@@ -166,20 +162,11 @@ def claim(factory,now=None):
     if drain_requested():return None
     now=now or utcnow()
     with factory() as db:
-        expired=list(db.scalars(select(BriefJob).where(BriefJob.status=='running',BriefJob.lease_until<now)))
-        for interrupted in expired:preserve_partial(db,interrupted,'处理进程中断，保存已采集数据后恢复任务')
-        db.execute(update(BriefJob).where(BriefJob.status=='running',BriefJob.lease_until<now,
-                   BriefJob.attempts>=6).values(status='failed',active_key=None,
-                   error='任务连续中断6次，已停止自动恢复；请检查任务日志后重试',lease_until=None,updated_at=now)
-                   .execution_options(synchronize_session=False))
         # Main loop has one advisory-locked runner; expired jobs survive restarts.
         db.execute(update(BriefJob).where(BriefJob.status=='running',BriefJob.lease_until<now)
-                   .values(status='queued',error='上次运行中断，已重新排队',lease_until=None)
-                   .execution_options(synchronize_session=False))
-        db.expire_all()
+                   .values(status='queued',error='上次运行中断，已重新排队',lease_until=None))
         row=db.scalars(select(BriefJob).where(BriefJob.status.in_(['queued','waiting']),
             BriefJob.next_attempt_at<=now).order_by(
-                case((BriefJob.action=='reconcile',1),else_=0),
                 case((BriefJob.category=='liquidity',0),else_=1),
                 BriefJob.next_attempt_at,BriefJob.created_at)
             .with_for_update(skip_locked=True).limit(1)).first()
@@ -190,86 +177,14 @@ def claim(factory,now=None):
         db.commit();return row.id
 
 
-def preserve_partial(db,job,message):
-    """A process restart or copy failure cannot discard successful acquisition."""
-    folder=root_for(job.team_id)/'runs'/str(job.id)
-    if not folder.is_dir() or job.action=='render':return
-    try:
-        with db.begin_nested():archive_run(db,job,folder)
-    except Exception:log.exception('Could not archive interrupted capture %s',job.id)
-    try:
-        from .data_reliability import record_run,link_sources
-        with db.begin_nested():
-            record_run(db,job,folder,None,message)
-            link_sources(db,job)
-    except Exception:log.exception('Could not ingest partial observations %s',job.id)
-
-
-def collection_plans(now):
-    """Close collection with bounded publication-window retries and pre-open check.
-
-    Collection never creates a draft. NY close is converted with its real DST
-    timezone; Friday's US close can be archived on Saturday for Monday's edition.
-    """
-    from .trading_calendar import completed_session,market_for,CalendarUnavailable
-    local=now.astimezone(CHINA)
-    for category in AUTO_CATEGORIES:
-        market=market_for(category)
-        try:target=completed_session(market,now)
-        except CalendarUnavailable:continue
-        zone,close={'xshg':(CHINA,clock(16)), 'cfets':(CHINA,clock(17,15)),
-                    'xnys':(ZoneInfo('America/New_York'),clock(16,15))}[market]
-        elapsed=(now-datetime.combine(target,close,zone)).total_seconds()
-        if 0<=elapsed<6*3600:
-            slot=max(index for index,offset in enumerate(COLLECTION_RETRY_OFFSETS) if elapsed>=offset)
-            yield category,target,'close-'+str(slot)
-        elif clock(7)<=local.time().replace(tzinfo=None)<clock(8) and local.weekday()<5:
-            yield category,target,'preopen-'+local.date().isoformat()
-
-
-def schedule_collection(factory,now=None):
-    if drain_requested():return 0
-    now=now or datetime.now(CHINA);count=0
-    plans=list(collection_plans(now))
-    with factory() as db:
-        for config in db.scalars(select(BriefConfig).where(BriefConfig.data_enabled.is_(True))):
-            for category,target,slot in plans:
-                issue_day=target+timedelta(days=1)
-                prefix=f'{config.team_id}:{issue_day}:{category}:reconcile:production:collection-'
-                cycle='collection-'+target.isoformat()+'-'+slot
-                existing=db.scalar(select(BriefJob.id).where(BriefJob.team_id==config.team_id,
-                    BriefJob.dedupe_key==prefix+target.isoformat()+'-'+slot))
-                if existing:continue
-                if db.scalar(select(BriefJob.id).where(BriefJob.team_id==config.team_id,
-                    BriefJob.issue_date==issue_day,BriefJob.category==category,
-                    BriefJob.status.in_(['queued','waiting','running'])).limit(1)):continue
-                if slot.startswith('close-'):
-                    succeeded=db.scalar(select(BriefJob.id).where(BriefJob.team_id==config.team_id,
-                        BriefJob.dedupe_key.startswith(prefix+target.isoformat()+'-close-'),
-                        BriefJob.status=='succeeded'))
-                    if succeeded:continue
-                job=enqueue(db,config.team_id,issue_day,category,action='reconcile',cycle=cycle)
-                if job.action=='reconcile':count+=1
-        db.commit()
-    return count
-
-
 def schedule_reconciliation(factory,now=None):
     """One queued repair per team; bounded cycles, no AI and no draft overwrite."""
     from .trading_calendar import CalendarUnavailable
     now=now or datetime.now(CHINA);local=now.astimezone(CHINA)
-    if drain_requested():return 0
+    if local.hour<10:return 0  # Morning production keeps queue priority.
     cycle=local.strftime('%Y%m%d')+'-'+str(local.hour//6)
     count=0
     with factory() as db:
-        # Retire only queued jobs from the obsolete automatic AI-source policy.
-        # Running captures finish and historical failures remain inspectable.
-        db.execute(update(BriefJob).where(BriefJob.category.in_(PUBLIC_COMPUTE_CATEGORIES),
-            BriefJob.action=='reconcile',BriefJob.created_by.is_(None),
-            BriefJob.status.in_(['queued','waiting'])).values(status='skipped',active_key=None,
-            lease_until=None,error='按原始栏目规则仅点击生成时采集；已停止旧的后台定时任务',updated_at=utcnow()))
-        if local.hour<10:
-            db.commit();return 0  # Retire obsolete jobs before morning claims, without adding work.
         for config in db.scalars(select(BriefConfig).where(BriefConfig.data_enabled.is_(True))):
             attempts=db.scalar(select(func.count()).select_from(BriefJob).where(BriefJob.team_id==config.team_id,
                 BriefJob.action=='reconcile',BriefJob.dedupe_key.endswith(':'+cycle)))
@@ -281,7 +196,7 @@ def schedule_reconciliation(factory,now=None):
             queued=False;seen=set()
             for offset in range(8):
                 issue_day=local.date()-timedelta(days=offset)
-                for category in AUTO_CATEGORIES:
+                for category in CATEGORIES:
                     try:target=expected_date(category,issue_day)
                     except CalendarUnavailable:continue
                     if (category,target) in seen:continue
@@ -364,23 +279,14 @@ def execute(factory,id):
         save(out/'render-input.json',render_payload)
     record(out,1,f'任务开始：生产日 {day}，目标数据日 {target_day}')
     restored=0
-    history_restore_error=None
     try:
         with factory() as db:
             from .repair import recover_snapshots,restore_working_history
             if action!='render':
                 recover_snapshots(db,team_id,category,out/'recovered-evidence')
-                if category=='volume':
-                    from .observation_quality import quarantine_volume
-                    from .sources import save
-                    rejected=quarantine_volume(db,team_id)
-                    if rejected:save(out/'volume-quality-exclusions.json',rejected)
                 restored=restore_working_history(db,team_id,category,root/'history'/category)
             db.commit()
     except (ValueError,OSError) as exc:
-        history_restore_error=type(exc).__name__
-        log.exception('Historical evidence restoration failed for job %s',id)
-        record(out,1,'历史恢复失败（'+history_restore_error+'），继续读取原始来源；请检查本次历史恢复诊断')
         from .sources import save
         save(out/'history-restore-error.json',{'error':str(exc),'fresh_acquisition_continues':True})
     if restored:record(out,1,f'已从数据库恢复{restored}条真实历史记录')
@@ -402,19 +308,13 @@ def execute(factory,id):
                     'public_display':row.public_display,'manual_display':row.manual_display} for row in observed]
                 save(out/'ai-compute-source.json',rows)
                 fields=('a100','h100','b200') if category=='gpu_rental' else ('token_price',)
-                actual_day=date.fromisoformat(capture['data_date'])
-                matched=next((row for row in rows if row['date']==actual_day.isoformat()),None)
+                matched=next((row for row in rows if row['date']==target_day.isoformat()),None)
                 complete=bool(matched and all(matched[key] is not None for key in fields))
-                age=(datetime.now(CHINA).date()-actual_day).days
-                recent=0<=age<=PUBLIC_COMPUTE_MAX_AGE_DAYS
-                payload={'data_date':actual_day.isoformat(),'valid':complete,'source_latest_date':capture['data_date'],
-                         'data_date_policy':'source_published_observation',
-                         'data_contract':{'version':1,'status':'validated_by_adapter' if recent else 'archive_only',
-                            'errors':[] if recent else ['历史观察已保存，但超过七日，不可作为当前稿件数据']}}
+                payload={'data_date':target_day.isoformat(),'valid':complete,'source_latest_date':capture['data_date']}
                 current_job=db.get(BriefJob,id)
                 report=record_run(db,current_job,out,payload,
-                    None if complete else '公开来源的同日指标未齐全；已保留实际历史，需核对原始卡片')
-                archive_run(db,current_job,out,data_date=actual_day.isoformat())
+                    None if complete else '目标日尚未发布；本次已补回来源能提供的真实历史')
+                archive_run(db,current_job,out,data_date=target_day.isoformat())
                 from .data_reliability import link_sources
                 link_sources(db,current_job)
                 current_job.status='succeeded' if complete else 'failed'
@@ -480,12 +380,11 @@ def execute(factory,id):
     # The runner keeps the fixed rule payload; Skill copy runs after it returns.
     env['SKILL_PRODUCTION']='1'
     env['DATA_COLLECTION_ONLY']='1' if action=='reconcile' else '0'
-    env['VERIFIED_DATABASE_INPUT']='1'  # The parent restored the canonical database projection.
     old_result=out/'result.json'
     if job.attempts>1 and old_result.exists():
         old_result.replace(out/f'prior-result-{job.attempts}-{time.time_ns()}.json')
     command=[sys.executable,'-m','app.briefs.runner','--category',category,'--date',expected_date(category,day).isoformat(),
-             '--root',str(root),'--run-id',str(id),'--action','refresh' if action=='reconcile' else action]
+             '--root',str(root),'--run-id',str(id),'--action','refresh' if action=='reconcile' or automatic and action=='produce' else action]
     if action=='render':command.extend(['--render-input',str(out/'render-input.json')])
     process=subprocess.Popen(command,env=env,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,start_new_session=os.name!='nt')
     _active_process=process
@@ -564,8 +463,6 @@ def execute(factory,id):
                     save_payload(cache, cached)
     if payload and payload.get('valid'):
         from .sources import save
-        if history_restore_error:
-            payload.setdefault('warnings',[]).append('本次历史恢复失败（'+history_restore_error+'）；成稿已通过后续数据校验，历史恢复仍需排查')
         if ai.get('configuration_error'):
             payload.setdefault('warnings',[]).append('AI密钥无法解密，已保留完整风格规则稿；请管理员重新配置该接入')
         # The date cache deliberately keeps the validated pre-Skill rule product;
@@ -656,57 +553,19 @@ def execute(factory,id):
                '生成完成，稿件与快照已保存，可查看与取稿' if job.status=='succeeded' else job.error)
 
 
-def execute_safely(factory, job_id):
-    global _active_process
-    try:
-        execute(factory, job_id)
-    except Exception as exc:
-        log.exception('Brief task crashed %s',job_id)
-        if _active_process is not None:
-            from app.services.processes import kill_tree
-            kill_tree(_active_process)
-            _active_process.wait(timeout=15)
-            _active_process=None
-        # An unexpected exception must become a visible terminal result. If the
-        # database is down, the lease remains the recovery boundary on restart.
-        with factory() as db:
-            job=db.get(BriefJob,job_id)
-            if job is None or job.status!='running':
-                return
-            job.status='failed';job.active_key=None;job.lease_until=None
-            job.error='任务执行异常（'+type(exc).__name__+'）；请检查服务端日志，核对后重试'
-            job.updated_at=utcnow()
-            folder=root_for(job.team_id)/'runs'/str(job_id)
-            # Preserve captured evidence even when later copy/render work crashes.
-            preserve_partial(db,job,job.error)
-            try:
-                record(folder,read(folder).get('step',1),job.error)
-            except OSError:
-                log.exception('Could not write crashed task progress %s',job_id)
-            db.commit()
-
-
 def main():
     logging.basicConfig(level=logging.INFO)
     factory=get_session_factory();engine=get_engine()
     # A session advisory lock also protects shared per-team historical snapshots.
     from .worker_lock import WorkerLock
-    from app.services.production_health import record_alerts
-    next_health_check=0
     with WorkerLock(engine,get_settings().storage_dir/'.brief-worker.lock',abort_on_lock_loss) as guard:
         while True:
             guard.check()
             try:
                 heartbeat('idle')
                 if drain_requested():time.sleep(5);continue
-                if time.monotonic()>=next_health_check:
-                    next_health_check=time.monotonic()+60
-                    try:
-                        record_alerts(factory)
-                    except Exception:
-                        log.exception('Production health inspection failed')
-                schedule(factory);schedule_collection(factory);schedule_reconciliation(factory);id=claim(factory)
-                if id:execute_safely(factory,id);continue
+                schedule(factory);schedule_reconciliation(factory);id=claim(factory)
+                if id:execute(factory,id);continue
             except Exception:log.exception('Brief worker iteration failed')
             time.sleep(30)
 

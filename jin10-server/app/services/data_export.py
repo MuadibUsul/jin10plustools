@@ -607,11 +607,7 @@ def buffett_dataset(key,label,category):
                 try:
                     n,d=Decimal(str(numerator)),Decimal(str(denominator))
                     if not n.is_finite() or not d.is_finite() or n<=0 or d<=0:raise ValueError()
-                    if american:ratio=str(n/d)  # Explicit legacy proxy export, never a dollar market cap.
-                    else:
-                        from app.briefs.metric_contracts import Quantity,market_cap_to_gdp
-                        ratio=str(market_cap_to_gdp(Quantity(n,'CNY_100_million','market_capitalization'),
-                                                    Quantity(d,'CNY_100_million','nominal_gdp')))
+                    ratio=str(n/d)  # US rows are explicitly labelled historical proxies.
                     if pct is None:pct=f'{n/d*100:.2f}'
                 except (ValueError,ArithmeticError):ratio=pct=None;status='inputs_incomplete'
             else:ratio=pct=None;status='inputs_incomplete'

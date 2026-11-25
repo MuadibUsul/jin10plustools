@@ -66,3 +66,21 @@ def test_incomplete_historical_buffett_inputs_remain_empty(db_factory,seed):
         row=list(data_export.DATASETS['a_share_buffett'].rows(db,team,None,None))[0]
         assert row['buffett_pct'] is None and row['gdp'] is None
         assert row['source_status']=='inputs_incomplete'
+
+
+def test_new_us_capture_adds_exportable_proxy_without_changing_snapshot(tmp_path,db_factory,seed):
+    import json
+    from app.briefs.data_reliability import extract
+    from app.db.models import BriefDataPoint
+    from sqlalchemy import select
+    snapshot={'wilshire':[{'date':'2026-11-23','close':'72118.2'}],
+        'gdp':[{'period':'2026-07-01','value':'33000'}],'erp':[{'date':'2026-11-23','erp':'.0581'}]}
+    source=tmp_path/'us-snapshot.json';original=json.dumps(snapshot).encode();source.write_bytes(original)
+    points=extract('us_barometer',tmp_path)
+    assert {p['series'] for p in points}=={'wilshire','gdp','erp','buffett'}
+    assert source.read_bytes()==original
+    with db_factory() as db:
+        save_points(db,seed['editor'].team_id,'us_barometer',points)
+        proxy=db.scalar(select(BriefDataPoint).where(BriefDataPoint.series=='buffett'))
+        assert proxy.quality_status=='unverified' and proxy.values['pct']=='218.54'
+        assert proxy.units['wilshire_index_points']=='index_points'

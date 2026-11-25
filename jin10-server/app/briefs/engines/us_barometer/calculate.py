@@ -21,12 +21,7 @@ def buffett_series(wilshire_rows, gdp_rows):
     rows = []
     for row in wilshire_rows:
         quarter = gdp_asof(gdp_rows, row['date'])
-        numerator,denominator=Decimal(str(row['close'])),Decimal(str(quarter['value']))
-        ratio=numerator/denominator
-        rows.append({'date': row['date'], 'pct': q2(ratio*100),'ratio':str(ratio),
-                     'wilshire_index_points':str(numerator),'gdp_usd_billion':str(denominator),
-                     'calculation_status':'index_point_proxy_unverified',
-                     'gdp_period':quarter['period'],'gdp_vintage_policy':'current_revised_not_point_in_time'})
+        rows.append({'date': row['date'], 'pct': q2(Decimal(str(row['close'])) / Decimal(str(quarter['value'])) * 100)})
     return rows
 
 

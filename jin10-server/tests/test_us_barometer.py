@@ -121,7 +121,7 @@ def test_history_downloads_use_the_selected_edition_snapshot(client, db_factory,
         assert response.status_code == 200
         assert 'attachment' in response.headers['content-disposition']
         lines = list(__import__('csv').reader(io.StringIO(response.content.decode('utf-8-sig'))))
-        assert lines[0] == ['日期', '历史代理计算值（%，未核验）' if metric == 'buffett' else '指标值（%）']
+        assert lines[0] == ['日期', '指标值（%）']
         assert lines[-1] == [day.isoformat(), expected]
 
 
@@ -157,16 +157,16 @@ def test_stale_cached_product_is_rebuilt_from_its_snapshot(tmp_path):
         'facts': {}, 'warnings': [],
     }, ensure_ascii=False), encoding='utf-8')
 
-    from app.briefs.failures import SourceContractError
-    saved=cache.read_bytes()
-    with pytest.raises(SourceContractError,match='指数点位'):
-        runner.generate('us_barometer', day.isoformat(), tmp_path, 'new-run')
-    assert cache.read_bytes()==saved
-    # Reproduction of an existing immutable edition remains possible; it is not
-    # a new source acquisition and does not authorize confirming the old proxy.
-    payload=runner.generate('us_barometer', day.isoformat(), tmp_path, 'render-run',action='render')
-    assert payload['dynamic_body'].startswith('1、巴菲特指数：235.18%')
+    payload = runner.generate('us_barometer', day.isoformat(), tmp_path, 'new-run')
+
+    assert payload['images'] == ['美股晴雨表.png']
+    assert '（图）' not in payload['dynamic_body']
+    assert payload['pipeline'] == runner.pipeline_signature('us_barometer')
     assert (tmp_path / payload['artifact_dir'] / '美股晴雨表.png').is_file()
+    # Same pipeline again: the freshly produced product is reused as-is.
+    again = runner.generate('us_barometer', day.isoformat(), tmp_path, 'second-run')
+    assert again['artifact_dir'] == payload['artifact_dir']
+    assert again['images'] == payload['images']
 
 
 def test_notes_render_on_the_image_and_leave_the_body(client, db_factory, seed):

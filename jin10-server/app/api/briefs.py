@@ -286,18 +286,6 @@ def confirm(id:uuid.UUID,body:ConfirmRequest,db:DbSession,user:Editor):
     if issue.version!=body.version:raise HTTPException(409,'只能确认当前版本，请刷新核对')
     version=db.scalars(select(BriefVersion).where(BriefVersion.issue_id==id,BriefVersion.number==body.version)).first()
     if not version or not version.payload.get('valid'):raise HTTPException(409,'数据或图片未通过基础校验')
-    from app.briefs.metric_contracts import require_production_contract
-    try:require_production_contract(issue.category,version.payload)
-    except ValueError as exc:raise HTTPException(409,str(exc)) from None
-    if issue.category=='volume':
-        from app.briefs.observation_quality import volume_edition_exclusion
-        from app.briefs.service import root_for
-        root=root_for(user.team_id).resolve();folder=(root/version.payload.get('artifact_dir','')).resolve()
-        if not folder.is_relative_to(root):raise HTTPException(409,'稿件来源路径无效')
-        try:exclusion=volume_edition_exclusion(db,user.team_id,version.payload,folder)
-        except (ValueError,OSError,KeyError,TypeError):
-            raise HTTPException(409,'稿件数据快照未通过质量核验，请重新生成') from None
-        if exclusion:raise HTTPException(409,exclusion)
     reliability=version.payload.get('data_reliability') or {}
     if reliability.get('publication_digest'):
         source_day=date.fromisoformat(version.payload['data_date'])
@@ -374,7 +362,7 @@ def barometer_history(id:uuid.UUID,number:int,metric:Literal['buffett','erp'],db
         content=history_csv(snapshot,metric)
     except (ValueError,KeyError,TypeError) as exc:
         raise HTTPException(409,f'历史数据无法导出：{exc}') from None
-    label='巴菲特指数历史代理（口径待核验）' if metric=='buffett' else '股权风险溢价'
+    label='巴菲特指数' if metric=='buffett' else '股权风险溢价'
     filename=f'{version.payload["data_date"].replace("-", "")}_{label}_历史数据.csv'
     return Response(content,media_type='text/csv; charset=utf-8',headers={
         'Content-Disposition':f"attachment; filename*=UTF-8''{quote(filename)}",

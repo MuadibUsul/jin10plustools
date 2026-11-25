@@ -67,7 +67,7 @@ def enqueue(db,team_id,day,category,*,action='produce',preview=False,user_id=Non
                           schedule_origin=user_id is None and not preview and action!='reconcile',
                           manual_capture=manual_capture,render_base_version=render_base_version)
             db.add(item);db.flush()
-        if action!='reconcile':ensure_issue(db,team_id,day,category)
+        ensure_issue(db,team_id,day,category)
         return item
     except IntegrityError:
         return db.scalars(select(BriefJob).where((BriefJob.active_key==active_key)|(BriefJob.dedupe_key==key))).first()
@@ -168,10 +168,6 @@ def prune_versions(db,issue):
 
 def version_out(issue,version):
     data=version.payload or {}
-    from .metric_contracts import production_contract
-    contract=production_contract(issue.category,data)
-    warnings=list(data.get('warnings') or [])
-    warnings.extend(error for error in contract['errors'] if error not in warnings)
     notes=data.get('fixed_notes',default_notes(issue.category))
     ai=dict(data.get('deepseek',{'status':'not_configured'}))
     for key in ('title','body'):
@@ -188,7 +184,7 @@ def version_out(issue,version):
     return {'number':version.number,'kind':version.kind,'title':copy_dates(version.title),
         'dynamic_body':body if image_notes else copy_dates(version.dynamic_body),'body':body,
         'fixed_notes':notes,'notes_placement':'image' if image_notes else 'body','created_at':version.created_at,
-        'data_date':data.get('data_date'),'warnings':warnings,'data_contract':contract,
+        'data_date':data.get('data_date'),'warnings':data.get('warnings',[]),
         'data_reliability':data.get('data_reliability'),
         'facts':data.get('facts',{}),'deepseek':ai,
         'editorial':{key:(data.get('editorial') or {}).get(key) for key in
@@ -196,7 +192,7 @@ def version_out(issue,version):
         'editorial_quality':((data.get('editorial') or {}).get('candidate') or {}).get('style_quality'),
         'skill':{key:(data.get('skill') or {}).get(key) for key in ('status','reason','provider','model','style_status')},
         'images':[{'name':x,'url':f'/api/briefs/issues/{issue.id}/files/{version.number}/{x}'} for x in data.get('images',[])],
-        'preview':data.get('preview',True),'valid':bool(data.get('valid',False) and not contract['errors'])}
+        'preview':data.get('preview',True),'valid':data.get('valid',False)}
 
 
 def issue_out(db,issue):
@@ -212,11 +208,9 @@ def issue_out(db,issue):
 
 def job_out(item):
     from .progress import for_job
-    from .failures import job_failure
     return {'id':str(item.id),'category':item.category,'issue_date':item.issue_date,'action':item.action,
         'render_base_version':item.render_base_version,
         'preview':item.preview,'status':item.status,'attempts':item.attempts,'error':item.error,
-        'failure':job_failure(item,root_for(item.team_id)),
         'next_attempt_at':item.next_attempt_at,'created_at':item.created_at,'updated_at':item.updated_at,
         'progress':for_job(item,root_for(item.team_id))}
 

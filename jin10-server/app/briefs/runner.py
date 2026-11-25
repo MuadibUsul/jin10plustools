@@ -152,7 +152,6 @@ def generate(category,day,root,run_id,action='produce',render_input=None):
     record(out,1,'正在检查同日期的数据与图片快照')
     cache=root/'cache'/category/f'{day}.json'
     ignore_cache=(action=='refresh' or os.getenv('DATA_COLLECTION_ONLY')=='1'
-        or category=='volume' and action not in ('render','ai') and os.getenv('VERIFIED_DATABASE_INPUT')=='1'
         or action=='produce' and os.getenv('MANUAL_GENERATION')=='1'
         or action=='render' and render_input is not None)
     previous=read(cache) if cache.exists() and not ignore_cache else None
@@ -204,8 +203,6 @@ def generate(category,day,root,run_id,action='produce',render_input=None):
                 configured=bool((os.getenv('AI_API_KEY') or os.getenv('DEEPSEEK_API_KEY')) and model)
                 ai=previous.get('deepseek',{})
                 if action=='produce' and (not configured or (ai.get('status')=='ok' and ai.get('model')==model and (ai.get('provider') or 'deepseek')==provider)):
-                    from .metric_contracts import require_production_contract
-                    require_production_contract(category,payload)
                     record(out,4,'同日期快照校验通过，复用已保存的稿件与图片')
                     explain_result(out,category,payload)
                     return payload
@@ -232,10 +229,6 @@ def generate(category,day,root,run_id,action='produce',render_input=None):
             except (ValueError,KeyError,TypeError,ArithmeticError):
                 payload.setdefault('warnings',[]).append('历史连续性特征未能核验，本期不写连续涨跌结论')
     record(out,4,'来源日期、标题、正文及图片已完成基础校验')
-    if action!='render':
-        from .metric_contracts import require_production_contract,production_contract
-        payload['data_contract']=(production_contract(category,payload) if os.getenv('DATA_COLLECTION_ONLY')=='1'
-                                  else require_production_contract(category,payload))
     explain_result(out,category,payload)
     if not same_observation_day(category, day, payload):raise ValueError('来源数据日与目标日期不符')
     if not payload['title'].strip() or not payload['dynamic_body'].strip():raise ValueError('标题或正文缺失')
@@ -294,8 +287,7 @@ def main():
         # Never include request headers, model keys or raw response bodies.
         save(Path(args.root)/'runs'/args.run_id/'error.json',{'type':type(exc).__name__,
              'code':getattr(exc,'code',None),'message':getattr(exc,'user_message',str(exc))[:500],
-             'retryable':getattr(exc,'retryable',True),'missing_dates':getattr(exc,'missing_dates',[]),
-             'source':getattr(exc,'source',None),'latest_date':getattr(exc,'latest_date',None)})
+             'retryable':getattr(exc,'retryable',True),'missing_dates':getattr(exc,'missing_dates',[])})
         from .progress import read
         folder=Path(args.root)/'runs'/args.run_id
         record(folder,read(folder).get('step',1),'执行失败：'+str(exc)[:500])

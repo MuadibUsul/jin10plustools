@@ -61,14 +61,26 @@ def volume(day,out,state,refresh=False):
     from .series_store import merge_history
     history_path=state/'volume-history.json'
     stored=read(history_path)['rows'] if history_path.is_file() else []
-    seen=set();fresh=[];capture_errors=[];page_error=None
+    from .volume_close import close_rejection, turnover_key
+    seen=set();fresh=[];capture_errors=[];page_error=None;rejected=[]
     cutoff=completed_session('xshg').isoformat()
     def checkpoint(batch):
         nonlocal stored
+        banned=set()
         for raw in batch:
+            reason=close_rejection(raw)
+            key=turnover_key(raw) if reason else None
+            if reason:
+                rejected.append({'date':raw.get('date'),'reason':reason,
+                    'turn':None if key is None else str(key[1]),'vol':None if key is None else str(key[2])})
+                if key:banned.add(key)
+                continue
             try:fresh.extend(normalize_volume({'data':[raw]},cutoff,required=False))
             except (ValueError,ArithmeticError,TypeError,KeyError) as exc:
                 capture_errors.append({'date':raw.get('date'),'error':str(exc)})
+        if banned:
+            stored=[row for row in stored if turnover_key(row) not in banned]
+            save(history_path,{'method':'jin10_hushen_turnover_yi_v1','rows':stored})
         combined={row['date']:row for row in stored}
         combined.update({row['date']:row for row in fresh})
         stored=volume_averages([combined[stamp] for stamp in sorted(combined)])
@@ -76,6 +88,7 @@ def volume(day,out,state,refresh=False):
         save(out/'volume-collected.json',stored)
         save(out/'plot-data.json',[row for row in stored if row['date']<=day])
         if capture_errors:save(out/'volume-capture-errors.json',capture_errors)
+        if rejected:save(out/'volume-intraday-rejected.json',rejected)
     # Always refresh an overlapping year, and page back to the requested day on
     # historical runs. A shorter source response never replaces accumulated data.
     start=(date.fromisoformat(day)-timedelta(days=366)).isoformat()
@@ -102,7 +115,10 @@ def volume(day,out,state,refresh=False):
     else:page_error='成交额达到分页上限，区间尚未覆盖'
     if page_error:save(out/'volume-pagination-error.json',{'page':page,'error':page_error})
     rows=[row for row in stored if row['date']<=day]
-    if not any(row['date']==day for row in fresh):raise ValueError('成交额目标日期尚未更新；已补存可取得的真实历史')
+    if not any(row['date']==day for row in fresh):
+        if any(item.get('date')==day for item in rejected):
+            raise ValueError('成交额原始行情最后更新早于当日15:00，不是已核验的收盘值；已保留原始响应')
+        raise ValueError('成交额目标日期尚未更新；已补存可取得的真实历史')
     require_window(rows,'xshg',day,21,label='成交额20日均线及前日比较')
     result=render_volume(rows,out)
     if capture_errors:result['warnings'].append(f'来源有{len(capture_errors)}条不完整记录，已保留其余真实数据，未补填缺值')

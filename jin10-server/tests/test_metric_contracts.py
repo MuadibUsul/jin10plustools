@@ -23,3 +23,17 @@ def test_current_wilshire_method_fails_even_if_old_payload_asserts_valid():
     assert report['status']=='unverified' and report['inputs']['numerator']['unit']=='index_points'
     with pytest.raises(SourceContractError):require_production_contract('us_barometer',payload)
     assert require_production_contract('valuation',{})['status']=='validated_by_adapter'
+
+
+def test_saved_legacy_version_is_visibly_blocked_without_rewriting_edition(db_factory,seed):
+    from datetime import date
+    from app.briefs.service import ensure_issue,append_version,version_out
+    with db_factory() as db:
+        issue=ensure_issue(db,seed['editor'].team_id,date(2026,11,24),'us_barometer')
+        version=append_version(db,issue,{'title':'历史标题','dynamic_body':'历史正文',
+            'data_date':'2026-11-23','images':[],'valid':True,'warnings':['原有提示']})
+        view=version_out(issue,version)
+        assert view['valid'] is False and view['data_contract']['errors']
+        assert view['warnings'][0]=='原有提示' and '指数点位' in view['warnings'][1]
+        assert version.payload['valid'] is True and version.payload['warnings']==['原有提示']
+        assert view['title']==version.title and view['dynamic_body']==version.dynamic_body

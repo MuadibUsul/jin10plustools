@@ -32,7 +32,7 @@ def history_csv(snapshot, metric):
         raise ValueError('所选版本的历史数据与数据日不符')
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow(('日期', '指标值（%）'))
+    writer.writerow(('日期', '历史代理计算值（%，未核验）' if metric == 'buffett' else '指标值（%）'))
     writer.writerows((row['date'], str(row['pct'])) for row in rows)
     return ('\ufeff' + output.getvalue()).encode('utf-8')
 

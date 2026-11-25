@@ -374,7 +374,7 @@ def barometer_history(id:uuid.UUID,number:int,metric:Literal['buffett','erp'],db
         content=history_csv(snapshot,metric)
     except (ValueError,KeyError,TypeError) as exc:
         raise HTTPException(409,f'历史数据无法导出：{exc}') from None
-    label='巴菲特指数' if metric=='buffett' else '股权风险溢价'
+    label='巴菲特指数历史代理（口径待核验）' if metric=='buffett' else '股权风险溢价'
     filename=f'{version.payload["data_date"].replace("-", "")}_{label}_历史数据.csv'
     return Response(content,media_type='text/csv; charset=utf-8',headers={
         'Content-Disposition':f"attachment; filename*=UTF-8''{quote(filename)}",

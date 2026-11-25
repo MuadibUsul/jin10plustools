@@ -121,7 +121,7 @@ def test_history_downloads_use_the_selected_edition_snapshot(client, db_factory,
         assert response.status_code == 200
         assert 'attachment' in response.headers['content-disposition']
         lines = list(__import__('csv').reader(io.StringIO(response.content.decode('utf-8-sig'))))
-        assert lines[0] == ['日期', '指标值（%）']
+        assert lines[0] == ['日期', '历史代理计算值（%，未核验）' if metric == 'buffett' else '指标值（%）']
         assert lines[-1] == [day.isoformat(), expected]
 
 

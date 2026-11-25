@@ -331,7 +331,8 @@ async function showVersion() {
     ? '注释（显示在图片页脚，不进正文）'
     : v.notes_placement === 'image' ? '注释（保存后显示在图片底部）' : '注释（自动加入完整正文）';
   const confirmed = selected.confirmed_version === v.number;
-  $('#detail-status').textContent = `数据日 ${copyDate(v.data_date)} · ${confirmed ? '已确认 · 正式取稿版本' : '未确认 · 编辑预览'}`;
+  const blocked = v.data_contract?.errors?.length > 0;
+  $('#detail-status').textContent = `数据日 ${copyDate(v.data_date)} · ${blocked ? (confirmed ? '已确认历史版本 · 口径待核验' : '口径待核验 · 禁止确认') : confirmed ? '已确认 · 正式取稿版本' : '未确认 · 编辑预览'}`;
   if (v.editorial?.status === 'active') $('#detail-status').textContent += ` · ${v.editorial.writer === 'sample_story_v2' ? '样本规范写稿' : '风格模块'} · ${v.editorial.selection_status === 'model_selected' ? 'AI组织表达' : '完整规则回退'}`;
   else if (v.editorial?.reason) $('#detail-status').textContent += ` · 样本风格未采用：${v.editorial.reason}`;
   const warnings = visibleWarnings(v);
@@ -348,7 +349,7 @@ function renderHistoryExports(v) {
   panel.hidden = selected?.category !== 'us_barometer' || !v?.data_date || (me.user.role === 'viewer' && selected.confirmed_version !== v.number);
   if (panel.hidden) return;
   $('#history-export-label').textContent = `历史数据导出（CSV）· 第 ${v.number} 版`;
-  for (const [metric, label] of [['buffett', '导出巴菲特指数历史数据'], ['erp', '导出风险溢价历史数据']]) {
+  for (const [metric, label] of [['buffett', '导出历史代理值（口径待核验）'], ['erp', '导出风险溢价历史数据']]) {
     const button = node('button', label);
     button.dataset.download = '';
     const url = `/api/briefs/issues/${selected.id}/history/${v.number}/${metric}.csv`;

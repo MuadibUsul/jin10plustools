@@ -24,7 +24,8 @@ def buffett_series(wilshire_rows, gdp_rows):
         numerator,denominator=Decimal(str(row['close'])),Decimal(str(quarter['value']))
         ratio=numerator/denominator
         rows.append({'date': row['date'], 'pct': q2(ratio*100),'ratio':str(ratio),
-                     'market_cap_usd_billion':str(numerator),'gdp_usd_billion':str(denominator),
+                     'wilshire_index_points':str(numerator),'gdp_usd_billion':str(denominator),
+                     'calculation_status':'index_point_proxy_unverified',
                      'gdp_period':quarter['period'],'gdp_vintage_policy':'current_revised_not_point_in_time'})
     return rows
 

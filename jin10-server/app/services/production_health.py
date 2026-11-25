@@ -47,6 +47,10 @@ def production_status(db,team_id,now=None):
             BriefIssue.version>0).order_by(BriefIssue.issue_date.desc()).limit(1))
         version=db.scalar(select(BriefVersion).where(BriefVersion.issue_id==issue.id,BriefVersion.number==issue.version)) if issue else None
         actual=(version.payload or {}).get('data_date') if version else None
+        if version:
+            from app.briefs.metric_contracts import production_contract
+            for error in production_contract(category,version.payload)['errors']:
+                alerts.append({'code':'unverified_metric_contract','category':category,'message':error})
         if category=='volume' and version:
             facts=version.payload.get('facts') or {}
             source_urls=[facts.get('source',''),*[row.get('url','') for row in facts.get('supplemental_sources') or []]]

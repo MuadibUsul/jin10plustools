@@ -94,7 +94,7 @@ def checked(rows, label, key='date'):
 
 
 def wilshire():
-    """Daily Wilshire 5000 full-cap close; one index point equals one billion USD of market value."""
+    """Daily Wilshire index close, in index points; NOT a verified USD market cap."""
     url = 'https://query1.finance.yahoo.com/v8/finance/chart/%5EW5000?' + urlencode({'range': '10y', 'interval': '1d'})
     data = json.loads(get(url, {'User-Agent': UA}))
     result = data['chart']['result'][0]

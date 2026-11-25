@@ -286,6 +286,9 @@ def confirm(id:uuid.UUID,body:ConfirmRequest,db:DbSession,user:Editor):
     if issue.version!=body.version:raise HTTPException(409,'只能确认当前版本，请刷新核对')
     version=db.scalars(select(BriefVersion).where(BriefVersion.issue_id==id,BriefVersion.number==body.version)).first()
     if not version or not version.payload.get('valid'):raise HTTPException(409,'数据或图片未通过基础校验')
+    from app.briefs.metric_contracts import require_production_contract
+    try:require_production_contract(issue.category,version.payload)
+    except ValueError as exc:raise HTTPException(409,str(exc)) from None
     if issue.category=='volume':
         from app.briefs.observation_quality import volume_edition_exclusion
         from app.briefs.service import root_for

@@ -25,7 +25,7 @@ UNITS={'volume':{'turn':'CNY_100_million','vol':'shares_100_million','ma20':'CNY
                   'reported_value_wan_barrels':'10000_barrels','reported_quantum_barrels':'barrels'},
        'us_structure':{'close':'index_points','low':'index_points'},
        'us_barometer':{'close':'index_points','erp':'fraction','value':'USD_billion_SAAR',
-           'pct':'percent_number','ratio':'fraction','market_cap_usd_billion':'USD_billion','gdp_usd_billion':'USD_billion_SAAR'},
+           'pct':'legacy_proxy_percent_number','ratio':'legacy_proxy_ratio','wilshire_index_points':'index_points','gdp_usd_billion':'USD_billion_SAAR'},
        'gpu_rental':{'price':'USD_per_GPU_hour'},'token_cost':{'price':'USD_per_million_tokens'}}
 
 
@@ -104,7 +104,7 @@ def extract(category,folder,payload=None,*,only_file=None):
             first=min(row['period'] for row in raw['gdp'])
             derived=buffett_series([row for row in raw['wilshire'] if row['date']>=first],raw['gdp'])
             add('buffett',[{**row,'market_source':SOURCES['wilshire'],'gdp_source':SOURCES['gdp']}
-                           for row in derived],'yahoo_w5000_fred_current_revised_buffett_v1')
+                           for row in derived],'legacy_wilshire_points_over_gdp_proxy_v1')
     elif category=='us_structure':
         raw=load('us-structure-collected.json') or load('us-structure-snapshot.json') or {}
         for series,rows in raw.get('data',{}).items():add(series,rows,'yahoo_daily_close_low_v1')
@@ -152,10 +152,12 @@ def save_points(db,team_id,category,points,job_id=None,*,source_snapshot_id=None
         if category=='volume':
             from .observation_quality import volume_exclusion
             reason=volume_exclusion(item['values'])
+        unverified=category=='us_barometer' and item['series']=='buffett' and item['method']=='legacy_wilshire_points_over_gdp_proxy_v1'
+        if unverified:reason='Wilshire指数点位不等同美元市值，历史代理计算口径未核验'
         new=BriefDataPoint(team_id=team_id,category=category,series=item['series'],method=item['method'],
             data_date=date.fromisoformat(item['date']),revision=max_revision.get(key,0)+1,
             values=item['values'],units=units,sha256=sha,job_id=job_id,source_snapshot_id=source_snapshot_id,
-            quality_status='rejected' if reason else 'accepted',quality_reason=reason)
+            quality_status='unverified' if unverified else 'rejected' if reason else 'accepted',quality_reason=reason)
         new.collected_at=effective
         db.add(new);history.setdefault(key,[]).append(new)
         history[key].sort(key=lambda row:(stamp(row.collected_at),row.revision),reverse=True)

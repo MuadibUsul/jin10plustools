@@ -109,6 +109,7 @@ def render(snapshot, out,*,draw=True):
         'title': copy['title'], 'dynamic_body': copy['body'],
         'images': [chart.name] if chart else [], 'data_date': day,
         'facts': {
+            'buffett_basis':'index_point_proxy_unverified',
             'buffett_pct': str(today_buffett['pct']), 'buffett_grade': copy['buffett']['grade'],
             'erp_pct': str(today_erp['pct']), 'erp_grade': copy['erp']['grade'],
             'previous_date': previous_day,

@@ -53,7 +53,8 @@ def test_us_buffett_backfill_exports_inputs_and_current_revision_limit(db_factor
         assert row['buffett_pct']=='218.54' and row['market_cap']=='72118.2' and row['gdp']=='33000'
         assert row['gdp_period']=='2026-07-01'
         assert row['gdp_vintage_policy']=='current_revised_not_point_in_time'
-        assert row['market_cap_unit']=='十亿美元' and '季度年化' in row['gdp_unit']
+        assert row['market_cap_unit']=='Wilshire指数点，非美元市值' and '季度年化' in row['gdp_unit']
+        assert row['quality_status']=='unverified'
         assert not list(data_export.DATASETS['us_buffett'].rows(db,seed['outsider'].team_id,None,None))
 
 

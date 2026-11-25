@@ -53,7 +53,8 @@ def test_export_is_open_to_every_signed_in_member(client, rows):
     data = client.get('/api/export/datasets', headers=login(client, 'viewer@plus.test')).json()
     assert data['max_rows'] == data_export.MAX_ROWS
     keys = [item['key'] for item in data['datasets']]
-    assert keys[:2] == ['materials', 'assets'] and 'brief_versions' in keys and 'brief_source_blobs' in keys and len(keys) == 34
+    assert keys[:2] == ['materials', 'assets'] and 'brief_versions' in keys and 'brief_source_blobs' in keys
+    assert set(keys)==set(data_export.DATASETS) and len(keys)==len(set(keys))
     assert {'a_share_buffett','us_buffett'}<=set(keys)
     assert {'brief_data_points','brief_data_checks'} <= set(keys)
     assert 'feedback' in keys and 'news_events' in keys

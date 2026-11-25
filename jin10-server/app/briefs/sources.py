@@ -480,7 +480,9 @@ def valuation(day,out,state,refresh=False):
         erp_image=Path(result['image_path']);shutil.copy2(erp_image,out/erp_image.name)
     record(out,3,'估值输入数据已核验，正在按冻结模板绘制双面板')
     if os.getenv('DATA_COLLECTION_ONLY')!='1':valuation_chart(visible,rows,out)
-    ratio=Decimal(updated[day]['market_cap_yi'])/Decimal(gdp['value_yi'])*100
+    from .metric_contracts import Quantity,market_cap_to_gdp
+    ratio=market_cap_to_gdp(Quantity(updated[day]['market_cap_yi'],'CNY_100_million','market_capitalization'),
+                            Quantity(gdp['value_yi'],'CNY_100_million','nominal_gdp'))*100
     from .engines.valuation.calculate import display_movement
     erp=Decimal(current['erp_percent']);scenario,movement=display_movement(erp,prior['erp_percent'])
     title=f"【A股温度计】股债性价比指标更新，沪深300ERP报{erp:.2f}%"

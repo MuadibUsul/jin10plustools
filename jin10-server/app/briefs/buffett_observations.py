@@ -6,7 +6,7 @@ from .data_reliability import save_points
 from .engines.us_barometer.calculate import buffett_series, gdp_asof
 from .engines.us_barometer.run import SOURCES
 
-METHOD='yahoo_w5000_fred_current_revised_buffett_v1'
+METHOD='legacy_wilshire_points_over_gdp_proxy_v1'
 
 
 def backfill_us_buffett(db,team_id,*,end=None):

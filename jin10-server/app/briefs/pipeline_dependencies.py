@@ -23,7 +23,7 @@ def function_slice(path,names):
 
 
 def dependencies(here,category):
-    shared=('runner.py','policy.py','trading_calendar.py','series_store.py','failures.py',
+    shared=('runner.py','policy.py','trading_calendar.py','series_store.py','failures.py','metric_contracts.py',
         'editorial_cn.py' if category in ('volume','turnover','valuation','liquidity','oil_etf') else 'editorial_market.py',
         'editorial_suite.py','editorial_authorization.py','sample_story.py','gpu_editorial_ai.py',
         'editorial_features.py','skill_production.py','body_templates.py','delivery.py','pipeline_dependencies.py')

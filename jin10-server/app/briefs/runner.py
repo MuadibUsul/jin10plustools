@@ -204,6 +204,8 @@ def generate(category,day,root,run_id,action='produce',render_input=None):
                 configured=bool((os.getenv('AI_API_KEY') or os.getenv('DEEPSEEK_API_KEY')) and model)
                 ai=previous.get('deepseek',{})
                 if action=='produce' and (not configured or (ai.get('status')=='ok' and ai.get('model')==model and (ai.get('provider') or 'deepseek')==provider)):
+                    from .metric_contracts import require_production_contract
+                    require_production_contract(category,payload)
                     record(out,4,'同日期快照校验通过，复用已保存的稿件与图片')
                     explain_result(out,category,payload)
                     return payload
@@ -230,6 +232,9 @@ def generate(category,day,root,run_id,action='produce',render_input=None):
             except (ValueError,KeyError,TypeError,ArithmeticError):
                 payload.setdefault('warnings',[]).append('历史连续性特征未能核验，本期不写连续涨跌结论')
     record(out,4,'来源日期、标题、正文及图片已完成基础校验')
+    if action!='render':
+        from .metric_contracts import require_production_contract
+        payload['data_contract']=require_production_contract(category,payload)
     explain_result(out,category,payload)
     if not same_observation_day(category, day, payload):raise ValueError('来源数据日与目标日期不符')
     if not payload['title'].strip() or not payload['dynamic_body'].strip():raise ValueError('标题或正文缺失')

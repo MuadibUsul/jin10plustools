@@ -61,7 +61,7 @@ jobs:
       - name: Package committed PLUS source
         run: |
           tar -czf "$RUNNER_TEMP/plus-release-${GITHUB_SHA}.tar.gz" \
-            jin10-server skills .dockerignore deploy/Dockerfile.release deploy/drain-worker.py deploy/runtime-wheels.py
+            jin10-server skills .dockerignore deploy/Dockerfile.release deploy/drain-worker.py deploy/runtime-wheels.py deploy/actions-release.sh deploy/remote-release.sh
 
       - name: Deploy only the PLUS API and worker
         env:
@@ -74,9 +74,20 @@ jobs:
           remote_archive="/tmp/plus-release-${GITHUB_SHA}.tar.gz"
           scp "${ssh_options[@]}" "$RUNNER_TEMP/plus-release-${GITHUB_SHA}.tar.gz" \
             "$SSH_USER@$SSH_HOST:$remote_archive"
-          scp "${ssh_options[@]}" deploy/actions-release.sh "$SSH_USER@$SSH_HOST:/tmp/plus-release-${GITHUB_SHA}.sh"
+          remote_script="/tmp/plus-release-${GITHUB_SHA}.sh"
+          remote_dispatch="/tmp/plus-dispatch-${GITHUB_SHA}.sh"
           ssh -n "${ssh_options[@]}" "$SSH_USER@$SSH_HOST" \
-            bash "/tmp/plus-release-${GITHUB_SHA}.sh" "$GITHUB_SHA" "$remote_archive"
+            "umask 077; tar -xOzf '$remote_archive' deploy/actions-release.sh > '$remote_script' && tar -xOzf '$remote_archive' deploy/remote-release.sh > '$remote_dispatch' && bash '$remote_dispatch' --start '$GITHUB_SHA' '$remote_archive'"
+          for attempt in $(seq 1 90); do
+            state="$(ssh -n "${ssh_options[@]}" "$SSH_USER@$SSH_HOST" bash "$remote_dispatch" --status "$GITHUB_SHA")" || state=unreachable
+            case "$state" in
+              succeeded) exit 0 ;;
+              failed:*|interrupted) echo "Remote release $state; inspect dispatch log" >&2; exit 1 ;;
+            esac
+            sleep 20
+          done
+          echo 'Remote release needs verification; server task was not cancelled' >&2
+          exit 1
 
       - name: Verify public health endpoint
         run: curl --fail --silent --show-error --retry 5 --retry-delay 3 https://plus.tlines.tech/api/health

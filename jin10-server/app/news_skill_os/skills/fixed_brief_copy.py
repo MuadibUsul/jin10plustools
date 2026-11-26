@@ -48,7 +48,13 @@ def _number(fact: dict, name: str, unit: str, day: date) -> Decimal:
         raise ValueError(f"{name}: invalid numeric value or date") from exc
     if not value.is_finite() or (name in PREVIOUS and as_of >= day) or (name not in PREVIOUS and as_of != day):
         raise ValueError(f"{name}: non-finite value or wrong data date")
-    if value < 0 or (unit == "percent" and value > 100):
+    if name == "buffett":
+        if not 0 < value <= 500:
+            raise ValueError(f"{name}: out of range")
+    elif name in {"erp", "previous_erp"}:
+        if not -20 <= value <= 100:
+            raise ValueError(f"{name}: out of range")
+    elif value < 0 or (unit == "percent" and value > 100):
         raise ValueError(f"{name}: out of range")
     return value
 

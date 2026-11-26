@@ -31,19 +31,27 @@ def _destination(url: str) -> tuple[str, str]:
         raise LinkIngestError("只支持 http/https 新闻链接")
     if parsed.username or parsed.password:
         raise LinkIngestError('新闻链接不能包含账号密码')
+    if parsed.port not in (None, 80, 443):
+        raise LinkIngestError("新闻链接端口不受支持")
     host = parsed.hostname.lower().rstrip(".")
     if host == "localhost" or host.endswith(".localhost") or host.endswith(".local"):
         raise LinkIngestError("该链接不是公网新闻地址")
+    port = parsed.port or (443 if parsed.scheme == 'https' else 80)
     try:
-        addresses = sorted({item[4][0] for item in socket.getaddrinfo(host, parsed.port or (443 if parsed.scheme=='https' else 80), type=socket.SOCK_STREAM)})
+        raw_addrs = {item[4][0] for item in socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)}
     except (OSError, ValueError) as exc:
         raise LinkIngestError("无法解析新闻链接域名") from exc
-    if not addresses:raise LinkIngestError('新闻链接没有公网地址')
-    for address in addresses:
+    if not raw_addrs:
+        raise LinkIngestError('新闻链接没有公网地址')
+    parsed_ips = []
+    for address in raw_addrs:
         ip = ipaddress.ip_address(address)
-        if not ip.is_global or ip.is_multicast:
+        effective = getattr(ip, "ipv4_mapped", None) or ip
+        if not effective.is_global or effective.is_multicast:
             raise LinkIngestError("该链接指向内网地址，已拒绝")
-    return url.strip(), addresses[0]
+        parsed_ips.append((ip.version != 4, address))
+    parsed_ips.sort()
+    return url.strip(), parsed_ips[0][1]
 
 
 def _public_url(url: str) -> str:

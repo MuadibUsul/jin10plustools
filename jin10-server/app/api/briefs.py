@@ -15,7 +15,7 @@ from app.db.models import BriefAudit, BriefConfig, BriefIssue, BriefJob, BriefVe
 from app.services.team_settings import update_notes
 from app.deps import CurrentUser, DbSession, Editor
 from app.briefs.policy import CATEGORIES, CHINA
-from app.briefs.service import owned, find_issue, enqueue, issue_out, job_out, append_version, artifact_path, delivered_image, prepare_chart_notes_revision, edition_payload, root_for
+from app.briefs.service import owned, find_issue, enqueue, issue_out, issues_out_batch, job_out, append_version, artifact_path, delivered_image, prepare_chart_notes_revision, edition_payload, root_for
 from app.briefs.delivery import complete_body
 from app.services.image_delivery import download_name
 
@@ -89,7 +89,6 @@ def categories(db:DbSession,user:CurrentUser):
 @router.get('/data-status')
 def data_status(db:DbSession,user:CurrentUser,date:date|None=None):
     from app.briefs.policy import expected_date
-    from app.briefs.data_reliability import coverage
     day=date or datetime.now(CHINA).date();items=[]
     for category,label in CATEGORIES.items():
         try:target=expected_date(category,day)
@@ -148,7 +147,13 @@ def config(body:ConfigRequest,db:DbSession,user:Editor):
 def issues(db:DbSession,user:CurrentUser,day:Annotated[date|None,Query(alias='date')]=None):
     day=day or datetime.now(CHINA).date()
     rows=db.scalars(select(BriefIssue).where(BriefIssue.team_id==user.team_id,BriefIssue.issue_date==day)).all()
-    return {'date':day,'items':[visible(db,user,x) for x in rows]}
+    items=issues_out_batch(db, list(rows))
+    if user.role==Role.VIEWER:
+        issue_map={str(r.id): r for r in rows}
+        for item in items:
+            confirmed=issue_map[item['id']].confirmed_version
+            item['versions']=[v for v in item['versions'] if v['number']==confirmed]
+    return {'date':day,'items':items}
 
 
 @router.get('/issues/{id}')
@@ -163,8 +168,14 @@ def jobs(body:JobRequest,db:DbSession,user:Editor):
     active=db.scalars(select(BriefJob).where(BriefJob.team_id==user.team_id,
         BriefJob.issue_date==body.issue_date,BriefJob.category==body.category,
         BriefJob.status.in_(['queued','running','waiting']))).first()
+    if active and active.action == 'reconcile' and active.status in ('queued', 'waiting'):
+        active.status = 'skipped'
+        active.active_key = None
+        active.error = '编辑发起人工任务，已让出队列'
+        db.flush()
+        active = None
     if active and active.action!=body.action:
-        names={'produce':'生成稿件','refresh':'重新取数','render':'重新制图','ai':'补跑AI文案'}
+        names={'produce':'生成稿件','refresh':'重新取数','render':'重新制图','ai':'补跑AI文案','reconcile':'后台数据补查'}
         raise HTTPException(409,f"该栏目正在执行{names.get(active.action,active.action)}，请等待当前任务结束后再{names.get(body.action,body.action)}")
     render_base_version = None
     if body.action == 'render':
@@ -267,9 +278,11 @@ def edit(id:uuid.UUID,body:EditRequest,db:DbSession,user:Editor):
             payload['fixed_notes']=edited_notes
     try:
         if body.notes_as_default and body.fixed_notes is not None:
-            team=db.get(Team,user.team_id,with_for_update=True)
-            update_notes(db,team,{issue.category:body.fixed_notes},user.id)
-            team.settings={**team.settings,'settings_revision':team.settings.get('settings_revision',0)+1}
+            lock_team = db.get_bind().dialect.name == 'postgresql'
+            team = db.get(Team, user.team_id, with_for_update=lock_team)
+            update_notes(db, team, {issue.category: body.fixed_notes}, user.id)
+            saved_settings = dict(team.settings or {})
+            team.settings = {**saved_settings, 'settings_revision': saved_settings.get('settings_revision', 0) + 1}
         append_version(db,issue,payload,user_id=user.id,kind='edited',
                        title=body.title.strip(),body=dynamic_body)
         db.commit()
@@ -292,7 +305,7 @@ def confirm(id:uuid.UUID,body:ConfirmRequest,db:DbSession,user:Editor):
         root=root_for(user.team_id).resolve()
         folder=(root/str(version.payload.get('artifact_dir') or '')).resolve()
         if not folder.is_relative_to(root):raise HTTPException(409,'稿件来源路径无效')
-        try:block=draft_block(version.payload,folder)
+        try:block=draft_block(version.payload,folder,db=db,team_id=user.team_id)
         except (ValueError,OSError,KeyError,TypeError):
             raise HTTPException(409,'稿件数据快照未通过收盘时点核验，请重新生成') from None
         if block:

@@ -6,6 +6,7 @@ Never return engine stdout, request headers, credentials or arbitrary files.
 """
 import hashlib
 import json
+import re
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
@@ -223,10 +224,21 @@ def for_job(job, root, payload=None):
         artifact = folder
     data = describe(job.category, payload)
     evidence = []
-    # Fixed, registered snapshot names only; no user-provided paths or directory walk.
-    for name in ('volume-raw.json', 'plot-data.json', 'source.json', 'liquidity-snapshot.json',
-                 'oil-source.json', 'oil-previous-source.json', 'buffett-plot-data.json', 'erp-plot-data.json',
-                 'ai-compute-source.json', 'public-compute-read.json', 'manual-compute-read.json'):
+    snapshot_names = [
+        'volume-raw.json', 'plot-data.json', 'source.json', 'liquidity-snapshot.json',
+        'oil-source.json', 'oil-previous-source.json', 'buffett-plot-data.json', 'erp-plot-data.json',
+        'ai-compute-source.json', 'public-compute-read.json', 'manual-compute-read.json',
+    ]
+    if job.category == 'oil_etf':
+        dated_oil = set()
+        for base in (folder, artifact):
+            if base.is_dir():
+                for candidate_path in sorted(base.glob('oil-previous-source-*.json')):
+                    if re.fullmatch(r'oil-previous-source-\d{4}-\d{2}-\d{2}\.json', candidate_path.name):
+                        dated_oil.add(candidate_path.name)
+        snapshot_names.extend(sorted(dated_oil))
+    # Fixed, registered snapshot names only; no user-provided paths or arbitrary directory walk.
+    for name in snapshot_names:
         path = folder/name
         if not path.is_file():
             path = artifact/name
@@ -255,7 +267,7 @@ def for_job(job, root, payload=None):
                     data['inputs'].append({'label': label,'value': str(row.get(key)), 'unit': '亿元'})
         if name == 'liquidity-snapshot.json' and isinstance(parsed, dict):
             data['fetched_at'] = parsed.get('fetched_at')
-    actions = {'produce': '生成稿件', 'refresh': '重新取数', 'render': '从快照重新制图', 'ai': '补跑AI文案'}
+    actions = {'produce': '生成稿件', 'refresh': '重新取数', 'render': '从快照重新制图', 'ai': '补跑AI文案', 'reconcile': '后台数据补查'}
     reused = bool(payload and artifact != folder.resolve())
     ai = payload.get('skill') or payload.get('deepseek') or {}
     return {**data, 'evidence': evidence, 'action': actions.get(job.action, job.action),

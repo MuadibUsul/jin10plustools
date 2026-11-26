@@ -7,6 +7,7 @@ write keeps a small immutable history in the team settings JSON.
 """
 from __future__ import annotations
 
+from functools import lru_cache
 import hashlib
 import re
 from pathlib import Path
@@ -15,7 +16,7 @@ from typing import Any
 from app.db.models import utcnow
 
 from .policy import CATEGORIES
-from .skill_ai import SKILL_NAMES, asset_dir, sample_label, instructions_path
+from .skill_ai import SKILL_NAMES, asset_dir, sample_label, instructions_path, read_text_cached
 
 MAX_INSTRUCTIONS = 8000
 MAX_HISTORY = 20
@@ -58,9 +59,9 @@ def _bundled(category: str) -> str:
         for base in (Path(__file__).resolve().parents[2], Path(__file__).resolve().parents[3]):
             path = base / "skills" / "jin10-plus-editorial-quality" / "SKILL.md"
             if path.is_file():
-                return path.read_text(encoding="utf-8")
+                return read_text_cached(path)
         raise ValueError("文字质量 Skill 规范文件未安装")
-    return instructions_path(category).read_text(encoding="utf-8")
+    return read_text_cached(instructions_path(category))
 
 
 def _description(text: str) -> str:
@@ -80,11 +81,9 @@ def _saved(team) -> dict[str, Any]:
     return dict(((getattr(team, "settings", None) or {}).get("skills") or {}))
 
 
-def history_samples(category: str) -> list[dict[str, str]]:
-    """Parse dated examples from the bundled reference file."""
-    if category == QUALITY_CATEGORY:
-        return []
-    text = (asset_dir(category) / "references" / "history.md").read_text(encoding="utf-8")
+@lru_cache(maxsize=32)
+def _parsed_history_samples(category: str, path_str: str, mtime_ns: int, size: int) -> tuple[dict[str, str], ...]:
+    text = Path(path_str).read_text(encoding="utf-8")
     samples = []
     current_date = None
     current_title = ""
@@ -94,7 +93,7 @@ def history_samples(category: str) -> list[dict[str, str]]:
     def flush():
         if current_date and body:
             samples.append({"date": current_date, "title": current_title,
-                            'origin':'verified_sample_reproduction' if category in ('us_barometer','us_structure') else 'user_provided_style_archive',
+                            'origin': 'verified_sample_reproduction' if category in ('us_barometer', 'us_structure') else 'user_provided_style_archive',
                             "body": re.sub(r"\s+", " ", " ".join(body)).strip()})
 
     for line in text.splitlines():
@@ -120,7 +119,16 @@ def history_samples(category: str) -> list[dict[str, str]]:
         if started and line.strip():
             body.append(line.strip())
     flush()
-    return samples
+    return tuple(samples)
+
+
+def history_samples(category: str) -> list[dict[str, str]]:
+    """Parse dated examples from the bundled reference file."""
+    if category == QUALITY_CATEGORY:
+        return []
+    path = asset_dir(category) / "references" / "history.md"
+    stat = path.stat()
+    return [dict(item) for item in _parsed_history_samples(category, str(path), stat.st_mtime_ns, stat.st_size)]
 
 
 def effective(team, category: str, *, include_history: bool = False) -> dict[str, Any]:
@@ -130,6 +138,8 @@ def effective(team, category: str, *, include_history: bool = False) -> dict[str
     bundled = _bundled(category)
     instructions = saved.get("instructions") or bundled
     history = list(saved.get("history") or [])
+    sample_count = 0 if category == QUALITY_CATEGORY else _count_samples(
+        read_text_cached(asset_dir(category) / "references" / "history.md"))
     result = {
         "category": category,
         "label": "文字质量检查" if category == QUALITY_CATEGORY else CATEGORIES[category],
@@ -146,8 +156,7 @@ def effective(team, category: str, *, include_history: bool = False) -> dict[str
         "description": _description(instructions),
         "digest": _hash(instructions),
         "bundled_digest": _hash(bundled),
-        "samples": 0 if category == QUALITY_CATEGORY else _count_samples(
-            (asset_dir(category) / "references" / "history.md").read_text(encoding="utf-8")),
+        "samples": sample_count,
         "revision": int(saved.get("revision") or 0),
         "updated_at": saved.get("updated_at"),
         "updated_by": saved.get("updated_by"),

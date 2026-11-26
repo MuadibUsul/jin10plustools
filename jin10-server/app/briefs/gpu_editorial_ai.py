@@ -3,11 +3,12 @@ from __future__ import annotations
 
 import json
 from types import SimpleNamespace
-from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+from urllib.request import urlopen
 
 from app.config import get_settings
 from app.services.team_settings import briefs_ai
+
+from .ai_client import call_json_completion
 
 
 def select_plan(team_settings: dict | None, context: dict) -> dict:
@@ -48,42 +49,29 @@ def select_plan(team_settings: dict | None, context: dict) -> dict:
         diagnostics['attempts'] = attempt + 1
         body = {'model': ai['model'], 'stream': False, 'temperature': 0.2,
                 'max_tokens': 1000 if story else 400, 'response_format': {'type': 'json_object'}, 'messages': messages}
-        if ai.get('provider') == 'deepseek':
-            body['thinking'] = {'type': 'disabled'}
-        try:
-            request = Request(ai['base_url'].rstrip('/') + '/chat/completions',
-                              data=json.dumps(body).encode(),
-                              headers={'Authorization': 'Bearer ' + ai['key'],
-                                       'Content-Type': 'application/json'}, method='POST')
-            with urlopen(request, timeout=30) as response:
-                raw = response.read(32769)
-            if len(raw) > 32768:
-                return {**diagnostics, 'status': 'failed', 'reason': 'response_too_large'}
-            response = json.loads(raw)
-            diagnostics['response_model']=response.get('model')
-            diagnostics['usage']={k:v for k,v in (response.get('usage') or {}).items()
-                if k in ('prompt_tokens','completion_tokens','total_tokens') and isinstance(v,int)}
-            choice = response['choices'][0]
-            if choice.get('finish_reason') != 'stop':
-                return {**diagnostics, 'status': 'failed', 'reason': 'incomplete_completion'}
-            plan = json.loads(choice['message']['content'])
-            if story:
-                from .sample_story import validate_plan
-                validate_plan(context,plan)
-                valid=True
-            else:valid = (isinstance(plan, dict) and set(plan) == set(options)
-                     and all(isinstance(plan[role], str)
-                             and plan[role] in {row['id'] for row in rows}
-                             for role, rows in options.items()))
-            if valid:
-                return {**diagnostics, 'status': 'ok', 'plan': plan}
-        except HTTPError as exc:
-            return {**diagnostics, 'status': 'failed', 'reason': 'provider_http_error',
-                    'http_status': exc.code}
-        except (TimeoutError, URLError, OSError):
-            return {**diagnostics, 'status': 'failed', 'reason': 'network_error'}
-        except (ValueError, KeyError, IndexError, TypeError):
-            pass
+        reply = call_json_completion(ai, body, opener=urlopen, timeout=30, max_bytes=32768)
+        for key in ('response_model', 'usage'):
+            if key in reply:
+                diagnostics[key] = reply[key]
+        if reply['status'] == 'ok':
+            plan = reply['parsed']
+            try:
+                if story:
+                    from .sample_story import validate_plan
+                    validate_plan(context, plan)
+                    valid = True
+                else:
+                    valid = (isinstance(plan, dict) and set(plan) == set(options)
+                             and all(isinstance(plan[role], str)
+                                     and plan[role] in {row['id'] for row in rows}
+                                     for role, rows in options.items()))
+                if valid:
+                    return {**diagnostics, 'status': 'ok', 'plan': plan}
+            except (ValueError, KeyError, IndexError, TypeError):
+                pass
+        elif reply['reason'] in ('response_too_large', 'incomplete_completion', 'provider_http_error', 'network_error'):
+            extra = {'http_status': reply['http_status']} if 'http_status' in reply else {}
+            return {**diagnostics, 'status': 'failed', 'reason': reply['reason'], **extra}
         # One correction at most; no free-form failed response is carried forward.
         messages.append({'role': 'user', 'content': '上次结构、ID或事实覆盖无效。仅返回要求的JSON，不增删事实。'})
     return {**diagnostics, 'status': 'failed', 'reason': 'invalid_plan'}

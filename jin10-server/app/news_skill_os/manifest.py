@@ -5,7 +5,8 @@ from __future__ import annotations
 import hashlib
 import importlib
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from functools import lru_cache
 from importlib.resources import files
 from pathlib import Path
 from typing import Any, Callable, Mapping
@@ -42,19 +43,25 @@ class RegisteredSkill:
     manifest: dict[str, Any]
     digest: str
     execute: Callable[[dict[str, Any]], dict[str, Any]]
+    _input_validator: Draft202012Validator = field(init=False, repr=False, compare=False)
+    _output_validator: Draft202012Validator = field(init=False, repr=False, compare=False)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "_input_validator", Draft202012Validator(self.manifest["input_schema"]))
+        object.__setattr__(self, "_output_validator", Draft202012Validator(self.manifest["output_schema"]))
 
     @property
     def key(self) -> tuple[str, str]:
         return self.manifest["id"], self.manifest["version"]
 
     def run(self, payload: dict[str, Any]) -> dict[str, Any]:
-        problems = list(Draft202012Validator(self.manifest["input_schema"]).iter_errors(payload))
+        problems = list(self._input_validator.iter_errors(payload))
         if problems:
             raise ManifestError(f"{self.key}: input: {problems[0].message}")
         result = self.execute(payload)
         if not isinstance(result, dict):
             raise ManifestError(f"{self.key}: output must be an object")
-        problems = list(Draft202012Validator(self.manifest["output_schema"]).iter_errors(result))
+        problems = list(self._output_validator.iter_errors(result))
         if problems:
             raise ManifestError(f"{self.key}: output: {problems[0].message}")
         return result
@@ -129,6 +136,7 @@ class SkillRegistry:
         return tuple(self._skills)
 
 
+@lru_cache(maxsize=1)
 def bundled_registry() -> SkillRegistry:
     registry = SkillRegistry()
     directory = Path(str(files("app.news_skill_os").joinpath("manifests")))

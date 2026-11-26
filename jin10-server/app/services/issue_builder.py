@@ -15,6 +15,7 @@ import datetime as dt
 import hashlib
 import json
 import tempfile
+import threading
 from collections import OrderedDict
 import uuid
 from pathlib import Path
@@ -119,7 +120,7 @@ def render_issue(
     """生成 PPTX 与 PDF（预览与正式生成共用），返回 (pptx, pdf 或 None, 页数, 提示)"""
     try:
         report = generate(_daily_issue(db, user, req), out_dir / f"PLUS日报-{req.issue_date:%Y-%m-%d}.pptx")
-    except CoverLayoutError as err:
+    except (CoverLayoutError, ValueError, OSError) as err:
         raise IssueBuildError(str(err)) from None
     try:
         apply_layout(report.output, req.layout_overrides)
@@ -160,6 +161,7 @@ def default_issue_date() -> dt.date:
 
 _PREVIEW_CACHE: OrderedDict[str, tuple[list[bytes], int, list[str], list[list[dict]]]] = OrderedDict()
 _PREVIEW_CACHE_SIZE = 4
+_PREVIEW_LOCK = threading.Lock()
 PREVIEW_DPI = 96
 
 
@@ -177,13 +179,15 @@ def _preview_key(db: Session, user: User, req: GenerateRequest, dpi: int) -> str
 def preview_issue(db: Session, user: User, req: GenerateRequest, dpi: int = PREVIEW_DPI) -> tuple[list[bytes], int, list[str], list[list[dict]]]:
     """生成一份临时 PDF 并逐页渲染为 PNG（与正式生成同一流程，所见即所得）；内容未变时直接返回缓存"""
     key = _preview_key(db, user, req, dpi)
-    if key in _PREVIEW_CACHE:
-        _PREVIEW_CACHE.move_to_end(key)
-        return _PREVIEW_CACHE[key]
+    with _PREVIEW_LOCK:
+        if key in _PREVIEW_CACHE:
+            _PREVIEW_CACHE.move_to_end(key)
+            return _PREVIEW_CACHE[key]
     result = _render_preview(db, user, req, dpi)
-    _PREVIEW_CACHE[key] = result
-    while len(_PREVIEW_CACHE) > _PREVIEW_CACHE_SIZE:
-        _PREVIEW_CACHE.popitem(last=False)
+    with _PREVIEW_LOCK:
+        _PREVIEW_CACHE[key] = result
+        while len(_PREVIEW_CACHE) > _PREVIEW_CACHE_SIZE:
+            _PREVIEW_CACHE.popitem(last=False)
     return result
 
 

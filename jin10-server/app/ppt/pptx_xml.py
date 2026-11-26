@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import copy
+import re
 from collections.abc import Iterator
+
+_XML_ILLEGAL_CHARS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\ufffe\uffff]")
 
 from lxml import etree
 from pptx.opc.constants import RELATIONSHIP_TYPE as RT
@@ -180,13 +183,17 @@ def paragraphs(el: etree._Element) -> list[etree._Element]:
     return list(el.iter(qn("a:p")))
 
 
+def sanitize_xml_text(text: str) -> str:
+    return _XML_ILLEGAL_CHARS.sub("", text) if text else ""
+
+
 def set_paragraph_text(p: etree._Element, text: str) -> None:
     """保留第一个文字段的格式，替换为 text，删除其余文字段"""
     runs = p.findall(qn("a:r"))
     if not runs:
         raise ValueError("段落没有可复用格式的文字段")
     first, rest = runs[0], runs[1:]
-    first.find(qn("a:t")).text = text
+    first.find(qn("a:t")).text = sanitize_xml_text(text)
     for r in rest:
         p.remove(r)
     for br in p.findall(qn("a:br")):

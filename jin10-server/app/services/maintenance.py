@@ -56,3 +56,5 @@ class MaintenanceWorker(threading.Thread):
 
     def stop(self) -> None:
         self._halt.set()
+        if self.is_alive():
+            self.join(timeout=5)

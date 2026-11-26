@@ -21,6 +21,7 @@ from app.main import app  # noqa: E402
 from app.security import hash_password  # noqa: E402
 
 PASSWORD = "correct-horse-battery"
+_PASSWORD_HASH = hash_password(PASSWORD)
 
 
 @pytest.fixture
@@ -71,7 +72,7 @@ def seed(db_factory: sessionmaker[Session]) -> dict[str, User]:
             "outsider": User(team_id=other.id, email="out@plus.test", name="外部", role=Role.EDITOR),
         }
         for u in users.values():
-            u.password_hash = hash_password(PASSWORD)
+            u.password_hash = _PASSWORD_HASH
         db.add_all(users.values())
         db.commit()
         return users

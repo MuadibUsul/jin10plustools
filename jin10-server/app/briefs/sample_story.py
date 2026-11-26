@@ -99,7 +99,7 @@ def fact_bank(category,payload,context,candidate):
                 ('表现介于三大股指之间','当日涨跌幅介于三大股指之间')):
                 if old in text:alternatives.append(text.replace(old,new))
             if key in ('b200','h100','a100'):
-                alternatives.append(re.sub(r'(英伟达)?(B200|H100|A100)(?:租赁价格)?(?:升至|降至|报)',
+                alternatives.append(re.sub(r'(英伟达)?(B200|H100|A100)(?:租赁价格)?(?:升至|回落至|降至|报)',
                     lambda m:(m.group(1) or '')+m.group(2)+'最新租赁价格为',text))
             bank.append({'id':key,'required':required,'variants':[{'id':key+'.'+str(i),'text':v} for i,v in enumerate(dict.fromkeys([text,*variants,*alternatives]))]})
     if category == 'turnover':
@@ -107,8 +107,14 @@ def fact_bank(category,payload,context,candidate):
         for key, variants in clauses:
             add(key, variants[0], variants[1:])
         return bank, [{'id': f'title.{i}', 'text': title} for i, title in enumerate(headlines)]
+    oil_mixed = (category == 'oil_etf'
+                 and (context.get('bindings', {}).get('USO') or {}).get('data_date')
+                     != (context.get('bindings', {}).get('BNO') or {}).get('data_date'))
     if category in ('volume','valuation','liquidity','oil_etf'):
         main=slots['main_fact']
+        if oil_mixed:
+            uso_day = (context.get('bindings', {}).get('USO') or {}).get('data_date') or slots['date']
+            main = f'{uso_day}，' + main
         if category=='valuation':
             first,sep,last=main.partition('；')
             add('buffett',first+'。' if sep else first)
@@ -147,7 +153,7 @@ def fact_bank(category,payload,context,candidate):
         'oil_etf':{'both_up':'两只基金的期货持仓均有所增加。','both_down':'两只基金的期货持仓均有所减少。','both_flat':'两只基金的期货持仓均与比较日持平。','mixed':'两只基金的期货持仓变化出现分化。'},
     }
     summary=summaries.get(category,{}).get(context['scenario'])
-    if summary and not verified_trend:add('reading',summary,required=False)
+    if summary and not verified_trend and not oil_mixed:add('reading',summary,required=False)
     headlines=[candidate['title']]
     prefix=candidate['title'].split('】',1)[0]+'】'
     if category=='volume':
@@ -174,13 +180,13 @@ def fact_bank(category,payload,context,candidate):
                 value=Decimal(str(fund[k]['change_barrels']))
                 return '增仓' if value>0 else '减仓' if value<0 else '持仓不变'
             headlines.insert(0,f"{prefix}USO期货{movement('USO')}，BNO期货{movement('BNO')}")
-    elif category=='token_cost' and facts.get('weekly_change_pct') is not None:
+    elif category=='token_cost' and facts.get('weekly_change_pct') not in (None, ''):
         change=Decimal(str(facts['weekly_change_pct']));move='上涨' if change>0 else '下跌' if change<0 else '持平'
         suffix='，较此前已收录高点回落逾五成' if Decimal(str(facts.get('drawdown_pct') or 0))>50 else ''
         headlines.insert(0,f"{prefix}Token价格一周{move}{abs(change)}%{suffix}")
     elif category=='gpu_rental':
         change=facts.get('b200_change_pct')
-        if change is not None:
+        if change not in (None, ''):
             value=Decimal(str(change));move='上涨' if value>0 else '下跌' if value<0 else '持平'
             headlines.insert(0,f"{prefix}B200租赁价格一周{move}{abs(value)}%")
     elif category=='us_barometer':
@@ -229,7 +235,8 @@ def render_plan(context,plan):
     paragraphs=[''.join(variants[v] for v in group) for group in groups]
     if context['category'] in ('us_structure','us_barometer'):
         paragraphs=[str(i)+'、'+text for i,text in enumerate(paragraphs,1)]
-    else:paragraphs[0]=context['printed_day']+'，'+paragraphs[0]
+    elif not re.match(r'^\d{4}-\d{2}-\d{2}，', paragraphs[0]):
+        paragraphs[0]=context['printed_day']+'，'+paragraphs[0]
     return title,'\n\n'.join(paragraphs)
 
 
@@ -302,6 +309,7 @@ def apply_sample_story(payload,category,team_settings):
     from app.config import get_settings
     saved=((team_settings or {}).get('skills') or {}).get(category) or {}
     if payload.get('body_template_custom') or saved.get('enabled') is False:return False
+    if category=='liquidity' and payload.get('data_date_policy')=='intraday_board':return False
     if category=='gpu_rental' and get_settings().briefs_gpu_editorial_mode=='off':return False
     baseline={'title':payload['title'],'body':payload['dynamic_body']}
     try:

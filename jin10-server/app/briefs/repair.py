@@ -24,9 +24,15 @@ def recover_oil_futures(db,team_id,*,limit=256):
     """
     from .engines.oil_etf.previous import parse,PAGES
     method='companiesmarketcap_dated_futures_v1'
-    known={(row.series,row.data_date.isoformat()) for row in db.scalars(
-        select(BriefDataPoint).where(BriefDataPoint.team_id==team_id,
-            BriefDataPoint.category=='oil_etf'))}
+    known = {
+        (series, data_day.isoformat())
+        for series, data_day in db.execute(
+            select(BriefDataPoint.series, BriefDataPoint.data_date).where(
+                BriefDataPoint.team_id == team_id,
+                BriefDataPoint.category == 'oil_etf',
+            )
+        )
+    }
     manifests=db.scalars(select(BriefSourceSnapshot).where(
         BriefSourceSnapshot.team_id==team_id,BriefSourceSnapshot.category=='oil_etf',
         BriefSourceSnapshot.relative_path.like('%source-archive/%/manifest.json')
@@ -74,23 +80,45 @@ def recover_snapshots(db,team_id,category,folder,*,limit=32,replay_revisions=Fal
         or_(*(BriefSourceSnapshot.relative_path.endswith('/'+name) for name in names),
             BriefSourceSnapshot.relative_path.in_(names))).order_by(
                 BriefSourceSnapshot.captured_at.asc() if replay_revisions else BriefSourceSnapshot.captured_at.desc()).limit(limit))
-    folder=Path(folder);folder.mkdir(parents=True,exist_ok=True)
+    folder = Path(folder)
+    folder.mkdir(parents=True, exist_ok=True)
+    current = (
+        set()
+        if replay_revisions
+        else {
+            (series, method, data_day.isoformat())
+            for series, method, data_day in db.execute(
+                select(BriefDataPoint.series, BriefDataPoint.method, BriefDataPoint.data_date).where(
+                    BriefDataPoint.team_id == team_id,
+                    BriefDataPoint.category == category,
+                )
+            )
+        }
+    )
     for snapshot in rows:
-        name=Path(snapshot.relative_path).name
-        if name not in names:continue
+        name = Path(snapshot.relative_path).name
+        if name not in names:
+            continue
         # Multiple captures are intentionally ingested: a newer truncated history
         # cannot erase the older prefix. Revisions are processed oldest first by
         # the explicit CLI; startup recovery never overwrites a known point.
-        if hashlib.sha256(snapshot.content).hexdigest()!=snapshot.sha256:
+        if hashlib.sha256(snapshot.content).hexdigest() != snapshot.sha256:
             raise ValueError('历史来源快照哈希不符，不能用于补齐')
-        path=folder/name;path.write_bytes(snapshot.content)
-        payload=json.loads(snapshot.content) if category=='oil_etf' else None
-        points=extract(category,folder,payload,only_file=name)
-        current={(row.series,row.method,row.data_date.isoformat()) for row in db.scalars(
-            select(BriefDataPoint).where(BriefDataPoint.team_id==team_id,BriefDataPoint.category==category))}
-        restored+=save_points(db,team_id,category,[point for point in points if replay_revisions or
-            (point['series'],point['method'],point['date']) not in current],snapshot.job_id,
-            source_snapshot_id=snapshot.id,collected_at=snapshot.captured_at)
+        path = folder / name
+        path.write_bytes(snapshot.content)
+        payload = json.loads(snapshot.content) if category == 'oil_etf' else None
+        points = extract(category, folder, payload, only_file=name)
+        fresh_points = [
+            point for point in points
+            if replay_revisions or (point['series'], point['method'], point['date']) not in current
+        ]
+        if fresh_points:
+            restored += save_points(
+                db, team_id, category, fresh_points, snapshot.job_id,
+                source_snapshot_id=snapshot.id, collected_at=snapshot.captured_at,
+            )
+            if not replay_revisions:
+                current.update((p['series'], p['method'], p['date']) for p in fresh_points)
         found.add(name)
     return restored
 
@@ -104,9 +132,14 @@ def restore_working_history(db,team_id,category,state):
         'us_barometer':{'wilshire':('wilshire-history.json','yahoo_w5000_v1'),
                         'erp':('erp-history.json','streetstats_erp_v1'),
                         'gdp':('gdp-history.json','fred_current_revised_not_point_in_time')}}
-    state=Path(state);state.mkdir(parents=True,exist_ok=True);count=0
-    rows=list(db.scalars(select(BriefDataPoint).where(BriefDataPoint.team_id==team_id,
-        BriefDataPoint.category==category).order_by(BriefDataPoint.collected_at.desc(),BriefDataPoint.revision.desc())))
+    state = Path(state)
+    state.mkdir(parents=True, exist_ok=True)
+    count = 0
+    rows = list(db.scalars(select(BriefDataPoint).where(
+        BriefDataPoint.team_id == team_id,
+        BriefDataPoint.category == category,
+        BriefDataPoint.quality_status == 'accepted',
+    ).order_by(BriefDataPoint.collected_at.desc(), BriefDataPoint.revision.desc())))
     for series,(filename,method) in specs.get(category,{}).items():
         chosen={}
         for row in rows:
@@ -122,7 +155,7 @@ def restore_working_history(db,team_id,category,state):
     if category=='liquidity':
         points={}
         for row in rows:
-            if row.series in ('DR001','DR007'):
+            if row.series in ('DR001','DR007') and row.method=='cfets_dr_close_v1':
                 point=points.setdefault(row.data_date.isoformat(),{'date':row.data_date.isoformat()})
                 point.setdefault(row.series,row.values['weighted_rate'])
         path=state/'dr-history.json';existing=read(path)['rows'] if path.exists() else []

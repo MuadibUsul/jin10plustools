@@ -31,6 +31,7 @@ export interface SyncState {
   last_sync_at: string | null;
   last_error: string | null;
   syncing: boolean;
+  sync_started_at?: string | null;
 }
 
 export interface SyncReport {

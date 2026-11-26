@@ -48,7 +48,7 @@ function render(data) {
     paragraph(assembly, `配图：${info.result.images?.length ? info.result.images.join('、') : '本栏目无配图'}`);
     const ai = {ok:'候选文案已通过校验',not_configured:'未配置，使用规则稿',disabled:'已关闭',pending:'处理中',failed:'调用失败，保留规则稿',timeout:'请求超时，保留规则稿',invalid_response:'未通过校验，保留规则稿'};
     paragraph(assembly, `AI（${{chat2api:'chat2api',openai:'OpenAI',deepseek:'DeepSeek'}[info.result.ai_provider] || '未配置'}）：${ai[info.result.ai_status] || info.result.ai_status}${info.result.ai_model ? `（${info.result.ai_model}）` : ''}`);
-    for (const warning of info.result.warnings || []) paragraph(assembly, warning, 'warning');
+    for (const warning of (info.result.warnings || []).filter(w => !String(w).startsWith('历史覆盖尚未完整核验'))) paragraph(assembly, warning, 'warning');
   }
   const evidence = section('原始证据');
   if (!info.evidence?.length) paragraph(evidence, '暂未保存原始快照。', 'muted');

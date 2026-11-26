@@ -40,10 +40,12 @@ MAX_RESPONSE_BYTES = 16 * 1024 * 1024
 class FetchError(RuntimeError):
     """A structured, credential-free error suitable for unattended runners."""
 
-    def __init__(self, code: str, message: str, *, snapshot: dict | None = None):
+    def __init__(self, code: str, message: str, *, snapshot: dict | None = None,
+                 status_code: int | None = None):
         super().__init__(message)
         self.code = code
         self.snapshot = snapshot
+        self.status_code = status_code
 
 
 @dataclass
@@ -98,7 +100,8 @@ def _read_http(opener, url: str, deadline: float, headers: dict | None = None) -
                             response.url, 'http')
     except HTTPError as exc:
         code = 'access_required' if exc.code in (401, 403, 429) else 'network_error'
-        raise FetchError(code, f'Source HTTP request returned status {exc.code}.') from None
+        raise FetchError(code, f'Source HTTP request returned status {exc.code}.',
+                         status_code=exc.code) from None
     except (URLError, TimeoutError, OSError):
         raise FetchError('network_error', 'Source HTTP request did not complete.') from None
 
@@ -135,6 +138,7 @@ def _browser_capture(deadline: float, browser_executable: str | None,
             if executable:
                 launch_options['executable_path'] = executable
             browser = playwright.chromium.launch(**launch_options)
+            context = None
             try:
                 options: dict = {'locale': 'zh-CN', 'timezone_id': 'Asia/Shanghai'}
                 if storage_state is not None:
@@ -150,16 +154,23 @@ def _browser_capture(deadline: float, browser_executable: str | None,
                                            timeout=_remaining(deadline) * 1000)
                     if navigation and navigation.status in (401, 403, 429):
                         raise FetchError('access_required',
-                                         'Source refused the normal browser visit; operator action is required.')
+                                         'Source refused the normal browser visit; operator action is required.',
+                                         status_code=navigation.status)
                 response = pending.value
                 if response.status != 200:
                     code = 'access_required' if response.status in (401, 403, 429) else 'network_error'
-                    raise FetchError(code, f'Source data request returned status {response.status}.')
+                    raise FetchError(code, f'Source data request returned status {response.status}.',
+                                     status_code=response.status)
                 body = response.body()
                 if len(body) > MAX_RESPONSE_BYTES:
                     raise FetchError('source_changed', 'Source response exceeds the size limit.')
                 return _Capture(body, response.headers, response.url, 'browser_response')
             finally:
+                if context is not None:
+                    try:
+                        context.close()
+                    except Exception:
+                        pass
                 browser.close()
     except FetchError:
         raise
@@ -188,9 +199,13 @@ def _capture_source(deadline: float, browser_executable: str | None,
             if csrf and csrf_header and re.fullmatch(r'[A-Za-z0-9_-]+', csrf_header):
                 headers[csrf_header] = csrf
             return _read_http(opener, endpoint, deadline, headers)
-    except (FetchError, UnicodeDecodeError):
+    except FetchError as exc:
+        if exc.status_code == 429:
+            raise
         # A browser's ordinary visit may work when an HTTP-only visit does not.
         # No CAPTCHA solving, stealth flags or alternate signed endpoints.
+        _remaining(deadline)
+    except UnicodeDecodeError:
         _remaining(deadline)
     return _browser_capture(deadline, browser_executable, storage_state)
 

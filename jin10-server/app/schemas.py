@@ -5,9 +5,12 @@ from __future__ import annotations
 import datetime as dt
 import math
 import uuid
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+BoundedParagraph = Annotated[str, Field(max_length=10_000)]
+BoundedTag = Annotated[str, Field(max_length=64)]
 
 ItemKind = Literal["flash", "vip", "article"]
 CollectMethod = Literal["context_menu", "page_scan"]
@@ -59,22 +62,22 @@ class MeResponse(BaseModel):
 
 
 class MaterialImage(BaseModel):
-    url: str
+    url: str = Field(max_length=2048)
     source: ImageSource
     asset_id: str | None = Field(default=None, pattern=r"^[0-9a-f]{32}$")
 
 
 class PlusModule(BaseModel):
     kind: Literal["view", "observation", "unknown"]
-    heading: str | None = None
-    paragraphs: list[str] = Field(default_factory=list)
-    images: list[MaterialImage] = Field(default_factory=list)
+    heading: str | None = Field(default=None, max_length=300)
+    paragraphs: list[BoundedParagraph] = Field(default_factory=list, max_length=100)
+    images: list[MaterialImage] = Field(default_factory=list, max_length=50)
 
 
 class PlusInterpretation(BaseModel):
-    plus_id: str | None = None
-    title: str
-    modules: list[PlusModule]
+    plus_id: str | None = Field(default=None, max_length=100)
+    title: str = Field(max_length=500)
+    modules: list[PlusModule] = Field(max_length=30)
     fetched_at: dt.datetime
 
 
@@ -87,17 +90,17 @@ class MaterialIn(BaseModel):
     fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
     item_kind: ItemKind
     locked: bool = False
-    tags: list[str] = Field(default_factory=list)
-    detail_url: str | None = None
+    tags: list[BoundedTag] = Field(default_factory=list, max_length=50)
+    detail_url: str | None = Field(default=None, max_length=2048)
     title: str = Field(max_length=500)
-    flash_title: str | None = None
-    content: str
-    content_raw: str
-    plus_title: str | None = None
+    flash_title: str | None = Field(default=None, max_length=500)
+    content: str = Field(max_length=50_000)
+    content_raw: str = Field(max_length=50_000)
+    plus_title: str | None = Field(default=None, max_length=500)
     has_plus_link: bool = False
-    images: list[MaterialImage] = Field(default_factory=list)
+    images: list[MaterialImage] = Field(default_factory=list, max_length=50)
     publish_time: dt.datetime | None = None
-    url: str
+    url: str = Field(max_length=2048)
     raw_html: str = Field(max_length=100_000)
     collect_time: dt.datetime
     collect_method: CollectMethod
@@ -230,7 +233,7 @@ class MaterialEdits(BaseModel):
 
     title: str | None = Field(default=None, max_length=500)
     news: str | None = Field(default=None, max_length=20_000)
-    interpretation: list[str] | None = Field(default=None, max_length=50)
+    interpretation: list[BoundedParagraph] | None = Field(default=None, max_length=50)
     #: 进入 PPT 的配图（按顺序），为服务端已有图片的 ID；空列表表示不放图
     images: list[str] | None = Field(default=None, max_length=10)
 

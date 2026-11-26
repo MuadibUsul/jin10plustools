@@ -4,16 +4,21 @@ import { STORAGE_KEYS } from '@/shared/constants';
 import { DEFAULT_CAPTURE_SHORTCUT, type CaptureShortcut } from '@/shared/shortcut';
 import { withAuthLock } from './sessionScope';
 
+const SYNC_STALE_MS = 90_000;
+
 const DEFAULT_SYNC: SyncState = {
   cursor: null,
   team_id: null,
   last_sync_at: null,
   last_error: null,
   syncing: false,
+  sync_started_at: null,
 };
 
 export async function saveTeamQueue(scope: string, materials: NewsMaterial[]): Promise<void> {
-  await chrome.storage.local.set({ [`plus.teamQueue.${scope}`]: materials });
+  const key = `plus.teamQueue.${scope}`;
+  if (materials.length === 0) await chrome.storage.local.remove(key);
+  else await chrome.storage.local.set({ [key]: materials });
 }
 export async function readTeamQueue(scope: string): Promise<NewsMaterial[]> {
   return (await read<NewsMaterial[]>(`plus.teamQueue.${scope}`)) ?? [];
@@ -33,13 +38,13 @@ export async function getSession(): Promise<AuthSession | null> {
 
 export function setSession(session: AuthSession): Promise<void> {
   return withAuthLock(async () => chrome.storage.local.set({ [STORAGE_KEYS.authSession]: session,
-    [STORAGE_KEYS.syncState]:{...await getSyncState(),syncing:false,last_error:null} }));
+    [STORAGE_KEYS.syncState]: { ...(await getSyncState()), syncing: false, sync_started_at: null, last_error: null } }));
 }
 
 export function clearSession(): Promise<void> {
   return withAuthLock(async () => {
     await chrome.storage.local.remove(STORAGE_KEYS.authSession);
-    await updateSyncState({syncing:false,last_error:null});
+    await updateSyncState({ syncing: false, sync_started_at: null, last_error: null });
   });
 }
 
@@ -66,7 +71,14 @@ export function setCaptureShortcut(shortcut: CaptureShortcut): Promise<void> {
 }
 
 export async function getSyncState(): Promise<SyncState> {
-  return { ...DEFAULT_SYNC, ...(await read<Partial<SyncState>>(STORAGE_KEYS.syncState)) };
+  const raw = { ...DEFAULT_SYNC, ...(await read<Partial<SyncState>>(STORAGE_KEYS.syncState)) };
+  if (raw.syncing) {
+    const started = raw.sync_started_at ? Date.parse(raw.sync_started_at) : NaN;
+    if (!Number.isFinite(started) || Date.now() - started > SYNC_STALE_MS) {
+      return { ...raw, syncing: false, sync_started_at: null };
+    }
+  }
+  return raw;
 }
 
 export async function updateSyncState(patch: Partial<SyncState>): Promise<SyncState> {

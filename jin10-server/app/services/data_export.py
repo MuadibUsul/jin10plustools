@@ -14,12 +14,12 @@ import tempfile
 import os
 import re
 from dataclasses import dataclass, field
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 from typing import Callable, Iterable, Iterator
 
 from sqlalchemy import Select, func, select
-from sqlalchemy.orm import Session, aliased
+from sqlalchemy.orm import InstrumentedAttribute, Session, aliased, load_only
 
 from app.briefs.policy import CHINA
 from app.db.models import (
@@ -63,9 +63,9 @@ def attr(name: str) -> Callable[[object], object]:
 def dt_conditions(column, start: date | None, end: date | None) -> list:
     clauses = []
     if start:
-        clauses.append(column >= datetime.combine(start, time.min) - UTC_OFFSET)
+        clauses.append(column >= datetime.combine(start, time.min, CHINA).astimezone(timezone.utc))
     if end:
-        clauses.append(column < datetime.combine(end + timedelta(days=1), time.min) - UTC_OFFSET)
+        clauses.append(column < datetime.combine(end + timedelta(days=1), time.min, CHINA).astimezone(timezone.utc))
     return clauses
 
 
@@ -81,9 +81,16 @@ def day_conditions(column, start: date | None, end: date | None) -> list:
 def build_dataset(*, key: str, label: str, description: str, date_label: str, model,
                   team_column, date_column, columns: tuple[Column, ...],
                   join: tuple | None = None, day: bool = False, extra_select: tuple = (),
-                  order_column=None, fixed_conditions: tuple = ()) -> Dataset:
+                  order_column=None, fixed_conditions: tuple = (),
+                  extra_orm_attrs: tuple[str, ...] = ()) -> Dataset:
     """Register a single-table (or one-join) dataset filtered by its business date."""
     conditions = (day_conditions if day else dt_conditions)
+    extra_keys = {col.key for col in extra_select}
+    orm_columns = [
+        attr_obj
+        for name in dict.fromkeys([*(c.key for c in columns if c.key not in extra_keys), *extra_orm_attrs])
+        if isinstance((attr_obj := getattr(model, name, None)), InstrumentedAttribute)
+    ]
 
     def filters(team_id: uuid.UUID, start: date | None, end: date | None) -> list:
         return [team_column == team_id, *fixed_conditions, *conditions(date_column, start, end)]
@@ -96,10 +103,12 @@ def build_dataset(*, key: str, label: str, description: str, date_label: str, mo
 
     def rows(db: Session, team_id: uuid.UUID, start: date | None, end: date | None) -> Iterator[dict]:
         stmt: Select = select(model, *extra_select).where(*filters(team_id, start, end))
+        if orm_columns:
+            stmt = stmt.options(load_only(*orm_columns))
         if join:
             stmt = stmt.join(*join)
         stmt = stmt.order_by(order_column if order_column is not None else date_column)
-        stmt=stmt.limit(MAX_ROWS+1).execution_options(yield_per=200)
+        stmt = stmt.limit(MAX_ROWS + 1).execution_options(yield_per=200)
         for row in db.execute(stmt):
             entity = row[0]
             values = {column.key: row[index + 1] for index, column in enumerate(extra_select)}
@@ -273,6 +282,7 @@ FEEDBACK = build_dataset(
     key='feedback', label='使用者反馈', date_label='提交时间',
     description='使用者提交的改进意见、提交人姓名与提交账号；示意图文件保存在数据卷，这里给出类型、大小与校验值。',
     model=Feedback, team_column=Feedback.team_id, date_column=Feedback.created_at,
+    extra_orm_attrs=('image_path',),
     columns=_columns(
         ('id', '反馈ID', 'text'), ('title', '标题', 'text'), ('content', '内容', 'text'),
         ('name', '提交人姓名', 'text'), ('user_id', '提交账号', 'user'),

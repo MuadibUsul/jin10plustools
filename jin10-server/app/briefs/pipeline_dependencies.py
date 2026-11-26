@@ -25,12 +25,15 @@ def function_slice(path,names):
 def dependencies(here,category):
     shared=('runner.py','policy.py','trading_calendar.py','series_store.py',
         'editorial_cn.py' if category in ('volume','turnover','valuation','liquidity','oil_etf') else 'editorial_market.py',
-        'editorial_suite.py','editorial_authorization.py','sample_story.py','gpu_editorial_ai.py',
-        'editorial_features.py','skill_production.py','body_templates.py','delivery.py','pipeline_dependencies.py')
+        'editorial_suite.py','editorial_authorization.py','sample_story.py','gpu_editorial_ai.py','ai_client.py',
+        'editorial_features.py','skill_production.py','skill_ai.py','skill_library.py',
+        'body_templates.py','delivery.py','font_cmap.py','glyph_atlas.py','pipeline_dependencies.py')
     for name in shared:
         path=here/name
         if path.is_file():yield name,path.read_bytes()
     yield 'sources/functions',function_slice(here/'sources.py',[category])
+    if category=='volume' and (here/'volume_close.py').is_file():
+        yield 'volume_close.py',(here/'volume_close.py').read_bytes()
     from .trading_calendar import calendars,market_for
     import json
     yield 'calendar/market',json.dumps(calendars().get(market_for(category),{'frequency':'daily'}),sort_keys=True).encode()
@@ -40,6 +43,9 @@ def dependencies(here,category):
         yield 'ai_compute/functions',function_slice(here/'ai_compute.py',[category])
         yield 'ai_compute_charts/functions',function_slice(here/'ai_compute_charts.py',['token_chart' if category=='token_cost' else 'gpu_chart'])
         yield 'ai_compute_style.py',(here/'ai_compute_style.py').read_bytes()
+        for cname in ('public_compute.py', 'manual_compute.py'):
+            if (here/cname).is_file():
+                yield cname, (here/cname).read_bytes()
     if category=='valuation':yield 'valuation_repair.py',(here/'valuation_repair.py').read_bytes()
     if category=='valuation':
         for path in sorted((here/'seed').glob('*')):

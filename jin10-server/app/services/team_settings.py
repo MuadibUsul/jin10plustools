@@ -5,33 +5,55 @@ import os
 import secrets
 import tempfile
 
-from cryptography.fernet import Fernet,InvalidToken
+from functools import lru_cache
+from cryptography.fernet import Fernet, InvalidToken
 
 from app.config import get_settings
 from app.db.models import BriefConfig, utcnow
 from app.briefs.delivery import default_notes
 
+MAX_NOTE_REVISIONS = 50
+
+
+@lru_cache(maxsize=8)
+def _fernet_for(secret_str: str) -> Fernet:
+    return Fernet(base64.urlsafe_b64encode(hashlib.sha256(b'plus-team-ai-v1\0' + secret_str.encode()).digest()))
+
+
+@lru_cache(maxsize=8)
+def _read_key_file(path_str: str, mtime_ns: int) -> str:
+    from pathlib import Path
+    secret = Path(path_str).read_text(encoding='ascii').strip()
+    if len(secret) != 64:
+        raise ValueError('Invalid persistent encryption key')
+    return secret
+
 
 def cipher(secret=None):
-    settings=get_settings()
+    settings = get_settings()
     if secret is None:
-        secret=settings.team_key_secret
+        secret = settings.team_key_secret
         if not secret:
             # This key belongs to the persistent data volume, not to login sessions.
-            path=settings.storage_dir/'.team-ai-encryption-key'
-            path.parent.mkdir(parents=True,exist_ok=True)
+            path = settings.storage_dir / '.team-ai-encryption-key'
             if not path.exists():
-                fd,name=tempfile.mkstemp(prefix='.team-key-',dir=path.parent)
+                path.parent.mkdir(parents=True, exist_ok=True)
+                fd, name = tempfile.mkstemp(prefix='.team-key-', dir=path.parent)
                 try:
-                    with os.fdopen(fd,'w',encoding='ascii') as output:output.write(secrets.token_hex(32))
-                    os.chmod(name,0o600)
-                    try:os.link(name,path) # First complete writer wins across processes.
-                    except FileExistsError:pass
-                finally:os.unlink(name)
-            secret=path.read_text(encoding='ascii').strip()
-            if len(secret)!=64:raise ValueError('Invalid persistent encryption key')
-    secret=secret.encode()
-    return Fernet(base64.urlsafe_b64encode(hashlib.sha256(b'plus-team-ai-v1\0' + secret).digest()))
+                    with os.fdopen(fd, 'w', encoding='ascii') as output:
+                        output.write(secrets.token_hex(32))
+                    os.chmod(name, 0o600)
+                    try:
+                        os.link(name, path)  # First complete writer wins across processes.
+                    except (FileExistsError, OSError):
+                        if not path.exists():
+                            os.replace(name, path)
+                finally:
+                    if os.path.exists(name):
+                        os.unlink(name)
+            stat = path.stat()
+            secret = _read_key_file(str(path), stat.st_mtime_ns)
+    return _fernet_for(secret)
 
 
 def decrypt_token(token):
@@ -119,7 +141,7 @@ def briefs_ai(team):
     return {**selected, 'provider': name, 'base_url': base_url}
 
 
-def update_notes(db, team, notes, user_id):
+def update_notes(db, team, notes, user_id, *, record_history: bool = True):
     config = db.get(BriefConfig, team.id)
     if config is None:
         config = BriefConfig(team_id=team.id, enabled=False, notes={})
@@ -130,11 +152,13 @@ def update_notes(db, team, notes, user_id):
     if changes:
         saved = dict(team.settings or {})
         history = list(saved.get('brief_note_revisions', []))
-        history.append({'number': len(history) + 1, 'at': utcnow().isoformat(), 'by': str(user_id),
+        next_number = (int(history[-1].get('number', len(history))) + 1) if history else 1
+        history.append({'number': next_number, 'at': utcnow().isoformat(), 'by': str(user_id),
                         'before': effective, 'after': {**effective, **changes}})
-        team.settings = {**saved, 'brief_note_revisions': history}
+        team.settings = {**saved, 'brief_note_revisions': history[-MAX_NOTE_REVISIONS:]}
         config.notes = {**previous, **changes}
         config.updated_at = utcnow()
-        from app.services.business_history import record
-        record(db,team,user_id)
+        if record_history:
+            from app.services.business_history import record
+            record(db, team, user_id)
     return config

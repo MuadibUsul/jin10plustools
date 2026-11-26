@@ -110,11 +110,17 @@ def _normalized(answer: dict[str, Any]) -> float:
 
 
 def importance_score(answers: dict[str, Any], cfg: ScoringConfig) -> int:
+    denom = cfg.impact + cfg.novelty + cfg.value
     weighted = (
-        cfg.impact * _normalized(answers["impact"])
-        + cfg.novelty * _normalized(answers["novelty"])
-        + cfg.value * _normalized(answers["value"])
-    ) / (cfg.impact + cfg.novelty + cfg.value)
+        (
+            cfg.impact * _normalized(answers["impact"])
+            + cfg.novelty * _normalized(answers["novelty"])
+            + cfg.value * _normalized(answers["value"])
+        )
+        / denom
+        if denom > 0
+        else 0.0
+    )
     bonus = cfg.policy_bonus * float(answers.get("policy", {}).get("noul", 0.0))
     return round(max(0.0, min(100.0, weighted * 100 + bonus)))
 
@@ -146,12 +152,15 @@ def completeness_score(m: Material) -> float:
 
 
 def final_score(m: Material, cfg: ScoringConfig, now: dt.datetime) -> int:
+    denom = cfg.w_importance + cfg.w_heat + cfg.w_timeliness + cfg.w_completeness
+    if denom <= 0:
+        return 0
     total = (
         cfg.w_importance * m.importance_score
         + cfg.w_heat * heat_score(m)
         + cfg.w_timeliness * timeliness_score(m, now)
         + cfg.w_completeness * completeness_score(m)
-    ) / (cfg.w_importance + cfg.w_heat + cfg.w_timeliness + cfg.w_completeness)
+    ) / denom
     return round(total)
 
 

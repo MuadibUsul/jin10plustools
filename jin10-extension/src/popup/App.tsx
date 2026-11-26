@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { UpdateInfo } from '@/types/messages';
+import { sendToTabWithInject } from '@/background/injector';
 import { DraftCard } from '@/components/DraftCard';
 import { MaterialRow } from '@/components/MaterialRow';
 import { StatusDot } from '@/components/StatusDot';
-import { sendToBackground, sendToTab } from '@/shared/messaging';
+import { sendToBackground } from '@/shared/messaging';
 import { beijingDayKey } from '@/shared/time';
 import { useTeamSession } from '@/components/useTeamSession';
 import type { ScanResponse } from '@/types/messages';
@@ -45,7 +46,7 @@ export function App() {
   const runScan = async () => {
     if (conn.jin10TabId === null) return;
     setScan({ status: 'loading' });
-    const res = await sendToTab(conn.jin10TabId, 'SCAN_PAGE', undefined);
+    const res = await sendToTabWithInject(conn.jin10TabId, 'SCAN_PAGE', undefined);
     setScan(res.ok ? { status: 'done', result: res.data } : { status: 'error', message: res.error.message });
   };
 

@@ -133,14 +133,19 @@ def wrap(text: str, width_in: float = layout.CONTENT_WIDTH, metrics: Metrics = D
             line, used, tok = "", 0.0, tok.lstrip()
         line += tok
         used += _width(tok)
-        # 单个超长单元（极长英文串）按字符硬切；悬挂标点不计入
+        # 单个超长单元（极长英文串）按字符正向线性硬切，避免 O(L^3) 退化；悬挂标点不计入
         while used - _hanging_width(line) > capacity and len(line) > 1:
-            cut = len(line) - 1
-            while cut > 1 and _width(line[:cut]) > capacity:
-                cut -= 1
+            cut = 1
+            cut_w = char_width(line[0])
+            while cut < len(line) - 1:
+                next_w = cut_w + char_width(line[cut])
+                if next_w > capacity:
+                    break
+                cut_w = next_w
+                cut += 1
             lines.append(line[:cut])
             line = line[cut:]
-            used = _width(line)
+            used = max(0.0, used - cut_w)
     if line:
         lines.append(line)
     return lines or [""]

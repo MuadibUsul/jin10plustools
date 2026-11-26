@@ -31,10 +31,26 @@ export function computerShell({ live = false, pageName = '' } = {}) {
   screen.append(rain, screenHead, empty, feed, status);
   const frame = node('img', undefined, 'computer-frame');
   frame.src = '/assets/retro-computer-frame.png'; frame.alt = '';
+  if (!live) { frame.loading = 'lazy'; frame.decoding = 'async'; }
   frame.setAttribute('aria-hidden', 'true'); frame.width = frame.height = 1254;
   const light = node('span', '', 'computer-power-light'); light.setAttribute('aria-hidden', 'true');
   const mouse = node('button', '', 'computer-mouse'); mouse.type = 'button';
   mouse.setAttribute('aria-label', live ? '直播' : '小电脑');
   computer.append(screen, frame, light, mouse); floating.append(computer); panel.append(floating);
   return { panel, floating, computer, screen, frame, light, mouse, feed, empty, state };
+}
+
+export function tiltComputer(panel, computer) {
+  panel.onpointermove = (event) => {
+    if (event.pointerType !== 'mouse' || window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches) return;
+    const rect = panel.getBoundingClientRect();
+    const x = Math.max(-1, Math.min(1, (event.clientX - rect.left) / rect.width * 2 - 1));
+    const y = Math.max(-1, Math.min(1, (event.clientY - rect.top) / rect.height * 2 - 1));
+    computer.style.setProperty('--tilt-x', `${(-y * 3).toFixed(2)}deg`);
+    computer.style.setProperty('--tilt-y', `${(x * 4).toFixed(2)}deg`);
+  };
+  panel.onpointerleave = () => {
+    computer.style.setProperty('--tilt-x', '0deg');
+    computer.style.setProperty('--tilt-y', '0deg');
+  };
 }

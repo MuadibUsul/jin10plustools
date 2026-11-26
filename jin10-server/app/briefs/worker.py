@@ -137,7 +137,7 @@ def schedule(factory,now=None):
                 except CalendarUnavailable:continue
                 issue=find_issue(db,config.team_id,local.date(),category)
                 if issue and issue.version:
-                    if category not in ('oil_etf','liquidity'):continue
+                    if category not in ('oil_etf','liquidity') or issue.confirmed_version is not None:continue
                     current=db.scalar(select(BriefVersion).where(BriefVersion.issue_id==issue.id,BriefVersion.number==issue.version))
                     if current is None or current.kind=='edited':continue
                     # The issuer can update after the first successful latest-value
@@ -162,18 +162,22 @@ def claim(factory,now=None):
     if drain_requested():return None
     now=now or utcnow()
     with factory() as db:
-        # Main loop has one advisory-locked runner; expired jobs survive restarts.
+        # Main loop has one advisory-locked runner; expired jobs survive restarts, bounded by max attempts.
+        db.execute(update(BriefJob).where(BriefJob.status=='running',BriefJob.lease_until<now,BriefJob.attempts>=6)
+                   .values(status='failed',active_key=None,lease_until=None,error='任务多次中断或超时，已停止自动重试',updated_at=now))
         db.execute(update(BriefJob).where(BriefJob.status=='running',BriefJob.lease_until<now)
                    .values(status='queued',error='上次运行中断，已重新排队',lease_until=None))
-        row=db.scalars(select(BriefJob).where(BriefJob.status.in_(['queued','waiting']),
+        query = select(BriefJob).where(BriefJob.status.in_(['queued','waiting']),
             BriefJob.next_attempt_at<=now).order_by(
                 case((BriefJob.category=='liquidity',0),else_=1),
                 BriefJob.next_attempt_at,BriefJob.created_at)
-            .with_for_update(skip_locked=True).limit(1)).first()
+        if db.get_bind().dialect.name == 'postgresql':
+            query = query.with_for_update(skip_locked=True)
+        row=db.scalars(query.limit(1)).first()
         if not row:db.commit();return None
         if row.action!='reconcile' and row.created_by is None and not row.preview and (row.issue_date!=now.astimezone(CHINA).date() or not production_window(now)):
             row.status='skipped';row.active_key=None;row.error='已超过工作日上午生产窗口';row.updated_at=now;db.commit();return None
-        row.status='running';row.attempts+=1;row.lease_until=now+timedelta(minutes=7);row.updated_at=now
+        row.status='running';row.attempts+=1;row.lease_until=now+timedelta(minutes=12);row.updated_at=now
         db.commit();return row.id
 
 
@@ -266,26 +270,29 @@ def execute(factory,id):
             failed=db.get(BriefJob,id);failed.status='failed';failed.active_key=None
             failed.lease_until=None;failed.error=error;failed.updated_at=utcnow();db.commit()
         record(out,1,error);return
-    try:target_day=expected_date(category,day)
-    except ValueError as exc:
-        with factory() as db:
-            failed=db.get(BriefJob,id);failed.status='failed';failed.error=str(exc)
-            failed.active_key=None;failed.lease_until=None;db.commit()
-        record(out,1,str(exc));return
     if action=='render':
         from .sources import save
         target_day=date.fromisoformat(render_payload['data_date'])
         render_payload['render_source_version_id']=str(render_source_id)
         save(out/'render-input.json',render_payload)
+    else:
+        try:target_day=expected_date(category,day)
+        except ValueError as exc:
+            with factory() as db:
+                failed=db.get(BriefJob,id);failed.status='failed';failed.error=str(exc)
+                failed.active_key=None;failed.lease_until=None;db.commit()
+            record(out,1,str(exc));return
     record(out,1,f'任务开始：生产日 {day}，目标数据日 {target_day}')
     restored=0
     try:
-        with factory() as db:
-            from .repair import recover_snapshots,restore_working_history
-            if action!='render':
-                recover_snapshots(db,team_id,category,out/'recovered-evidence')
-                restored=restore_working_history(db,team_id,category,root/'history'/category)
-            db.commit()
+        if action!='render':
+            import tempfile
+            with tempfile.TemporaryDirectory(prefix='plus-recover-') as recover_tmp:
+                with factory() as db:
+                    from .repair import recover_snapshots,restore_working_history
+                    recover_snapshots(db,team_id,category,Path(recover_tmp))
+                    restored=restore_working_history(db,team_id,category,root/'history'/category)
+                    db.commit()
     except (ValueError,OSError) as exc:
         from .sources import save
         save(out/'history-restore-error.json',{'error':str(exc),'fresh_acquisition_continues':True})
@@ -383,41 +390,79 @@ def execute(factory,id):
     old_result=out/'result.json'
     if job.attempts>1 and old_result.exists():
         old_result.replace(out/f'prior-result-{job.attempts}-{time.time_ns()}.json')
-    command=[sys.executable,'-m','app.briefs.runner','--category',category,'--date',expected_date(category,day).isoformat(),
+    command=[sys.executable,'-m','app.briefs.runner','--category',category,'--date',target_day.isoformat(),
              '--root',str(root),'--run-id',str(id),'--action','refresh' if action=='reconcile' or automatic and action=='produce' else action]
     if action=='render':command.extend(['--render-input',str(out/'render-input.json')])
     process=subprocess.Popen(command,env=env,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,start_new_session=os.name!='nt')
     _active_process=process
     cutoff=time.monotonic()+360
-    error=None;retryable=True
-    while process.poll() is None:
-        heartbeat('running',id)
-        if time.monotonic()>cutoff or (automatic and action!='reconcile' and not production_window(datetime.now(CHINA))):
-            if os.name!='nt':os.killpg(process.pid,signal.SIGKILL)
-            else:process.kill()
-            process.wait();error='任务超时或自动任务已到10:00截止时间';break
-        time.sleep(1)
-    _active_process=None
+    next_lease_refresh=time.monotonic()+60
+    error=None;retryable=True;exited_or_killed=False
+    try:
+        while process.poll() is None:
+            try:
+                heartbeat('running',id)
+            except OSError:
+                pass
+            if time.monotonic()>=next_lease_refresh:
+                next_lease_refresh=time.monotonic()+60
+                try:
+                    with factory() as db:
+                        db.execute(update(BriefJob).where(BriefJob.id==id,BriefJob.status=='running')
+                                   .values(lease_until=utcnow()+timedelta(minutes=12),updated_at=utcnow()))
+                        db.commit()
+                except Exception:
+                    log.warning('Could not extend brief job lease for %s', id, exc_info=True)
+            if time.monotonic()>cutoff or (automatic and action!='reconcile' and not production_window(datetime.now(CHINA))):
+                from app.services.processes import kill_tree
+                try:
+                    kill_tree(process)
+                except Exception:
+                    if os.name!='nt':os.killpg(process.pid,signal.SIGKILL)
+                    else:process.kill()
+                if hasattr(process, 'wait'):
+                    process.wait()
+                exited_or_killed=True
+                error='任务超时或自动任务已到10:00截止时间';break
+            time.sleep(1)
+        else:
+            exited_or_killed=True
+    finally:
+        if not exited_or_killed and _active_process is not None:
+            from app.services.processes import kill_tree
+            try:
+                kill_tree(_active_process)
+            except Exception:
+                pass
+        _active_process=None
     result=out/'result.json'
     # If AI times out, the already saved complete rule draft is still usable.
-    payload=json.loads(result.read_text(encoding='utf-8')) if result.exists() else None
+    try:
+        payload=json.loads(result.read_text(encoding='utf-8')) if result.exists() else None
+    except (OSError, ValueError):
+        payload=None
     if not payload and (out/'error.json').exists():
-        report=json.loads((out/'error.json').read_text(encoding='utf-8'));error=report['message']
-        retryable=report.get('retryable',True)
-    if action!='reconcile' and payload and ai.get('provider')=='chat2api':
+        try:
+            report=json.loads((out/'error.json').read_text(encoding='utf-8'))
+            error=report.get('message') or error
+            retryable=report.get('retryable',True)
+        except (OSError, ValueError):
+            pass
+    if action not in ('reconcile','render') and payload and ai.get('provider')=='chat2api' and (team_settings.get('brief_editorial') or {}).get('mode') != 'rules':
         if ai.get('requested_model') and ai['requested_model']!=ai['model']:
             payload.setdefault('warnings',[]).append(
                 f"AI 模型 {ai['requested_model']} 不受 chat2api 节点支持，本次实际使用 {ai['model']}")
-        try:
-            from app.api.chat2api import TOKEN_COUNT
-            prefix=settings.chat2api_prefix.strip('/')
-            url=f"{settings.chat2api_url.rstrip('/')}/{prefix}/tokens"
-            with httpx.Client(timeout=5) as client:
-                count=TOKEN_COUNT.search(client.get(url).text)
-            if count and int(count.group(1))==0:
-                payload.setdefault('warnings',[]).append('chat2api 号池为空，本次 AI 可能使用匿名降级模型')
-        except Exception:
-            pass
+        prefix=settings.chat2api_prefix.strip().strip('/')
+        if prefix:
+            try:
+                from app.api.chat2api import TOKEN_COUNT
+                url=f"{settings.chat2api_url.rstrip('/')}/{prefix}/tokens"
+                with httpx.Client(timeout=5) as client:
+                    count=TOKEN_COUNT.search(client.get(url).text)
+                if count and int(count.group(1))==0:
+                    payload.setdefault('warnings',[]).append('chat2api 号池为空，本次 AI 可能使用匿名降级模型')
+            except Exception:
+                pass
     duplicate_current=False
     if followup and payload and payload.get('valid') and generation_payload:
         from .product_inputs import publication_digest
@@ -439,7 +484,7 @@ def execute(factory,id):
         elif payload.get('skill'):
             record(out,4,'Skill AI 文案已采用' if payload['skill'].get('status')=='ok'
                    else 'Skill AI 未完成，已保留固定组合文案')
-    if payload and payload.get('valid') and category in PUBLIC_COMPUTE_CATEGORIES:
+    if payload and payload.get('valid') and category in PUBLIC_COMPUTE_CATEGORIES and action != 'render':
         final_notes = category_notes
         if action != 'produce':
             with factory() as db:
@@ -453,7 +498,7 @@ def execute(factory,id):
         from .ai_compute import align_chart_notes
         from .sources import save as save_payload
         if align_chart_notes(payload, category, out, final_notes):
-            cache = root / 'cache' / category / f'{expected_date(category, day).isoformat()}.json'
+            cache = root / 'cache' / category / f'{target_day.isoformat()}.json'
             if cache.is_file():
                 cached = json.loads(cache.read_text(encoding='utf-8'))
                 if cached.get('artifact_dir') == payload.get('artifact_dir'):
@@ -463,7 +508,7 @@ def execute(factory,id):
                     save_payload(cache, cached)
     if payload and payload.get('valid'):
         from .sources import save
-        if ai.get('configuration_error'):
+        if action != 'render' and ai.get('configuration_error'):
             payload.setdefault('warnings',[]).append('AI密钥无法解密，已保留完整风格规则稿；请管理员重新配置该接入')
         # The date cache deliberately keeps the validated pre-Skill rule product;
         # this run's durable result must match what is committed as the final edition.
@@ -492,11 +537,14 @@ def execute(factory,id):
                 source_dir=(root/payload['artifact_dir']).resolve()
                 if not source_dir.is_relative_to(root.resolve()):
                     raise ValueError('被复用的来源快照路径不安全')
-            source_archive=archive_run(db,job,out,
-                                       source_dir=source_dir,
-                                       data_date=payload.get('data_date') if payload else None)
-            from .data_reliability import link_sources
-            link_sources(db,job)
+            if action == 'render' and render_payload and render_payload.get('source_archive'):
+                source_archive = render_payload['source_archive']
+            else:
+                source_archive=archive_run(db,job,out,
+                                           source_dir=source_dir,
+                                           data_date=payload.get('data_date') if payload else None)
+                from .data_reliability import link_sources
+                link_sources(db,job)
             if payload and payload.get('valid') and category == 'valuation' and action!='render':
                 from .valuation_observations import save_history
                 save_history(db, team_id, id, out/'erp-plot-data.json')
@@ -519,9 +567,9 @@ def execute(factory,id):
             current_issue=find_issue(db,team_id,day,category)
             locked=owned(db,team_id,current_issue.id,True) if current_issue else None
             current=db.scalar(select(BriefVersion).where(BriefVersion.issue_id==locked.id,BriefVersion.number==locked.version)) if locked else None
-            if duplicate_current or current is None or current.id!=generation_base or current.kind=='edited':
+            if duplicate_current or current is None or current.id!=generation_base or current.kind=='edited' or (locked and locked.confirmed_version is not None):
                 job.status='succeeded';job.active_key=None;job.error=None;db.commit()
-                record(out,6,'发行方数据复查完成；保留当前稿件，未覆盖编辑成果' if not duplicate_current else '发行方数据未变化，保留当前稿件')
+                record(out,6,'发行方数据复查完成；保留当前稿件，未覆盖编辑或已确认成果' if not duplicate_current else '发行方数据未变化，保留当前稿件')
                 return
         if payload and payload.get('valid'):
             if automatic and not production_window(datetime.now(CHINA)):
@@ -553,6 +601,33 @@ def execute(factory,id):
                '生成完成，稿件与快照已保存，可查看与取稿' if job.status=='succeeded' else job.error)
 
 
+def execute_safely(factory, id):
+    global _active_process
+    try:
+        execute(factory, id)
+    except Exception as exc:
+        log.exception('Unhandled exception in brief job %s', id)
+        if _active_process is not None:
+            from app.services.processes import kill_tree
+            try:
+                kill_tree(_active_process)
+            except Exception:
+                pass
+            _active_process = None
+        try:
+            with factory() as db:
+                job = db.get(BriefJob, id)
+                if job and job.status == 'running':
+                    job.status = 'failed'
+                    job.active_key = None
+                    job.lease_until = None
+                    job.error = f'任务执行内部异常：{str(exc)[:400]}'
+                    job.updated_at = utcnow()
+                    db.commit()
+        except Exception:
+            log.exception('Could not persist failure status for crashed job %s', id)
+
+
 def main():
     logging.basicConfig(level=logging.INFO)
     factory=get_session_factory();engine=get_engine()
@@ -565,7 +640,7 @@ def main():
                 heartbeat('idle')
                 if drain_requested():time.sleep(5);continue
                 schedule(factory);schedule_reconciliation(factory);id=claim(factory)
-                if id:execute(factory,id);continue
+                if id:execute_safely(factory,id);continue
             except Exception:log.exception('Brief worker iteration failed')
             time.sleep(30)
 

@@ -1,13 +1,13 @@
 import type { HandlerMap } from '@/shared/messaging';
+import { STORAGE_KEYS } from '@/shared/constants';
 import { nowIso } from '@/shared/time';
 import { latestExtensionVersion, login, reportParse } from '@/services/api/serverApi';
-import { getSession } from '@/services/settingsStore';
+import { getLastApiBaseUrl, getSession, getSyncState, setLastApiBaseUrl } from '@/services/settingsStore';
 import type { UpdateInfo } from '@/types/messages';
-import { clearSession, setLastApiBaseUrl, setSession } from '@/services/settingsStore';
 import { materialService, materialRepository, restoreBadge } from './services';
 import { syncNow, syncSoon } from './sync';
 import { withAuthLock } from '@/services/sessionScope';
-import { activateScope } from '@/services/syncService';
+import { activateScope, deactivateScope } from '@/services/syncService';
 
 const UPDATE_CHECK_MS = 30 * 60_000;
 let updateCache: { at: number; info: UpdateInfo } | null = null;
@@ -53,33 +53,47 @@ export const backgroundHandlers: HandlerMap = {
   }),
 
   SAVE_MATERIAL: (payload) => withAuthLock(async () => {
-    const session=await getSession();
-    if(session)await activateScope(materialRepository,session);
+    const session = await getSession();
+    if (session) await activateScope(materialRepository, session);
+    else if ((await getSyncState()).team_id) await deactivateScope(materialRepository, await getLastApiBaseUrl());
     const result = await materialService.save(payload);
     await restoreBadge();
-    if (result.outcome !== 'duplicate') syncSoon();
+    if (session && result.outcome !== 'duplicate') syncSoon();
     return result;
   }),
 
   DELETE_MATERIAL: ({ id }) => withAuthLock(async () => {
-    const session=await getSession();
-    if(session)await activateScope(materialRepository,session);
+    const session = await getSession();
+    if (session) await activateScope(materialRepository, session);
+    else if ((await getSyncState()).team_id) await deactivateScope(materialRepository, await getLastApiBaseUrl());
     const deleted = await materialService.delete(id);
     await restoreBadge();
-    if (deleted) syncSoon();
+    if (session && deleted) syncSoon();
     return { deleted };
   }),
 
   LOGIN: async ({ api_base_url, email, password }) => {
     const session = await login(api_base_url, email.trim(), password);
-    await setSession(session);
     await setLastApiBaseUrl(api_base_url);
+    await withAuthLock(async () => {
+      await chrome.storage.local.set({
+        [STORAGE_KEYS.authSession]: session,
+        [STORAGE_KEYS.syncState]: { ...(await getSyncState()), syncing: false, sync_started_at: null, last_error: null },
+      });
+      await activateScope(materialRepository, session);
+      await restoreBadge();
+    });
     syncSoon();
     return session;
   },
 
   LOGOUT: async () => {
-    await clearSession();
+    await withAuthLock(async () => {
+      const prev = await getSession();
+      await chrome.storage.local.remove(STORAGE_KEYS.authSession);
+      await deactivateScope(materialRepository, prev?.api_base_url || (await getLastApiBaseUrl()));
+      await restoreBadge();
+    });
   },
 
   SYNC_NOW: () => syncNow(),

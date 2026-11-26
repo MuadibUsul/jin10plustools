@@ -10,7 +10,11 @@ from urllib.parse import urlparse
 from .sources import save
 from .trading_calendar import calendars
 
-DOMAINS={'xshg':('sse.com.cn','szse.cn'),'cfets':('chinamoney.com.cn','pbc.gov.cn')}
+DOMAINS = {
+    'xshg': ('sse.com.cn', 'szse.cn'),
+    'cfets': ('chinamoney.com.cn', 'pbc.gov.cn'),
+    'xnys': ('nyse.com', 'intercontinentalexchange.com'),
+}
 
 
 def validate_bundle(bundle,evidence,current):
@@ -33,6 +37,13 @@ def validate_bundle(bundle,evidence,current):
         if not isinstance(closed,list) or len(closed)<10 or len(closed)!=len(set(closed)):raise ValueError('全年休市日期不完整或重复')
         for value in closed:day(value)
         update['closed']=sorted(set(update['closed'])|set(closed))
+    elif market=='xnys':
+        adhoc=bundle.get('adhoc_closed', [])
+        if not isinstance(adhoc, list) or len(adhoc) != len(set(adhoc)):
+            raise ValueError('美股临时休市日期列表无效')
+        for value in adhoc:
+            day(value)
+        update['adhoc_closed'] = sorted(set(update.get('adhoc_closed', [])) | set(adhoc))
     else:
         ranges=bundle.get('closed_ranges');opened=bundle.get('open_weekends')
         if not isinstance(ranges,list) or len(ranges)<6 or not isinstance(opened,list):raise ValueError('全年银行间日历不完整')

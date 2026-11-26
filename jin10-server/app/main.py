@@ -38,12 +38,14 @@ log = logging.getLogger("plus")
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
+    if settings.jwt_secret == "dev-only-change-me":
+        log.warning("PLUS_JWT_SECRET 正在使用开发默认值，生产环境请务必配置随机强密钥")
     worker: AnalysisWorker | None = None
     if settings.ai_worker_enabled:
         worker = AnalysisWorker(get_session_factory(), JevClient.from_settings() if settings.jev_api_key else None, settings.ai_worker_interval_seconds)
         worker.start()
     else:
-        log.warning("AI 分析未启用（未配置 PLUS_JEV_API_KEY 或 PLUS_AI_WORKER_ENABLED=false）")
+        log.info("后台 JEV 分析轮询未开启（PLUS_AI_WORKER_ENABLED=false）")
     maintenance = MaintenanceWorker(get_session_factory(), settings.retention_days)
     maintenance.start()
     yield
@@ -57,7 +59,7 @@ app = FastAPI(title="PLUS Research API", version="0.2.0", lifespan=lifespan)
 
 @app.exception_handler(RequestValidationError)
 async def validation_error(request, exc):
-    if request.url.path == '/api/settings':
+    if request.url.path.rstrip('/') == '/api/settings':
         return JSONResponse(status_code=422, content={'detail': '设置格式不正确，请检查字段长度与格式'})
     return await request_validation_exception_handler(request, exc)
 
@@ -117,55 +119,40 @@ _WEB=Path(__file__).parent/'web'
 _SKILL_CATEGORIES=frozenset({'volume','turnover','valuation','liquidity','oil_etf','us_barometer','us_structure','token_cost','gpu_rental','editorial_quality'})
 
 
-@app.get('/',include_in_schema=False)
-@app.get('/login/',include_in_schema=False)
+@app.api_route('/', methods=['GET', 'HEAD'], include_in_schema=False)
+@app.api_route('/login/', methods=['GET', 'HEAD'], include_in_schema=False)
 def workspace_page():
     return FileResponse(_WEB/'portal.html',headers={'Cache-Control':'no-cache'})
 
 
-@app.get('/fresh/',include_in_schema=False)
-@app.get('/annotations/',include_in_schema=False)
+@app.api_route('/fresh/', methods=['GET', 'HEAD'], include_in_schema=False)
+@app.api_route('/annotations/', methods=['GET', 'HEAD'], include_in_schema=False)
 def news_page():
     return FileResponse(_WEB/'news.html',headers={'Cache-Control':'no-cache'})
 
 
-@app.get('/daily/',include_in_schema=False)
+@app.api_route('/daily/', methods=['GET', 'HEAD'], include_in_schema=False)
 def daily_page():
     return FileResponse(_WEB/'index.html',headers={'Cache-Control':'no-cache'})
 
 
-@app.get('/briefs/',include_in_schema=False)
+@app.api_route('/briefs/', methods=['GET', 'HEAD'], include_in_schema=False)
 def briefs_page():
     return FileResponse(_WEB/'briefs.html',headers={'Cache-Control':'no-cache'})
 
 
-@app.head('/briefs/',include_in_schema=False)
-def briefs_head():
-    return FileResponse(_WEB/'briefs.html',headers={'Cache-Control':'no-cache'})
-
-
 # Legacy script, guide and extension-download URLs remain available.
-@app.get('/settings/',include_in_schema=False)
+@app.api_route('/settings/', methods=['GET', 'HEAD'], include_in_schema=False)
 def settings_page():
     return FileResponse(_WEB/'settings.html',headers={'Cache-Control':'no-cache'})
 
 
-@app.head('/settings/',include_in_schema=False)
-def settings_head():
-    return FileResponse(_WEB/'settings.html',headers={'Cache-Control':'no-cache'})
-
-
-@app.get('/skills/',include_in_schema=False)
+@app.api_route('/skills/', methods=['GET', 'HEAD'], include_in_schema=False)
 def skills_page():
     return FileResponse(_WEB/'skills.html',headers={'Cache-Control':'no-cache'})
 
 
-@app.head('/skills/',include_in_schema=False)
-def skills_head():
-    return FileResponse(_WEB/'skills.html',headers={'Cache-Control':'no-cache'})
-
-
-@app.get('/skills/{category}/',include_in_schema=False)
+@app.api_route('/skills/{category}/', methods=['GET', 'HEAD'], include_in_schema=False)
 def skill_detail_page(category:str):
     if category not in _SKILL_CATEGORIES:
         raise HTTPException(404,'Skill 不存在')

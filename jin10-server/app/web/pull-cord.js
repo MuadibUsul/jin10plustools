@@ -1,6 +1,6 @@
 // 全局拉绳：四个工作台页面共用。点击拉绳，页头下沿掉出复古电脑（/briefs/ 的实时终端会挂进这里），
 // 点击电脑以外的任何地方缩回。拉绳与电脑外壳都是矢量/现有组件。
-import { computerShell } from '/retro-computer.js';
+import { computerShell, tiltComputer } from '/retro-computer.js';
 
 const PAGE_NAMES = {
   '/daily/': '日报选稿', '/briefs/': '固定快讯',
@@ -43,21 +43,6 @@ function style(href, key) {
   document.head.append(link);
 }
 
-function tilt(panel, computer) {
-  panel.onpointermove = (event) => {
-    if (event.pointerType !== 'mouse' || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-    const rect = panel.getBoundingClientRect();
-    const x = Math.max(-1, Math.min(1, (event.clientX - rect.left) / rect.width * 2 - 1));
-    const y = Math.max(-1, Math.min(1, (event.clientY - rect.top) / rect.height * 2 - 1));
-    computer.style.setProperty('--tilt-x', `${(-y * 3).toFixed(2)}deg`);
-    computer.style.setProperty('--tilt-y', `${(x * 4).toFixed(2)}deg`);
-  };
-  panel.onpointerleave = () => {
-    computer.style.setProperty('--tilt-x', '0deg');
-    computer.style.setProperty('--tilt-y', '0deg');
-  };
-}
-
 export function initPullCord() {
   if (document.querySelector('#pull-cord')) return;
   style('/retro-terminal.css', 'retro');
@@ -72,7 +57,7 @@ export function initPullCord() {
   const slot = dock.querySelector('#pull-cord-slot');
   const idle = computerShell({ pageName: pageName() });
   slot.append(idle.panel);
-  tilt(idle.panel, idle.computer);
+  tiltComputer(idle.panel, idle.computer);
   const rope = dock.querySelector('.pull-cord-rope');
   const setOpen = (open) => {
     dock.dataset.open = String(open);
@@ -103,7 +88,8 @@ export function initPullCord() {
     dock.style.setProperty('--pull-cord-top', `${Math.round(top)}px`);
   };
   place();
-  window.addEventListener('resize', place);
+  window.addEventListener?.('resize', place);
+  if (header && window.ResizeObserver) new window.ResizeObserver(place).observe(header);
 }
 
 initPullCord();

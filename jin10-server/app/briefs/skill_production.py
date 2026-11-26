@@ -68,6 +68,7 @@ def apply_skill_copy(payload: dict, category: str, team_settings: dict | None) -
         from .delivery import complete_body
         # Notes stay on the chart footer. Drop them if a model pasted the block into the body.
         payload["dynamic_body"] = complete_body(category, payload["dynamic_body"], payload.get("fixed_notes"))
-    from .editorial_suite import apply_editorial
-    apply_editorial(payload, category, team_settings)
+    if "editorial" not in payload:
+        from .editorial_suite import apply_editorial
+        apply_editorial(payload, category, team_settings)
     return payload

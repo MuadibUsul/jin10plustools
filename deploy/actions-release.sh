@@ -105,6 +105,9 @@ finish_release() {
       "import json,sys; from app.config import get_settings; from app.db.models import utcnow; p=get_settings().storage_dir/'.brief-deployment-failure.json'; p.write_text(json.dumps({'revision':sys.argv[1],'stage':sys.argv[2],'at':utcnow().isoformat()}))" "$revision" "$release_stage" || true
     echo "PLUS release failed at stage $release_stage; no backup or rollback performed. Worker/API state requires verification." >&2
   fi
+  if [[ -n "${release_dir:-}" && -d "$release_dir" && "$release_dir" == "${root:-/home/deploy/plus}/releases/"* ]]; then
+    rm -rf -- "$release_dir"
+  fi
   exit "$result"
 }
 trap finish_release EXIT

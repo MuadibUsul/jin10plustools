@@ -11,7 +11,7 @@ ssh_options=(-i "$key" -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyCh
 archive="$(mktemp /tmp/plus-source.XXXXXXXX.tar)"
 trap 'rm -f -- "$archive" "$archive.gz"' EXIT
 git archive --format=tar HEAD jin10-server skills .dockerignore deploy/Dockerfile.release deploy/drain-worker.py deploy/runtime-wheels.py > "$archive"
-(cd jin10-extension && npm run build)
+(cd jin10-extension && npm ci && npm run build)
 "$local_python" - <<'ZIP'
 import json
 from pathlib import Path

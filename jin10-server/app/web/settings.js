@@ -1,7 +1,7 @@
 import { $, node, api, login, displayTime, copyDate, download, toast } from '/workspace.js';
 
 let data, dirty = false;
-const providers = { jev: ['日报选稿 · JEV', '栏目分类与重要度评分'], deepseek: ['固定快讯 · DeepSeek', '用于五项固定快讯的 Skill 文案产出'], chat2api: ['固定快讯 · chat2api', '通过本机 chat2api 节点使用 ChatGPT 网页版；留空则使用服务器节点密钥'], openai: ['固定快讯 · OpenAI', '官方 API；支持 gpt-5.6-sol 等节点无法访问的模型'] };
+const providers = { jev: ['日报选稿 · JEV', '栏目分类与重要度评分'], deepseek: ['固定快讯 · DeepSeek', '用于固定快讯各栏目的 Skill 文案产出'], chat2api: ['固定快讯 · chat2api', '通过本机 chat2api 节点使用 ChatGPT 网页版；留空则使用服务器节点密钥'], openai: ['固定快讯 · OpenAI', '官方 API；支持 gpt-5.6-sol 等节点无法访问的模型'] };
 const templateCategories = new Set(['volume', 'turnover', 'valuation', 'liquidity', 'oil_etf', 'token_cost', 'gpu_rental']);
 const templateDefaults = {
   volume: '{date}，沪深两市成交额为{amount_wan_yi}万亿元，较前一交易日变动{change_yi}亿元（{change_pct}%）；连续{streak}个交易日{side}20日均线（{ma20_wan_yi}万亿元）。成交活跃度较前日{activity}。',
@@ -144,9 +144,11 @@ function initialPanel() {
   return 'team';
 }
 function showPanel(name) {
+  if (!$('#settings-form')) return;
   if (name === 'chat2api' && !data?.can_admin) name = 'team';
   if (!(name in sections) && !(name in standalone)) name = 'team';
   if (panel === 'feedback' && name !== 'feedback') clearFeedbackToken();
+  if (panel === 'chat2api' && name !== 'chat2api') stopChat2apiExpiryTimer();
   panel = name;
   $('#settings-form').hidden = !(name in sections);
   $('#save-settings').hidden = !data?.can_edit || !(name in sections);
@@ -308,9 +310,9 @@ async function openFeedback() {
 }
 
 async function openFeedbackMcp() {
-  const panel = $('#feedback-mcp-settings');
+  const mcpDetails = $('#feedback-mcp-settings');
   if (!data?.can_admin) return;
-  panel.hidden = false;
+  mcpDetails.hidden = false;
   $('#feedback-mcp-url').textContent = new URL('/api/feedback/mcp', location.origin).href;
   const issue = $('#feedback-token-issue');
   const revoke = $('#feedback-token-revoke');
@@ -378,6 +380,10 @@ $('#feedback-form').onsubmit = async (event) => {
     if (!res.ok) {
       let detail = `提交失败 (${res.status})`;
       try { const data = await res.json(); if (typeof data.detail === 'string') detail = data.detail; } catch { /* not json */ }
+      if (res.status === 401) {
+        localStorage.removeItem('plus.token');
+        if (!document.querySelector('.login-overlay')) void login(() => location.reload?.());
+      }
       throw new Error(detail);
     }
     for (const [id, value] of [['#feedback-title-input', title], ['#feedback-content', content]]) {
@@ -394,6 +400,12 @@ $('#feedback-form').onsubmit = async (event) => {
 
 // —— chat2api 登录设置 ——
 let chat2apiExpiryAt = null, chat2apiExpiryKnown = true, chat2apiExpiryTimer = null, chat2apiExpired = 0;
+function stopChat2apiExpiryTimer() {
+  if (chat2apiExpiryTimer) {
+    clearInterval(chat2apiExpiryTimer);
+    chat2apiExpiryTimer = null;
+  }
+}
 function chat2apiStatus(text, error = false) { const target = $('#chat2api-state'); target.textContent = text; target.className = error ? 'error' : 'muted'; }
 function chat2apiMessage(text, error = false) { const target = $('#chat2api-message'); target.textContent = text; target.className = error ? 'error' : 'muted'; }
 function formatRemaining(ms) {
@@ -408,15 +420,16 @@ function formatRemaining(ms) {
 }
 function renderChat2apiExpiry() {
   const target = $('#chat2api-expiry');
-  if (!target) return;
-  if (!chat2apiExpiryKnown) { target.textContent = '无法读取 Token 到期时间（节点数据目录未挂载）。'; target.className = 'muted'; return; }
+  if (!target) { stopChat2apiExpiryTimer(); return; }
+  if (!chat2apiExpiryKnown) { stopChat2apiExpiryTimer(); target.textContent = '无法读取 Token 到期时间（节点数据目录未挂载）。'; target.className = 'muted'; return; }
   if (!chat2apiExpiryAt) {
+    stopChat2apiExpiryTimer();
     target.textContent = chat2apiExpired ? `所有带到期时间的 AccessToken 均已过期（${chat2apiExpired} 个），请清空后重新上传。` : '当前没有带到期时间的 AccessToken（仅有 RefreshToken 或尚未添加）。';
     target.className = chat2apiExpired ? 'error' : 'muted'; return;
   }
   const left = chat2apiExpiryAt - Date.now();
   const when = displayTime(new Date(chat2apiExpiryAt).toISOString());
-  if (left <= 0) { target.textContent = `最近一个 AccessToken 已于 ${when} 到期，请重新粘贴整段 JSON 上传。`; target.className = 'error'; return; }
+  if (left <= 0) { stopChat2apiExpiryTimer(); target.textContent = `最近一个 AccessToken 已于 ${when} 到期，请重新粘贴整段 JSON 上传。`; target.className = 'error'; return; }
   target.textContent = `最近一个 AccessToken 将于 ${when} 到期，剩余 ${formatRemaining(left)}。${chat2apiExpired ? `（另有 ${chat2apiExpired} 个已过期，建议清空）` : ''}`;
   target.className = left < 24 * 3600 * 1000 ? 'warning' : 'active';
 }
@@ -428,10 +441,14 @@ async function loadChat2api() {
     chat2apiExpiryAt = info.earliest_expiry ? Date.parse(info.earliest_expiry) : null;
     chat2apiExpired = Number(info.expired_tokens) || 0;
     renderChat2apiExpiry();
-    if (!chat2apiExpiryTimer) chat2apiExpiryTimer = setInterval(renderChat2apiExpiry, 1000);
+    if (panel === 'chat2api' && chat2apiExpiryKnown && chat2apiExpiryAt && chat2apiExpiryAt > Date.now()) {
+      if (!chat2apiExpiryTimer) chat2apiExpiryTimer = setInterval(renderChat2apiExpiry, 1000);
+    } else {
+      stopChat2apiExpiryTimer();
+    }
     if (!info.configured) { chat2apiStatus('尚未配置 chat2api 节点（缺少 PLUS_CHAT2API_PREFIX）。', true); return; }
     chat2apiStatus(info.online ? `节点在线 · 当前可用 Tokens：${info.tokens_count ?? '未知'}` : '节点离线，暂时无法读取 Token 数。', !info.online);
-  } catch (error) { chat2apiStatus(`读取节点状态失败：${error.message}`, true); }
+  } catch (error) { stopChat2apiExpiryTimer(); chat2apiStatus(`读取节点状态失败：${error.message}`, true); }
 }
 async function openChat2api() {
   if (!data?.can_admin) return;
@@ -502,14 +519,27 @@ $('#reload-settings').onclick = async () => {
 };
 function validateSettings() {
   const invalid = [...document.querySelectorAll('#settings-form input[type="url"]')].find((input) => !input.validity.valid);
-  if (!invalid) return true;
-  showPanel('live');
-  history.replaceState(null, '', '#live');
-  for (let group = invalid.closest('details'); group; group = group.parentElement.closest('details')) group.open = true;
-  invalid.focus();
-  invalid.reportValidity();
-  message('请检查直播链接，填写完整的 HTTPS 地址。', true);
-  return false;
+  if (invalid) {
+    showPanel('live');
+    history.replaceState(null, '', '#live');
+    for (let group = invalid.closest('details'); group; group = group.parentElement.closest('details')) group.open = true;
+    invalid.focus();
+    invalid.reportValidity();
+    message('请检查直播链接，填写完整的 HTTPS 地址。', true);
+    return false;
+  }
+  for (const name of Object.keys(providers)) {
+    const select = $(`#model-${name}`), custom = $(`#model-custom-${name}`);
+    if (select?.value === '__custom__' && !custom?.value.trim()) {
+      showPanel('ai');
+      history.replaceState(null, '', '#ai');
+      custom.hidden = false;
+      custom.focus();
+      message(`请填写「${providers[name][0]}」的自定义模型名称。`, true);
+      return false;
+    }
+  }
+  return true;
 }
 $('#settings-form').onsubmit = async (event) => {
   event.preventDefault();

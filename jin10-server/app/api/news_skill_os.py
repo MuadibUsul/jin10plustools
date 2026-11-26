@@ -62,6 +62,17 @@ def _errors():
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
+import json
+
+MAX_PAYLOAD_BYTES = 262_144
+
+
+def _validate_payload_size(value: dict[str, Any]) -> dict[str, Any]:
+    if len(json.dumps(value, ensure_ascii=False, default=str).encode("utf-8")) > MAX_PAYLOAD_BYTES:
+        raise ValueError("附加元数据过大")
+    return value
+
+
 class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -71,6 +82,11 @@ class EventCreate(StrictModel):
     event_time: dt.datetime
     event_key: str | None = Field(default=None, max_length=200)
     payload: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("payload")
+    @classmethod
+    def check_payload(cls, value: dict[str, Any]) -> dict[str, Any]:
+        return _validate_payload_size(value)
 
     @field_validator("event_time")
     @classmethod
@@ -129,6 +145,11 @@ class DraftCreate(StrictModel):
     skill_version: str | None = Field(default=None, max_length=30)
     payload: dict[str, Any] = Field(default_factory=dict)
 
+    @field_validator("payload")
+    @classmethod
+    def check_payload(cls, value: dict[str, Any]) -> dict[str, Any]:
+        return _validate_payload_size(value)
+
 
 class DraftRevisionCreate(StrictModel):
     expected_revision: int = Field(ge=1)
@@ -136,6 +157,11 @@ class DraftRevisionCreate(StrictModel):
     body: str = Field(min_length=1, max_length=100_000)
     event_revision: int | None = Field(default=None, ge=1)
     payload: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("payload")
+    @classmethod
+    def check_payload(cls, value: dict[str, Any]) -> dict[str, Any]:
+        return _validate_payload_size(value)
 
 
 class DraftReview(StrictModel):

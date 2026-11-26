@@ -23,6 +23,10 @@ export interface MaterialRepository {
   acknowledge(sent: NewsMaterial, received: NewsMaterial | null, dedupeKeys: string[]): Promise<void>;
   /** Apply a pulled record only if no local mutation is pending, in the write queue. */
   applyRemote(material: NewsMaterial, dedupeKeys: string[]): Promise<boolean>;
+  /** Atomically replace all local material records, index, and dedupe keys. */
+  resetAll(materials: NewsMaterial[]): Promise<void>;
+  /** Prune expired synced records/tombstones and unreferenced local image assets. */
+  pruneSynced?(maxAgeMs: number, nowMs?: number): Promise<void>;
   /** 彻底移除本地记录 */
   remove(id: string): Promise<void>;
 }

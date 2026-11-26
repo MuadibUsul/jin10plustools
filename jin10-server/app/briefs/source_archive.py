@@ -272,8 +272,10 @@ def import_pe_capture(db, job, normalized_path):
             if prior.content != content:
                 raise ValueError('已导入的PE证据发生变化')
             continue
+        digest = hashlib.sha256(content).hexdigest()
         db.add(BriefSourceSnapshot(team_id=job.team_id, job_id=job.id, attempt=job.attempts,
             category='valuation', data_date=date.fromisoformat(capture['expected_date']), relative_path=path,
-            sha256=hashlib.sha256(content).hexdigest(), byte_count=len(content), content=content))
+            sha256=digest, byte_count=len(content),
+            blob=evidence_blob(db, job.team_id, digest, content)))
     db.flush()
     return len(files)

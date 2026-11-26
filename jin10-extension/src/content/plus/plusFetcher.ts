@@ -17,16 +17,27 @@ const CLOSE_TIMEOUT = 1500;
 /** 同一时刻只允许一个注解弹窗被操作，避免连续右键时互相干扰 */
 const serial = createSerialQueue();
 
+export function isPopupVisible(popup: Element | null): popup is Element {
+  return Boolean(popup && getComputedStyle(popup).display !== 'none' && popup.getClientRects().length > 0);
+}
+
+function openPopupElement(): Element | null {
+  for (const popup of document.querySelectorAll(SELECTORS.plusPopup)) {
+    if (isPopupVisible(popup)) return popup;
+  }
+  return null;
+}
+
 function currentIframe(): HTMLIFrameElement | null {
-  return document.querySelector<HTMLIFrameElement>(SELECTORS.plusIframe);
+  return openPopupElement()?.querySelector<HTMLIFrameElement>('iframe') ?? null;
 }
 
 /** 金十弹窗在页面 mousedown 时关闭（Esc、click 均无效，2026-09-21 实测） */
 async function closePopup(): Promise<void> {
-  if (!document.querySelector(SELECTORS.plusPopup)) return;
+  if (!openPopupElement()) return;
   document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
   document.body.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
-  await waitFor(() => (document.querySelector(SELECTORS.plusPopup) ? null : true), {
+  await waitFor(() => (openPopupElement() ? null : true), {
     timeout: CLOSE_TIMEOUT,
   });
 }

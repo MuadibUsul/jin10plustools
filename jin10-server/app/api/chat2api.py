@@ -13,6 +13,7 @@ import httpx
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
+from app.config import get_settings
 from app.db.models import Role
 from app.deps import CurrentUser
 
@@ -30,9 +31,16 @@ def require_admin(user) -> None:
         raise HTTPException(403, '仅管理员可以管理 chat2api 登录')
 
 
+def _configured_prefix() -> str:
+    env_val = os.getenv('PLUS_CHAT2API_PREFIX')
+    raw = env_val if env_val is not None else get_settings().chat2api_prefix
+    return raw.strip().strip('/')
+
+
 def endpoint() -> str:
-    base = os.getenv('PLUS_CHAT2API_URL', 'http://chat2api:5005').rstrip('/')
-    prefix = os.getenv('PLUS_CHAT2API_PREFIX', '').strip().strip('/')
+    env_base = os.getenv('PLUS_CHAT2API_URL')
+    base = (env_base if env_base is not None else get_settings().chat2api_url).rstrip('/')
+    prefix = _configured_prefix()
     if not prefix:
         raise HTTPException(503, 'chat2api 节点尚未配置')
     return f'{base}/{prefix}'
@@ -46,6 +54,21 @@ def request(method: str, path: str, **kwargs) -> httpx.Response:
             return response
     except httpx.HTTPError:
         raise HTTPException(502, 'chat2api 节点暂不可用') from None
+
+
+def _request_json(method: str, path: str, **kwargs) -> dict:
+    try:
+        data = request(method, path, **kwargs).json()
+    except ValueError:
+        raise HTTPException(502, 'chat2api 节点返回格式无效') from None
+    return data if isinstance(data, dict) else {}
+
+
+def _redact_error_token(item: object) -> str:
+    text = str(item or '').strip()
+    if len(text) >= 20 or text.startswith(('eyJ', 'v1.', 'sk-')):
+        return f'{text[:8]}...{text[-4:]}' if len(text) > 12 else f'{text[:4]}...'
+    return text
 
 
 class TokensIn(BaseModel):
@@ -147,7 +170,7 @@ def status(user: CurrentUser):
     base = {'expiry_available': info['available'],
             'earliest_expiry': info['earliest'].isoformat() if info['earliest'] else None,
             'expired_tokens': info['expired'], 'unknown_expiry': info['unknown']}
-    if not os.getenv('PLUS_CHAT2API_PREFIX', '').strip():
+    if not _configured_prefix():
         return {'configured': False, 'online': False, 'tokens_count': None, **base}
     try:
         response = request('GET', '/tokens')
@@ -180,19 +203,21 @@ def upload(body: TokensIn, user: CurrentUser):
     fresh = [token for token in tokens if token not in known]
     if not fresh:
         return {'tokens_count': None, 'extracted': 0, 'duplicate': True}
-    data = request('POST', '/tokens/upload', data={'text': '\n'.join(fresh)}).json()
+    data = _request_json('POST', '/tokens/upload', data={'text': '\n'.join(fresh)})
     return {'tokens_count': data.get('tokens_count'), 'extracted': len(fresh)}
 
 
 @router.post('/clear')
 def clear(user: CurrentUser):
     require_admin(user)
-    data = request('POST', '/tokens/clear').json()
+    data = _request_json('POST', '/tokens/clear')
     return {'tokens_count': data.get('tokens_count')}
 
 
 @router.get('/errors')
 def errors(user: CurrentUser):
     require_admin(user)
-    data = request('POST', '/tokens/error').json()
-    return {'error_tokens': data.get('error_tokens', [])}
+    data = _request_json('POST', '/tokens/error')
+    raw_items = data.get('error_tokens', [])
+    items = [_redact_error_token(item) for item in raw_items] if isinstance(raw_items, list) else []
+    return {'error_tokens': items}

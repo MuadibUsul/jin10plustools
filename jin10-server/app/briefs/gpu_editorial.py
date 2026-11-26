@@ -8,8 +8,10 @@ from __future__ import annotations
 from copy import deepcopy
 from datetime import date
 from decimal import Decimal, InvalidOperation
+from functools import lru_cache
 import hashlib
 import json
+from pathlib import Path
 import re
 from string import Formatter
 
@@ -41,8 +43,15 @@ def _digest(value) -> str:
                                      separators=(',', ':'), default=str).encode()).hexdigest()
 
 
+@lru_cache(maxsize=8)
+def _cached_gpu_pack(path_str: str, mtime_ns: int, size: int) -> dict:
+    return _checked_pack(json.loads(Path(path_str).read_text(encoding='utf-8')))
+
+
 def load_pack() -> dict:
-    return _checked_pack(json.loads(pack_path().read_text(encoding='utf-8')))
+    path = pack_path()
+    stat = path.stat()
+    return deepcopy(_cached_gpu_pack(str(path), stat.st_mtime_ns, stat.st_size))
 
 
 def _checked_pack(source: dict) -> dict:

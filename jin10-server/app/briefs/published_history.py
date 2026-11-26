@@ -11,6 +11,7 @@ import re
 from sqlalchemy import select
 from app.db.models import BriefDataPoint,BriefSourceSnapshot
 from .data_reliability import save_points
+from .source_archive import evidence_blob
 from .trading_calendar import is_session
 
 METHOD='jin10_published_oil_exposure_rounded_v1'
@@ -72,7 +73,7 @@ def import_oil_archive(db,job,raw,*,minimum_overlap_dates=3):
     if snapshot is None:
         snapshot=BriefSourceSnapshot(team_id=job.team_id,job_id=job.id,attempt=job.attempts,
             category='oil_etf',data_date=job.issue_date,relative_path=name,
-            content=raw,sha256=sha,byte_count=len(raw))
+            blob=evidence_blob(db,job.team_id,sha,raw),sha256=sha,byte_count=len(raw))
         db.add(snapshot);db.flush()
     elif snapshot.sha256!=sha or snapshot.content!=raw:raise ValueError('存档证据不一致')
     restored=save_points(db,job.team_id,'oil_etf',pending,job.id,

@@ -7,16 +7,16 @@ rule copy, so a model outage can never blank or shorten a brief.
 """
 from __future__ import annotations
 
+from functools import lru_cache
 import json
 import re
 from pathlib import Path
-from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+from urllib.request import urlopen
 
 from app.config import get_settings
 from app.services.team_settings import briefs_ai
 
-from .engines.liquidity.copy_tracks import parse_answer
+from .ai_client import call_json_completion
 
 SKILL_NAMES = {
     "volume": "jin10-plus-volume-text",
@@ -71,6 +71,17 @@ def approved_wording(title: str, body: str) -> tuple[set[str], set[str]]:
     return titles, bodies
 
 
+@lru_cache(maxsize=64)
+def _read_cached_text(path_str: str, mtime_ns: int, size: int) -> str:
+    return Path(path_str).read_text(encoding="utf-8")
+
+
+def read_text_cached(path: Path) -> str:
+    stat = path.stat()
+    return _read_cached_text(str(path), stat.st_mtime_ns, stat.st_size)
+
+
+@lru_cache(maxsize=32)
 def asset_dir(category: str) -> Path:
     name = SKILL_NAMES.get(category)
     if not name:
@@ -83,7 +94,7 @@ def asset_dir(category: str) -> Path:
 
 
 def _history(category: str, limit: int = 20) -> str:
-    text = (asset_dir(category) / "references" / "history.md").read_text(encoding="utf-8")
+    text = read_text_cached(asset_dir(category) / "references" / "history.md")
     if category in STYLE_CORPUS:
         # The whole corpus is mandatory style context, including the not-live-facts header.
         if "不作为当期事实" not in text or "### 风格样本 " not in text:
@@ -142,7 +153,7 @@ def polish(team, category: str, source_title: str, source_body: str) -> dict:
     if saved.get("enabled") is False:
         return {"status": "disabled", "reason": "skill_disabled"}
     try:
-        skill_md = saved.get("instructions") or instructions_path(category).read_text(encoding="utf-8")
+        skill_md = saved.get("instructions") or read_text_cached(instructions_path(category))
         examples = _history(category)
     except (OSError, ValueError):
         return {"status": "failed", "reason": "skill_asset_missing"}
@@ -177,37 +188,17 @@ def polish(team, category: str, source_title: str, source_body: str) -> dict:
         "response_format": {"type": "json_object"},
         "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
     }
-    if ai.get("provider") == "deepseek":
-        payload["thinking"] = {"type": "disabled"}
-    diagnostics = {"provider": ai.get("provider"), "model": ai.get("model"), "warnings": warnings}
+    reply = call_json_completion(
+        ai, payload, opener=urlopen, timeout=60, max_bytes=65536, truncate_reason="output_truncated",
+    )
+    diagnostics = {
+        **{k: v for k, v in reply.items() if k not in ("parsed", "status", "reason")},
+        "warnings": warnings,
+    }
+    if reply["status"] != "ok":
+        return {**diagnostics, "status": "failed", "reason": reply["reason"]}
     try:
-        request = Request(
-            ai["base_url"].rstrip("/") + "/chat/completions",
-            data=json.dumps(payload).encode("utf-8"),
-            headers={"Authorization": "Bearer " + ai["key"], "Content-Type": "application/json"},
-            method="POST",
-        )
-        with urlopen(request, timeout=60) as response:
-            raw = response.read(65537)
-        if len(raw) > 65536:
-            return {**diagnostics, "status": "failed", "reason": "response_too_large"}
-        data = json.loads(raw)
-        choice = data["choices"][0]
-        diagnostics["finish_reason"] = choice.get("finish_reason")
-        diagnostics["usage"] = {key: value for key, value in (data.get("usage") or {}).items()
-                                if key in ("prompt_tokens", "completion_tokens", "total_tokens")
-                                and isinstance(value, int)}
-        if choice.get("finish_reason") != "stop":
-            return {**diagnostics, "status": "failed", "reason": "incomplete_completion"
-                    if choice.get("finish_reason") != "length" else "output_truncated"}
-        content = choice.get("message", {}).get("content")
-        if not content:
-            return {**diagnostics, "status": "failed", "reason": "empty_content"}
-        title, body = validate_answer(source_title, source_body, parse_answer(content))
+        title, body = validate_answer(source_title, source_body, reply["parsed"])
         return {**diagnostics, "status": "ok", "title": title, "body": body}
-    except HTTPError as exc:
-        return {**diagnostics, "status": "failed", "reason": "provider_http_error", "http_status": exc.code}
-    except (TimeoutError, URLError, OSError):
-        return {**diagnostics, "status": "failed", "reason": "network_error"}
-    except (ValueError, KeyError, IndexError, TypeError, json.JSONDecodeError):
+    except (ValueError, KeyError, IndexError, TypeError):
         return {**diagnostics, "status": "failed", "reason": "invalid_response"}

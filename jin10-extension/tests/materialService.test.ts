@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { beforeEach, describe, expect, it } from 'vitest';
 import { createMaterialService, dedupeKeys } from '@/services/materialService';
 import type { MaterialRepository } from '@/services/repository/MaterialRepository';
@@ -36,6 +37,11 @@ class MemoryRepository implements MaterialRepository {
   async replace(oldId: string, m: NewsMaterial, keys: string[]) {
     this.items.delete(oldId);
     await this.save(m, keys);
+  }
+  async resetAll(materials: NewsMaterial[]) {
+    this.items.clear();
+    this.index.clear();
+    for (const m of materials) await this.save(m, dedupeKeys(m.source_item_id, m.fingerprint));
   }
   async acknowledge(sent: NewsMaterial, received: NewsMaterial | null, keys: string[]) {
     const next = acknowledgedMaterial(sent, await this.get(sent.id), received);

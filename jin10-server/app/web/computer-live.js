@@ -44,6 +44,7 @@ function menu(s, category = null, index = 0) {
   const entries = category ? s.data.channels.filter(c => c.category === category.id).sort((a,b) => rank(a)-rank(b)) : s.data.categories;
   s.entries = entries;
   s.title.textContent = category?.label || '直播频道';
+  if (!entries.length) { notice(s, '暂无可用频道。'); return; }
   s.body.replaceChildren();
   const deck = node('div', undefined, 'live-deck'); deck.tabIndex = 0; deck.setAttribute('aria-label', category ? '选择直播' : '选择类别');
   const card = node('button', undefined, 'live-card'); card.type = 'button';
@@ -128,7 +129,7 @@ export async function toggleLive(screen) {
   s.wheelTarget = screen.closest('.retro-computer') || screen;
   let wheelTotal = 0, lastWheel = -Infinity;
   s.wheel = e => {
-    if (s.mode !== 'menu' || !e.deltaY || e.ctrlKey) return;
+    if (s.mode !== 'menu' || !s.entries?.length || !e.deltaY || e.ctrlKey) return;
     e.preventDefault(); if (performance.now() - lastWheel < 220) return;
     wheelTotal += e.deltaY * (e.deltaMode === 1 ? 16 : 1);
     if (Math.abs(wheelTotal) < 30) return;

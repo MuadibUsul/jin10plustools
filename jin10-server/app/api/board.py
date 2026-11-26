@@ -24,6 +24,7 @@ from app.services.cover_selection import COVER_LIMIT, recommend_cover_ids
 router = APIRouter(prefix="/api/board", tags=["board"])
 
 MAX_IDS = 2000
+_VALID_SECTIONS = frozenset(section.value for section in SECTION_ORDER)
 
 
 class BoardOut(BaseModel):
@@ -101,10 +102,12 @@ def get_board(day: Annotated[dt.date, Query()], db: DbSession, user: CurrentUser
 
 @router.post("/ops", response_model=BoardOut)
 def apply_ops(ops: BoardOps, day: Annotated[dt.date, Query()], db: DbSession, user: Editor) -> BoardOut:
+    if any(section not in _VALID_SECTIONS for section in ops.order):
+        raise HTTPException(422, detail="选稿板栏目标识不合法")
     board = _locked_board(db, user.team_id, day)
     picked = list(board.picked) if ops.pick_set is None else _dedupe(ops.pick_set)
     removed = set(ops.pick_remove)
-    picked = _dedupe([p for p in picked if p not in removed] + [p for p in ops.pick_add if p not in removed])
+    picked = _dedupe([p for p in picked if p not in removed] + [p for p in ops.pick_add if p not in removed])[:MAX_IDS]
     order = {} if ops.order_reset else dict(board.order)
     for section, ids in ops.order.items():
         order[section] = _dedupe(ids)[:MAX_IDS]

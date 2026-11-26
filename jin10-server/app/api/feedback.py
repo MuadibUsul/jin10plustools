@@ -1,12 +1,14 @@
 """使用者反馈：任何登录成员都可以提交，可附一张示意图，按团队隔离。"""
 from __future__ import annotations
 
+import datetime as dt
 import hashlib
 import secrets
 import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -33,11 +35,15 @@ def sniff_image(data: bytes) -> tuple[str, str] | None:
     return None
 
 
+def _utc_aware(value: dt.datetime) -> dt.datetime:
+    return value.astimezone(dt.UTC) if value.tzinfo is not None else value.replace(tzinfo=dt.UTC)
+
+
 def out(row: Feedback, accounts: dict[uuid.UUID, str], user: User) -> dict:
     return {
         'id': str(row.id), 'title': row.title, 'content': row.content, 'name': row.name,
         'account': accounts.get(row.user_id, '') if row.user_id else '',
-        'created_at': row.created_at.isoformat(), 'mine': row.user_id == user.id,
+        'created_at': _utc_aware(row.created_at).isoformat(), 'mine': row.user_id == user.id,
         'has_image': bool(row.image_path), 'image_mime': row.image_mime,
         'image_bytes': row.image_bytes,
         **workflow_fields(row),
@@ -46,11 +52,11 @@ def out(row: Feedback, accounts: dict[uuid.UUID, str], user: User) -> dict:
 
 def workflow_fields(row: Feedback) -> dict:
     status = 'completed' if row.completed_at else 'pending'
-    if not row.completed_at and row.claim_until and row.claim_until.replace(tzinfo=None) > utcnow().replace(tzinfo=None):
+    if not row.completed_at and row.claim_until and _utc_aware(row.claim_until) > utcnow():
         status = 'processing'
     return {
         'status': status, 'resolution': row.resolution,
-        'completed_at': row.completed_at.isoformat() if row.completed_at else None,
+        'completed_at': _utc_aware(row.completed_at).isoformat() if row.completed_at else None,
     }
 
 
@@ -140,6 +146,24 @@ def items(db: DbSession, user: CurrentUser):
     return {'items': [out(row, accounts, user) for row in rows]}
 
 
+def _persist_feedback(
+    db: DbSession, user: User, *, name: str, title: str, content: str,
+    data: bytes, sniffed: tuple[str, str] | None,
+) -> dict:
+    record = Feedback(team_id=user.team_id, user_id=user.id, name=name, title=title, content=content)
+    db.add(record)
+    db.flush()
+    if sniffed:
+        path = feedback_path(user.team_id, record.id, sniffed[1])
+        write_atomic(path, data)
+        record.image_path = str(path.relative_to(get_settings().storage_dir))
+        record.image_mime = sniffed[0]
+        record.image_bytes = len(data)
+        record.image_sha256 = hashlib.sha256(data).hexdigest()
+    db.commit()
+    return out(record, accounts_of(db, user.team_id), user)
+
+
 @router.post('', status_code=201)
 async def submit(db: DbSession, user: CurrentUser,
                  title: Annotated[str, Form()] = '',
@@ -162,18 +186,9 @@ async def submit(db: DbSession, user: CurrentUser,
         sniffed = sniff_image(data)
         if sniffed is None:
             raise HTTPException(415, '示意图仅支持 PNG、JPEG 或 WebP')
-    record = Feedback(team_id=user.team_id, user_id=user.id, name=name, title=title, content=content)
-    db.add(record)
-    db.flush()
-    if sniffed:
-        path = feedback_path(user.team_id, record.id, sniffed[1])
-        write_atomic(path, data)
-        record.image_path = str(path.relative_to(get_settings().storage_dir))
-        record.image_mime = sniffed[0]
-        record.image_bytes = len(data)
-        record.image_sha256 = hashlib.sha256(data).hexdigest()
-    db.commit()
-    return out(record, accounts_of(db, user.team_id), user)
+    return await run_in_threadpool(
+        _persist_feedback, db, user, name=name, title=title, content=content, data=data, sniffed=sniffed,
+    )
 
 
 @router.get('/{feedback_id}/image')

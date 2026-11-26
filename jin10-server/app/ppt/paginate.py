@@ -96,10 +96,15 @@ class PaginationResult:
     warnings: list[str]
 
 
-def image_aspect(path: Path) -> float:
-    with Image.open(path) as im:
-        w, h = im.size
-    return h / w
+def image_aspect(path: Path) -> float | None:
+    try:
+        with Image.open(path) as im:
+            w, h = im.size
+        if w <= 0 or h <= 0:
+            return None
+        return h / w
+    except (OSError, ValueError, Image.DecompressionBombError):
+        return None
 
 
 def item_blocks(item: DailyItem, section: SectionId) -> list[Block]:
@@ -113,9 +118,10 @@ def item_blocks(item: DailyItem, section: SectionId) -> list[Block]:
             blocks.append(Para("body", f"【新闻】{item.news}"))
         for i, p in enumerate(item.interpretation):
             blocks.append(Para("body", f"【解读】{p}" if i == 0 else p))
-    blocks.extend(
-        Img(img.path, image_aspect(img.path)) for img in item.images[: layout.IMAGE_RULES.max_per_item]
-    )
+    for img in item.images[: layout.IMAGE_RULES.max_per_item]:
+        aspect = image_aspect(img.path)
+        if aspect is not None:
+            blocks.append(Img(img.path, aspect))
     return blocks
 
 

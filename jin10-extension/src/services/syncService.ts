@@ -6,7 +6,7 @@
  * 同一时刻只运行一次；本地尚未推送的修改优先，不会被拉取覆盖。
  */
 import type { NewsMaterial } from '@/types/material';
-import type { SyncReport, AuthSession } from '@/types/settings';
+import type { AuthSession, SyncReport, SyncState } from '@/types/settings';
 import { createSerialQueue } from '@/shared/async';
 import { AppException } from '@/shared/errors';
 import { logger } from '@/shared/logger';
@@ -19,6 +19,7 @@ import { getSession, getSyncState, updateSyncState, saveTeamQueue, readTeamQueue
 import { inSession, SessionChanged } from './sessionScope';
 
 const PUSH_BATCH = 50;
+const SYNCED_RETENTION_MS = 14 * 24 * 60 * 60_000;
 
 function assetIds(materials: NewsMaterial[]): string[] {
   const ids = new Set<string>();
@@ -73,25 +74,90 @@ async function pull(repo: MaterialRepository, cursor: string | null, session: Au
   }
 }
 
-/** Caller holds the authentication lock, including before a newly collected local save. */
-export async function activateScope(repo:MaterialRepository,session:AuthSession) {
-    let state = await getSyncState();
-    if (state.team_id !== session.team.id || (state.server_url && state.server_url !== session.api_base_url)) {
-      const all = await repo.listAll();
-      if (state.team_id) {
-        // Preserve offline work under its original team; never submit it to the new team.
-        await saveTeamQueue(`${state.server_url || session.api_base_url}:${state.team_id}`, all.filter(m => m.sync_status !== 'synced'));
-        for (const m of all) await repo.remove(m.id);
-        for (const m of await readTeamQueue(`${session.api_base_url}:${session.team.id}`)) {
-          await repo.save(m, dedupeKeys(m.source_item_id, m.fingerprint));
-        }
-      } else {
-        for (const m of all) if (m.team_id && m.team_id !== session.team.id) await repo.remove(m.id);
-      }
-      state = await updateSyncState({ cursor: null, team_id: session.team.id, server_url: session.api_base_url });
-    }
+function mergeUniqueMaterials(primary: NewsMaterial[], secondary: NewsMaterial[]): NewsMaterial[] {
+  const result: NewsMaterial[] = [];
+  const seenIds = new Set<string>();
+  const seenKeys = new Set<string>();
+  for (const item of [...primary, ...secondary]) {
+    if (seenIds.has(item.id)) continue;
+    const keys = dedupeKeys(item.source_item_id, item.fingerprint);
+    if (keys.some((k) => seenKeys.has(k))) continue;
+    seenIds.add(item.id);
+    for (const k of keys) seenKeys.add(k);
+    result.push(item);
+  }
+  return result;
+}
 
+/** Caller holds the authentication lock, including before a newly collected local save. */
+export async function activateScope(repo: MaterialRepository, session: AuthSession): Promise<SyncState> {
+  let state = await getSyncState();
+  const nextScope = `${session.api_base_url}:${session.team.id}`;
+  const prevScope = state.team_id ? `${state.server_url || session.api_base_url}:${state.team_id}` : null;
+
+  if (!state.team_id) {
+    const all = await repo.listAll();
+    const offlineItems = all
+      .filter((m) => (!m.team_id || m.team_id === session.team.id) && m.sync_status !== 'synced')
+      .map((m) => ({ ...m, team_id: session.team.id }));
+    const queued = (await readTeamQueue(nextScope)).map((m) => ({ ...m, team_id: session.team.id }));
+    const merged = mergeUniqueMaterials(offlineItems, queued);
+    await repo.resetAll(merged);
+    state = await updateSyncState({ cursor: null, team_id: session.team.id, server_url: session.api_base_url });
+    if (queued.length > 0) await saveTeamQueue(nextScope, []);
     return state;
+  }
+
+  if (state.team_id !== session.team.id || (state.server_url && state.server_url !== session.api_base_url)) {
+    const all = await repo.listAll();
+    if (prevScope) {
+      // Preserve offline work under its original team; never submit it to the new team.
+      const prevUnsynced = all
+        .filter((m) => m.sync_status !== 'synced' && (!m.team_id || m.team_id === state.team_id))
+        .map((m) => ({ ...m, team_id: state.team_id }));
+      const existingPrev = await readTeamQueue(prevScope);
+      const mergedPrev = mergeUniqueMaterials(prevUnsynced, existingPrev);
+      if (mergedPrev.length > 0) await saveTeamQueue(prevScope, mergedPrev);
+    }
+    const nextQueued = (await readTeamQueue(nextScope)).map((m) => ({ ...m, team_id: session.team.id }));
+    await repo.resetAll(nextQueued);
+    state = await updateSyncState({ cursor: null, team_id: session.team.id, server_url: session.api_base_url });
+    if (nextQueued.length > 0) await saveTeamQueue(nextScope, []);
+    return state;
+  }
+
+  if (!state.server_url) {
+    state = await updateSyncState({ server_url: session.api_base_url });
+  }
+  return state;
+}
+
+/** Caller holds the authentication lock. Saves current team's unsynced queue and clears active scope. */
+export async function deactivateScope(repo: MaterialRepository, fallbackServerUrl?: string): Promise<void> {
+  const state = await getSyncState();
+  const all = await repo.listAll();
+  if (state.team_id) {
+    const serverUrl = state.server_url || fallbackServerUrl || '';
+    const unsynced = all
+      .filter((m) => m.sync_status !== 'synced' && (!m.team_id || m.team_id === state.team_id))
+      .map((m) => ({ ...m, team_id: state.team_id }));
+    if (serverUrl && unsynced.length > 0) {
+      const scope = `${serverUrl}:${state.team_id}`;
+      const existing = await readTeamQueue(scope);
+      await saveTeamQueue(scope, mergeUniqueMaterials(unsynced, existing));
+    }
+    await repo.resetAll([]);
+  } else if (all.some((m) => m.team_id)) {
+    await repo.resetAll(all.filter((m) => !m.team_id && m.sync_status !== 'synced'));
+  }
+  await updateSyncState({
+    team_id: null,
+    server_url: undefined,
+    cursor: null,
+    syncing: false,
+    sync_started_at: null,
+    last_error: null,
+  });
 }
 
 export function createSyncService(repo: MaterialRepository) {
@@ -101,23 +167,30 @@ export function createSyncService(repo: MaterialRepository) {
     const session = await getSession();
     if (!session) return { skipped: 'not_logged_in', pushed: 0, pulled: 0, assets_uploaded: 0 };
     try {
-      const state=await inSession(session,async()=>{
-        const state=await activateScope(repo,session);
-        await updateSyncState({syncing:true});return state;
+      const state = await inSession(session, async () => {
+        const nextState = await activateScope(repo, session);
+        await updateSyncState({ syncing: true, sync_started_at: nowIso() });
+        return nextState;
       });
       const pending = (await repo.listAll()).filter((m) => m.sync_status !== 'synced' && (!m.team_id || m.team_id === session.team.id));
       const canWrite = session.user.role !== 'viewer';
       const assetsUploaded = canWrite && pending.length ? await uploadMissingAssets(pending, session) : 0;
       const pushed = canWrite && pending.length ? await push(repo, pending, session) : 0;
       const { pulled, cursor } = await pull(repo, state.cursor, session);
-      await inSession(session,()=>updateSyncState({ cursor, last_sync_at: nowIso(), last_error: null, syncing: false }));
+      await inSession(session, async () => {
+        await repo.pruneSynced?.(SYNCED_RETENTION_MS);
+        await updateSyncState({ cursor, last_sync_at: nowIso(), last_error: null, syncing: false, sync_started_at: null });
+      });
       return { skipped: null, pushed, pulled, assets_uploaded: assetsUploaded };
     } catch (err) {
-      if(err instanceof SessionChanged) return {skipped:'session_changed',pushed:0,pulled:0,assets_uploaded:0};
+      if (err instanceof SessionChanged) {
+        if (!(await getSession())) await updateSyncState({ syncing: false, sync_started_at: null });
+        return { skipped: 'session_changed', pushed: 0, pulled: 0, assets_uploaded: 0 };
+      }
       const message = err instanceof Error ? err.message : String(err);
       logger.warn('sync failed', message);
-      try { await inSession(session,()=>updateSyncState({ last_error: message, syncing: false })); }
-      catch(changed) { if(!(changed instanceof SessionChanged)) throw changed; }
+      try { await inSession(session, () => updateSyncState({ last_error: message, syncing: false, sync_started_at: null })); }
+      catch (changed) { if (!(changed instanceof SessionChanged)) throw changed; }
       throw err instanceof AppException ? err : new AppException('NETWORK', message);
     }
   }

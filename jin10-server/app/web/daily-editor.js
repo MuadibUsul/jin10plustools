@@ -33,6 +33,9 @@ export function createDailyEditor({ api, onGenerate, canGenerate }) {
   let imageLoadNumber = 0;
   let loadingTimer = null;
   let previousOverflow = '';
+  let pendingPrimaryClick = null;
+  let deferredPreview = false;
+  let commitRejected = false;
 
   const key = (item) => `${item.page}:${item.shape_id}`;
   const round = (value) => Math.round(value * 1000000) / 1000000;
@@ -153,9 +156,20 @@ export function createDailyEditor({ api, onGenerate, canGenerate }) {
   }
 
   function commit(item, changed) {
-    if (!valid(changed)) { setStatus('位置或尺寸超出了页面范围，请重新输入。'); showInspector(item); return; }
+    if (!valid(changed)) {
+      commitRejected = Boolean(pendingPrimaryClick);
+      pendingPrimaryClick = null;
+      setStatus('位置或尺寸超出了页面范围，请重新输入。');
+      showInspector(item);
+      return;
+    }
     const original = originals.get(key(item));
-    if (!original) { setStatus('元素来源已变化，请返回选稿后重新进入。'); return; }
+    if (!original) {
+      commitRejected = Boolean(pendingPrimaryClick);
+      pendingPrimaryClick = null;
+      setStatus('元素来源已变化，请返回选稿后重新进入。');
+      return;
+    }
     const patch = {
       page: item.page, shape_id: item.shape_id, fingerprint: original.fingerprint,
       x: round(changed.x), y: round(changed.y), width: round(changed.width), height: round(changed.height),
@@ -171,6 +185,10 @@ export function createDailyEditor({ api, onGenerate, canGenerate }) {
     if (undo.length > 50) undo.shift();
     redo = [];
     updateActions();
+    if (pendingPrimaryClick) {
+      deferredPreview = true;
+      return;
+    }
     renderPreview();
   }
 
@@ -338,6 +356,7 @@ export function createDailyEditor({ api, onGenerate, canGenerate }) {
 
   async function renderPreview() {
     if (!source || view.hidden) return;
+    deferredPreview = false;
     const call = ++requestNumber;
     ready = false;
     setBusy(true);
@@ -378,6 +397,9 @@ export function createDailyEditor({ api, onGenerate, canGenerate }) {
     pageIndex = 0;
     selected = null;
     textFieldSignature = '';
+    pendingPrimaryClick = null;
+    deferredPreview = false;
+    commitRejected = false;
     previousOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     view.hidden = false;
@@ -389,8 +411,12 @@ export function createDailyEditor({ api, onGenerate, canGenerate }) {
     renderPreview();
   }
 
-  function close() {
-    if (saving) return;
+  function close(force = false) {
+    if (saving && !force) return;
+    saving = false;
+    pendingPrimaryClick = null;
+    deferredPreview = false;
+    commitRejected = false;
     requestNumber += 1;
     imageLoadNumber += 1;
     stopLoading();
@@ -446,9 +472,12 @@ export function createDailyEditor({ api, onGenerate, canGenerate }) {
   }
 
   async function saveImages() {
+    pendingPrimaryClick = null;
+    if (commitRejected) { commitRejected = false; return; }
     if (busy || !source || !ready) return;
     if (!window.showDirectoryPicker) {
       setStatus('当前浏览器不支持直接保存到文件夹，请使用最新版 Chrome 或 Edge。');
+      if (deferredPreview) renderPreview();
       return;
     }
     try {
@@ -473,8 +502,31 @@ export function createDailyEditor({ api, onGenerate, canGenerate }) {
       setStatus(`已保存 ${files.length} 张 JPG 图片到 ${name} 文件夹，按 1.jpg、2.jpg……命名。`);
     } catch (error) {
       if (error.name !== 'AbortError') setStatus(`保存图片失败：${error.message}`);
-    } finally { saving = false; stopLoading(); setBusy(false); }
+    } finally {
+      saving = false;
+      stopLoading();
+      setBusy(false);
+      if (deferredPreview && source && !view.hidden) renderPreview();
+    }
   }
+
+  function markPrimaryIntent(action) {
+    if (busy || !ready || !source) return;
+    commitRejected = false;
+    pendingPrimaryClick = action;
+  }
+  q('preview-save-images').addEventListener('pointerdown', () => markPrimaryIntent('save-images'));
+  q('preview-save-images').addEventListener('mousedown', () => markPrimaryIntent('save-images'));
+  q('preview-generate').addEventListener('pointerdown', () => { if (canGenerate()) markPrimaryIntent('generate'); });
+  q('preview-generate').addEventListener('mousedown', () => { if (canGenerate()) markPrimaryIntent('generate'); });
+  document.addEventListener('mouseup', () => {
+    if (!pendingPrimaryClick && !deferredPreview && !commitRejected) return;
+    setTimeout(() => {
+      pendingPrimaryClick = null;
+      commitRejected = false;
+      if (deferredPreview && !busy && !saving && source && !view.hidden) renderPreview();
+    }, 0);
+  });
 
   q('preview-refresh').addEventListener('click', renderPreview);
   loadingRetry.addEventListener('click', renderPreview);
@@ -485,8 +537,10 @@ export function createDailyEditor({ api, onGenerate, canGenerate }) {
   });
   scroll.addEventListener('scroll', syncPageFromScroll, { passive: true });
   q('preview-save-images').addEventListener('click', saveImages);
-  q('preview-close').addEventListener('click', close);
+  q('preview-close').addEventListener('click', () => close());
   q('preview-generate').addEventListener('click', async () => {
+    pendingPrimaryClick = null;
+    if (commitRejected) { commitRejected = false; return; }
     if (busy || !ready || !source || !canGenerate()) return;
     saving = true;
     setBusy(true);
@@ -500,6 +554,7 @@ export function createDailyEditor({ api, onGenerate, canGenerate }) {
     } finally {
       saving = false;
       setBusy(false);
+      if (deferredPreview && source && !view.hidden) renderPreview();
     }
   });
   q('editor-undo').addEventListener('click', () => timeTravel(undo, redo));
@@ -521,6 +576,8 @@ export function createDailyEditor({ api, onGenerate, canGenerate }) {
     const item = current();
     if (!item || busy) return;
     if (['editor-x', 'editor-y', 'editor-width', 'editor-height'].some((name) => fields[name].value.trim() === '')) {
+      commitRejected = Boolean(pendingPrimaryClick);
+      pendingPrimaryClick = null;
       setStatus('位置和尺寸不能留空。');
       showInspector(item);
       return;

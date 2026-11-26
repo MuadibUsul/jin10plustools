@@ -179,8 +179,11 @@ def generate(category,day,root,run_id,action='produce',render_input=None):
         if action!='render':
             for name,digest in previous['image_sha256'].items():
                 if hashlib.sha256((source/name).read_bytes()).hexdigest()!=digest:raise ValueError('缓存图片损坏，请从快照重建')
-        for name in ('plot-data.json','liquidity-snapshot.json','source.json','oil-source.json','oil-previous-source.json','buffett-plot-data.json','erp-plot-data.json','us-snapshot.json','us-structure-snapshot.json','ai-compute-source.json'):
+        for name in ('plot-data.json','liquidity-snapshot.json','source.json','turnover-calendar.json','oil-source.json','oil-previous-source.json','buffett-plot-data.json','erp-plot-data.json','us-snapshot.json','us-structure-snapshot.json','ai-compute-source.json'):
             if (source/name).is_file():shutil.copy2(source/name,out/name)
+        for extra in sorted(source.glob('oil-previous-source-*.json')) + sorted(source.glob('volume-raw-page-*.json')):
+            if extra.is_file() and extra.stat().st_size <= 4_000_000:
+                shutil.copy2(extra, out/extra.name)
         if action in ('produce','ai'):
             payload=dict(previous)
             signature=pipeline_signature(category)
@@ -203,6 +206,9 @@ def generate(category,day,root,run_id,action='produce',render_input=None):
                 configured=bool((os.getenv('AI_API_KEY') or os.getenv('DEEPSEEK_API_KEY')) and model)
                 ai=previous.get('deepseek',{})
                 if action=='produce' and (not configured or (ai.get('status')=='ok' and ai.get('model')==model and (ai.get('provider') or 'deepseek')==provider)):
+                    for name in payload.get('images', ()):
+                        if (source/name).is_file() and (source/name).resolve()!=(out/name).resolve():
+                            shutil.copy2(source/name,out/name)
                     record(out,4,'同日期快照校验通过，复用已保存的稿件与图片')
                     explain_result(out,category,payload)
                     return payload
@@ -215,10 +221,12 @@ def generate(category,day,root,run_id,action='produce',render_input=None):
         payload=ADAPTERS[category](day,out,state,refresh=action=='refresh')
     if action=='render' and previous:
         # Image-only work is bound to the chosen edition, not the date cache.
-        for key in ('title','dynamic_body','facts','fixed_notes','chart_notes','editorial','skill',
+        for key in ('title','dynamic_body','facts','fixed_notes','editorial','skill',
                     'rule_copy','body_template_custom','render_source_version_id','warnings','data_reliability',
                     'data_date_policy','requested_data_date','fund_data_dates'):
             if key in previous:payload[key]=previous[key]
+        if 'chart_notes' not in payload and 'chart_notes' in previous:
+            payload['chart_notes']=previous['chart_notes']
         payload['pipeline']=previous.get('pipeline','')
     else:
         payload['pipeline']=pipeline_signature(category)

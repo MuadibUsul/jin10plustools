@@ -18,6 +18,9 @@ from sqlalchemy.types import TypeDecorator
 import zlib
 
 
+_MAX_DECOMPRESSED_EVIDENCE_BYTES = 128 * 1024 * 1024
+
+
 class CompressedEvidence(TypeDecorator):
     """Lossless storage encoding; evidence consumers always receive original bytes."""
     impl = LargeBinary
@@ -25,7 +28,13 @@ class CompressedEvidence(TypeDecorator):
     def process_bind_param(self, value, dialect):
         return b'PLUSZ1\0'+zlib.compress(value,6) if value is not None else None
     def process_result_value(self, value, dialect):
-        return zlib.decompress(value[7:]) if value is not None and value.startswith(b'PLUSZ1\0') else value
+        if value is None or not value.startswith(b'PLUSZ1\0'):
+            return value
+        decompressor = zlib.decompressobj()
+        out = decompressor.decompress(value[7:], _MAX_DECOMPRESSED_EVIDENCE_BYTES + 1)
+        if len(out) > _MAX_DECOMPRESSED_EVIDENCE_BYTES or decompressor.unconsumed_tail:
+            raise ValueError('Compressed evidence exceeds maximum allowed uncompressed size')
+        return out + decompressor.flush()
 
 #: PostgreSQL 用 JSONB，测试用的 SQLite 退回 JSON
 JsonType = JSON().with_variant(JSONB(), "postgresql")
@@ -173,6 +182,7 @@ class Issue(Base):
     """一期生成的日报（选中的素材、页数、生成文件）"""
 
     __tablename__ = "issues"
+    __table_args__ = (Index("ix_issues_team_created", "team_id", "created_at"),)
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     team_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("teams.id", ondelete="CASCADE"), index=True)
@@ -267,7 +277,12 @@ class BriefVersion(Base):
 
 class BriefJob(Base):
     __tablename__ = 'brief_jobs'
-    __table_args__ = (Index('uq_brief_job_key', 'dedupe_key', unique=True), Index('ix_brief_job_queue', 'status', 'next_attempt_at'))
+    __table_args__ = (
+        Index('uq_brief_job_key', 'dedupe_key', unique=True),
+        Index('ix_brief_job_queue', 'status', 'next_attempt_at'),
+        Index('ix_brief_jobs_team_status', 'team_id', 'status'),
+        Index('ix_brief_jobs_team_date_cat', 'team_id', 'issue_date', 'category'),
+    )
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     team_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('teams.id', ondelete='CASCADE'), index=True)
     issue_date: Mapped[dt.date] = mapped_column(Date)
@@ -696,10 +711,10 @@ class AIComputeObservation(Base):
     team_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('teams.id', ondelete='CASCADE'))
     kind: Mapped[str] = mapped_column(String(20))
     date: Mapped[dt.date] = mapped_column(Date)
-    token_price: Mapped[float | None] = mapped_column(Numeric(20, 6))
-    a100: Mapped[float | None] = mapped_column(Numeric(20, 6))
-    h100: Mapped[float | None] = mapped_column(Numeric(20, 6))
-    b200: Mapped[float | None] = mapped_column(Numeric(20, 6))
+    token_price: Mapped[Decimal | None] = mapped_column(Numeric(20, 6))
+    a100: Mapped[Decimal | None] = mapped_column(Numeric(20, 6))
+    h100: Mapped[Decimal | None] = mapped_column(Numeric(20, 6))
+    b200: Mapped[Decimal | None] = mapped_column(Numeric(20, 6))
     source: Mapped[str] = mapped_column(String(200), default='Silicon Data')
     source_status: Mapped[str | None] = mapped_column(String(100))
     public_display: Mapped[dict | None] = mapped_column(JSON)
@@ -739,6 +754,7 @@ class BriefDataPoint(Base):
     __table_args__ = (
         Index('uq_brief_data_point_revision','team_id','category','series','method','data_date','revision',unique=True),
         Index('ix_brief_data_points_team_date','team_id','data_date'),
+        Index('ix_brief_data_points_coverage','team_id','category','data_date'),
     )
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True,default=uuid.uuid4)
     team_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('teams.id',ondelete='CASCADE'))
@@ -763,6 +779,7 @@ class BriefDataCheck(Base):
     __table_args__ = (
         Index('uq_brief_data_check_attempt','job_id','attempt',unique=True),
         Index('ix_brief_data_checks_team_date','team_id','data_date'),
+        Index('ix_brief_data_checks_lookup','team_id','category','data_date','created_at'),
     )
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True,default=uuid.uuid4)
     team_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('teams.id',ondelete='CASCADE'))

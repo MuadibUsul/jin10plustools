@@ -1,3 +1,4 @@
+// @vitest-environment node
 import {beforeEach,expect,it,vi} from 'vitest';
 import {LocalMaterialRepository} from '@/services/repository/LocalMaterialRepository';
 import type {NewsMaterial} from '@/types/material';

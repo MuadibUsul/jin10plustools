@@ -51,6 +51,13 @@ SYSTEM = """你是一名实时财经新闻背景挖掘与因果分析助手。�
 三段之间空一行；不要输出JSON、YAML、代码围栏、表格、列表或来源清单。来源自然融入正文，不展示内部检索过程。避免“总体来看”“值得注意的是”“这意味着”“对投资者而言”“后续需关注”“建议关注”“不是……而是……”等空话；不要先立错误观点再反驳，不要堆叠“如果……那么……”。信息不足时宁可简短。"""
 
 
+_SAFE_XML_PARSER = etree.XMLParser(resolve_entities=False, no_network=True, huge_tree=False)
+
+
+def _numbers(text: str) -> set[str]:
+    return {item.replace(",", "") for item in re.findall(r"\d[\d,]*(?:\.\d+)?", text)}
+
+
 def _search_context(text: str) -> tuple[list[dict], list[str]]:
     """Best-effort public news search; failures never block the annotation."""
     query = re.sub(r"\s+", " ", text).strip()[:120]
@@ -59,11 +66,18 @@ def _search_context(text: str) -> tuple[list[dict], list[str]]:
     url = ("https://news.google.com/rss/search?q=" + quote(query) +
            "&hl=zh-CN&gl=CN&ceid=CN:zh-Hans")
     try:
-        with httpx.Client(timeout=10, follow_redirects=True,
+        with httpx.Client(timeout=10, follow_redirects=True, trust_env=False,
                           headers={"User-Agent": "Mozilla/5.0 (compatible; PLUS-NewsSkill/1.0)"}) as client:
-            response = client.get(url)
-            response.raise_for_status()
-        root = etree.fromstring(response.content)
+            with client.stream("GET", url) as response:
+                response.raise_for_status()
+                chunks, total = [], 0
+                for chunk in response.iter_bytes():
+                    total += len(chunk)
+                    if total > 524_288:
+                        raise ValueError("RSS 响应过大")
+                    chunks.append(chunk)
+                raw_xml = b"".join(chunks)
+        root = etree.fromstring(raw_xml, parser=_SAFE_XML_PARSER)
         items = []
         for node in root.xpath("//item")[:8]:
             title = (node.findtext("title") or "").strip()
@@ -162,7 +176,7 @@ def analyze(team, flash: str, source_url: str = "") -> dict:
     title = "Plus注解｜" + re.sub(r"\s+", " ", flash).strip()[:50]
     quality = review_text(team, target="annotation", title=title, body=body)
     if quality["status"] == "review":
-        original_numbers = set(re.findall(r"\d[\d,]*(?:\.\d+)?", body))
+        original_numbers = _numbers(body)
         revised = re.sub(r"^```(?:text)?\s*|\s*```$", "",
                          _rewrite_annotation(ai, flash, answer, quality["issues"])).strip()
         revised_match = re.fullmatch(r"前因：\s*(.+?)\s*后果：\s*(.+?)\s*补充说明：\s*(.+)",
@@ -175,7 +189,7 @@ def analyze(team, flash: str, source_url: str = "") -> dict:
                                   for name in ("前因", "后果", "补充说明"))
         revised_total = len(re.sub(r"\s", "", "".join(revised_sections.values())))
         if (revised_total > 600
-                or set(re.findall(r"\d[\d,]*(?:\.\d+)?", revised_body)) != original_numbers
+                or _numbers(revised_body) != original_numbers
                 or review_text(team, target="annotation", title=title,
                                body=revised_body)["status"] != "no_flags"):
             raise AnnotationAIError("注解自动改写未通过数字或文字质量校验")

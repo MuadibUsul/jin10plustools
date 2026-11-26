@@ -150,11 +150,11 @@ def token_cost(day, out, state, refresh=False):
                      and all(value is not None for value in tail_values + prior_values)
                      and (max(tail_values) - min(tail_values)) / _decimal(latest['token_price']) <= Decimal('0.01')
                      and max(tail_values) - min(tail_values) < max(prior_values) - min(prior_values))
-    peak = max(valid, key=lambda row: (row['token_price'], row['date']))
+    peak = max(valid, key=lambda row: (_decimal(row['token_price']), row['date']))
     price = _decimal(latest['token_price'])
     earlier = [row for row in valid if row['date'] < actual_day]
     if earlier:
-        prior_peak = max(earlier, key=lambda row: (row['token_price'], row['date']))
+        prior_peak = max(earlier, key=lambda row: (_decimal(row['token_price']), row['date']))
         prior_peak_price = _decimal(prior_peak['token_price'])
         if price > prior_peak_price:
             peak_relation, drawdown_pct = 'above', ''
@@ -175,11 +175,14 @@ def token_cost(day, out, state, refresh=False):
     price_text = public['price'] if public else entered['price'] if entered else f'{price:.4f}'
     body = f"截至{actual_day}，Token支出价格指数报{price_text}美元/百万Token"
     if public:
-        body += f"，官网公开页展示的七日变化为{title_dir}{abs(Decimal(weekly)):.1f}%"
+        wval = abs(Decimal(weekly))
+        body += f"，官网公开页展示的七日变化为{title_dir}" + (f"（{wval:.1f}%）" if wval == 0 else f"{wval:.1f}%")
     elif entered_week is not None:
-        body += f"，人工录入的七日变化为{title_dir}{abs(Decimal(weekly))}%"
+        wval = abs(Decimal(weekly))
+        body += f"，人工录入的七日变化为{title_dir}" + (f"（{wval}%）" if wval == 0 else f"{wval}%")
     elif weekly:
-        body += f"，较七个自然日前{title_dir}{abs(Decimal(weekly)):.2f}%"
+        wval = abs(Decimal(weekly))
+        body += f"，较七个自然日前{title_dir}" + (f"（{wval:.2f}%）" if wval == 0 else f"{wval:.2f}%")
     else:
         body += "，七个自然日前的基准值缺失，本次不报告周变化"
     if public or entered:
@@ -267,9 +270,9 @@ def gpu_rental(day, out, state, refresh=False):
     warnings = []
     for key in ('a100', 'h100', 'b200'):
         values = [row for row in rows if row[key] is not None and row['date'] < actual_day]
-        if not values:
-            raise ValueError(f'{key} 缺少历史峰值数据')
-        peaks[key] = max(values, key=lambda row: (row[key], row['date']))
+        peaks[key] = max(values, key=lambda row: (_decimal(row[key]), row['date'])) if values else None
+    if peaks['b200'] is None:
+        warnings.append('尚无更早历史数据，本期未计算历史高点对比')
     if actual_day != day:
         warnings.append(f"使用最新可用完整三卡日 {actual_day}，目标数据日 {day} 尚无更新")
     if public_mode:
@@ -294,30 +297,44 @@ def gpu_rental(day, out, state, refresh=False):
         body += '。'
         for label, key in (('B200', 'b200'), ('H100', 'h100'), ('A100', 'a100')):
             change = changes[key]
+            cval = abs(Decimal(change))
             origin = ('依据官网历史价格计算' if key in history_week else '官网展示') if public_mode else '人工录入'
-            body += f'{label}{origin}的七日变化为{_direction(change)}{abs(Decimal(change))}%；'
+            suffix = f"（{cval}%）" if cval == 0 else f"{cval}%"
+            body += f'{label}{origin}的七日变化为{_direction(change)}{suffix}；'
         body = body.rstrip('；') + '。'
     elif previous:
         body += "。"
         for label, key in (('B200', 'b200'), ('H100', 'h100'), ('A100', 'a100')):
             change = changes[key]
-            body += f"{label}较七个自然日前{'上涨' if change and change.startswith('+') and change != '+0.00' else '下跌' if change and change.startswith('-') and change != '-0.00' else '持平'}{abs(Decimal(change)):.2f}%；" if change else f"{label}周变化基准缺失；"
+            if change:
+                cval = abs(Decimal(change))
+                direction = '上涨' if Decimal(change) > 0 else '下跌' if Decimal(change) < 0 else '持平'
+                suffix = f"（{cval:.2f}%）" if cval == 0 else f"{cval:.2f}%"
+                body += f"{label}较七个自然日前{direction}{suffix}；"
+            else:
+                body += f"{label}周变化基准缺失；"
         body = body.rstrip('；') + '。'
     else:
         body += "；周变化基准缺失。"
     peak = peaks['b200']
-    peak_price = _decimal(peak['b200'])
-    latest_b200 = _decimal(latest['b200'])
-    if latest_b200 > peak_price:
-        b200_peak_relation, b200_gap_pct = 'above', ''
-        body += f"B200处于已收录数据新高（此前高点{peak_price:.2f}美元，{peak['date']}）。"
-    elif latest_b200 == peak_price:
-        b200_peak_relation, b200_gap_pct = 'tie', ''
-        body += f"B200与已收录数据高点{peak_price:.2f}美元持平（{peak['date']}）。"
+    if peak is not None:
+        peak_price = _decimal(peak['b200'])
+        latest_b200 = _decimal(latest['b200'])
+        if latest_b200 > peak_price:
+            b200_peak_relation, b200_gap_pct = 'above', ''
+            body += f"B200处于已收录数据新高（此前高点{peak_price:.2f}美元，{peak['date']}）。"
+        elif latest_b200 == peak_price:
+            b200_peak_relation, b200_gap_pct = 'tie', ''
+            body += f"B200与已收录数据高点{peak_price:.2f}美元持平（{peak['date']}）。"
+        else:
+            b200_gap_pct = f'{(peak_price - latest_b200) / peak_price * 100:.2f}'
+            b200_peak_relation = 'below'
+            body += f"B200较已收录数据高点{peak_price:.2f}美元低{b200_gap_pct}%。"
+        b200_peak_text = f"{peak_price:.2f}"
+        b200_peak_date = peak['date']
     else:
-        b200_gap_pct = f'{(peak_price - latest_b200) / peak_price * 100:.2f}'
-        b200_peak_relation = 'below'
-        body += f"B200较已收录数据高点{peak_price:.2f}美元低{b200_gap_pct}%。"
+        b200_peak_relation, b200_gap_pct = '', ''
+        b200_peak_text, b200_peak_date = '', ''
     chart_rows = [row for row in rows if row['date']<=actual_day]
     (out/'ai-compute-source.json').write_text(json.dumps(rows,ensure_ascii=False,default=str),encoding='utf-8')
     notes = published_notes('gpu_rental')
@@ -330,8 +347,8 @@ def gpu_rental(day, out, state, refresh=False):
             'a100': prices['a100'], 'h100': prices['h100'],
             'b200': prices['b200'], 'previous_date': '' if public_mode or manual_week else previous['date'] if previous else '',
             'a100_change_pct': changes['a100'] or '', 'h100_change_pct': changes['h100'] or '',
-            'b200_change_pct': changes['b200'] or '', 'b200_peak': f"{_decimal(peaks['b200']['b200']):.2f}",
-            'b200_peak_date': peaks['b200']['date'], 'b200_peak_relation': b200_peak_relation,
+            'b200_change_pct': changes['b200'] or '', 'b200_peak': b200_peak_text,
+            'b200_peak_date': b200_peak_date, 'b200_peak_relation': b200_peak_relation,
             'b200_gap_pct': b200_gap_pct,
             'source': '编辑人工录入' if manual_mode else 'Silicon Data A100/H100/B200 NeoCloud',
             'weekly_source': ('public_visible_history_mixed' if history_week else 'public_visible_summary') if public_mode else 'manual_entry' if manual_week else 'calculated_from_seven_day_baseline',

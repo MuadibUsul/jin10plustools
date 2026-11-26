@@ -85,9 +85,10 @@ def extract(category,folder,payload=None,*,only_file=None):
             for row in raw.get('quotes',{}).get('rows',[]):
                 if row['product']==series and row.get('weighted_rate') not in (None,''):
                     add(series,[{'date':raw['quotes']['quote_date'],'weighted_rate':row['weighted_rate']}], method)
-    elif category=='oil_etf' and payload:
-        for fund in payload.get('facts',{}).get('funds',[]):
-            add(fund['ticker'],[{'date':fund.get('data_date') or payload['data_date'],**fund}],'issuer_futures_and_swap_estimate_v1')
+    elif category=='oil_etf':
+        oil_payload = payload if (payload and 'facts' in payload) else (load('result.json') or payload or {})
+        for fund in (oil_payload.get('facts') or {}).get('funds',[]):
+            add(fund['ticker'],[{'date':fund.get('data_date') or oil_payload['data_date'],**fund}],'issuer_futures_and_swap_estimate_v1')
     elif category=='us_barometer':
         raw=load('us-collected.json') or load('us-snapshot.json') or {}
         add('wilshire',raw.get('wilshire',[]),'yahoo_w5000_v1')
@@ -175,7 +176,8 @@ def link_sources(db,job):
 def read_series(db,team_id,category,series,start,end,*,as_of=None,limit=5000):
     """Latest per date and method from evidence actually collected by as_of."""
     filters=[BriefDataPoint.team_id==team_id,BriefDataPoint.category==category,
-        BriefDataPoint.series==series,BriefDataPoint.data_date>=start,BriefDataPoint.data_date<=end]
+        BriefDataPoint.series==series,BriefDataPoint.quality_status=='accepted',
+        BriefDataPoint.data_date>=start,BriefDataPoint.data_date<=end]
     if as_of is not None:filters.append(BriefDataPoint.collected_at<=as_of)
     ranked=select(BriefDataPoint,func.row_number().over(
         partition_by=(BriefDataPoint.data_date,BriefDataPoint.method),
@@ -216,7 +218,8 @@ def coverage(db,team_id,category,target):
     except CalendarUnavailable as exc:
         wanted=None;limitations.append(str(exc))
     rows=list(db.scalars(select(BriefDataPoint).where(BriefDataPoint.team_id==team_id,
-        BriefDataPoint.category==category,BriefDataPoint.data_date>=start,BriefDataPoint.data_date<=target).order_by(
+        BriefDataPoint.category==category,BriefDataPoint.quality_status=='accepted',
+        BriefDataPoint.data_date>=start,BriefDataPoint.data_date<=target).order_by(
         BriefDataPoint.collected_at.desc(),BriefDataPoint.revision.desc())))
     latest={}
     for row in rows:latest.setdefault((row.series,row.method,row.data_date),row)

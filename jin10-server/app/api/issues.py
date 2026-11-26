@@ -70,14 +70,26 @@ def _team_material(db: DbSession, user: CurrentUser, material_id: uuid.UUID) -> 
 
 
 def _editable_material(db, user, material_id, match):
-    material=db.scalar(select(Material).where(Material.id==material_id,
-        Material.team_id==user.team_id,Material.deleted_at.is_(None)).with_for_update())
-    if material is None:raise HTTPException(404,'素材不存在')
-    if not match:raise HTTPException(428,'请刷新素材后再保存修改')
-    try:stamp=dt.datetime.fromisoformat(match.strip('"').replace('Z','+00:00'))
-    except ValueError:raise HTTPException(422,'素材版本格式不正确') from None
-    def utc(value):return (value.replace(tzinfo=dt.UTC) if value.tzinfo is None else value.astimezone(dt.UTC))
-    if utc(stamp)!=utc(material.updated_at):raise HTTPException(409,'素材已由其他成员更新，请刷新核对后再保存')
+    stmt = select(Material).where(
+        Material.id == material_id,
+        Material.team_id == user.team_id,
+        Material.deleted_at.is_(None),
+    )
+    if db.get_bind().dialect.name == 'postgresql':
+        stmt = stmt.with_for_update()
+    material = db.scalar(stmt)
+    if material is None:
+        raise HTTPException(404, '素材不存在')
+    if not match:
+        raise HTTPException(428, '请刷新素材后再保存修改')
+    try:
+        stamp = dt.datetime.fromisoformat(match.strip('"').replace('Z', '+00:00'))
+    except ValueError:
+        raise HTTPException(422, '素材版本格式不正确') from None
+    def utc(value):
+        return value.replace(tzinfo=dt.UTC) if value.tzinfo is None else value.astimezone(dt.UTC)
+    if utc(stamp) != utc(material.updated_at):
+        raise HTTPException(409, '素材已由其他成员更新，请刷新核对后再保存')
     return material
 
 
@@ -117,12 +129,20 @@ def reset_ai_layout(
     days: Annotated[int, Query(ge=1, le=14)] = 1,
 ) -> list[MaterialOut]:
     """恢复 AI 初始排版：取消编辑手动指定的栏目，回到 JEV 分类结果"""
-    rows = pool(db, user, day, days)
+    end_day = day or dt.datetime.now(BEIJING).date()
+    start = dt.datetime.combine(end_day - dt.timedelta(days=days - 1), dt.time.min, BEIJING).astimezone(dt.UTC)
+    end = dt.datetime.combine(end_day + dt.timedelta(days=1), dt.time.min, BEIJING).astimezone(dt.UTC)
+    locked = db.scalars(
+        select(Material).where(
+            Material.team_id == user.team_id,
+            Material.deleted_at.is_(None),
+            Material.collect_time >= start,
+            Material.collect_time < end,
+            Material.category_locked.is_(True),
+        )
+    )
     now = utcnow()
-    for out in rows:
-        material = db.get(Material, out.id)
-        if material is None or not material.category_locked:
-            continue
+    for material in locked:
         ai_choice = ((material.ai_details or {}).get("section") or {}).get("choice")
         material.category_locked = False
         material.category = ai_choice
@@ -193,7 +213,10 @@ def download(
     rel = issue.pdf_path if format == "pdf" else issue.pptx_path
     if rel is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="该日报没有 PDF，请下载 PPT")
-    path = get_settings().storage_dir / rel
+    root = get_settings().storage_dir.resolve()
+    path = (root / rel).resolve()
+    if not path.is_relative_to(root) or not path.is_file():
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="日报文件不存在")
     filename = f"PLUS日报-{issue.issue_date:%Y-%m-%d}.{format}"
     media = "application/pdf" if format == "pdf" else (
         "application/vnd.openxmlformats-officedocument.presentationml.presentation"

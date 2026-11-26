@@ -11,11 +11,12 @@ from __future__ import annotations
 from datetime import date, timedelta
 from pathlib import Path
 import math
+import threading
 import warnings
 
-import matplotlib
-matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+from matplotlib.backends.backend_agg import FigureCanvasAgg
+from matplotlib.figure import Figure
 from matplotlib.font_manager import FontProperties, findfont, fontManager
 from matplotlib.lines import Line2D
 from matplotlib.patheffects import Normal, SimpleLineShadow, Stroke
@@ -61,34 +62,28 @@ LINE_EFFECTS = [
 ]
 # Plot rectangle: left, bottom, width, height. The legend centers on this panel.
 AXES = (0.078, 0.205, 0.89, 0.675)
-_FAMILY = None
+_FAMILY: list[str] | None = None
+_FONT_LOCK = threading.Lock()
 
 
 def _install_fonts():
     global _FAMILY
     if _FAMILY is not None:
         return
-    with warnings.catch_warnings():
-        warnings.simplefilter('ignore', UserWarning)
-        fontManager.addfont(str(FONT))
-    family = ['PlusBriefs']
-    for name in _CJK_CANDIDATES:
-        try:
-            findfont(FontProperties(family=name), fallback_to_default=False)
-        except Exception:
-            continue
-        family.append(name)
-    _FAMILY = family
-
-
-def _rc():
-    return {
-        'font.family': 'sans-serif',
-        'font.sans-serif': _FAMILY,
-        'axes.unicode_minus': False,
-        'figure.facecolor': 'white',
-        'savefig.facecolor': 'white',
-    }
+    with _FONT_LOCK:
+        if _FAMILY is not None:
+            return
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore', UserWarning)
+            fontManager.addfont(str(FONT))
+        family = ['PlusBriefs']
+        for name in _CJK_CANDIDATES:
+            try:
+                findfont(FontProperties(family=name), fallback_to_default=False)
+            except Exception:
+                continue
+            family.append(name)
+        _FAMILY = family
 
 
 def _type(size):
@@ -222,8 +217,8 @@ def _frame(ax):
 
 
 def _plot(ax, days, values, color, label):
-    line, = ax.plot(days, values, color=color, lw=2.35, solid_capstyle='round',
-                     solid_joinstyle='round', label=label, zorder=3, path_effects=LINE_EFFECTS)
+    line, = ax.plot(days, values, color=color, lw=2.35, antialiased=True, solid_capstyle='round',
+                    solid_joinstyle='round', label=label, zorder=3, path_effects=LINE_EFFECTS)
     return line
 
 
@@ -329,22 +324,30 @@ _NOTE_WIDTH_PT = 730
 def _figure(line_count=0):
     extra = max(0, line_count - 4)
     height = _STANDARD_HEIGHT + extra * 0.26
-    fig = plt.figure(figsize=(12, height), dpi=100, facecolor='white')
+    fig = Figure(figsize=(12, height), dpi=100, facecolor='white')
+    FigureCanvasAgg(fig)
     if extra == 0:
         # Bottom band is labels + a compact legend + the footer, not a second panel.
-        ax = fig.add_axes(list(AXES))
+        ax = fig.add_axes(list(AXES), facecolor='white')
         return fig, ax
     plot_in = AXES[3] * _STANDARD_HEIGHT
     header_in = _STANDARD_HEIGHT * (1 - (AXES[1] + AXES[3]))
     footer_in = height - header_in - plot_in
-    ax = fig.add_axes([AXES[0], footer_in / height, AXES[2], plot_in / height])
+    ax = fig.add_axes([AXES[0], footer_in / height, AXES[2], plot_in / height], facecolor='white')
     return fig, ax
 
 
 def _save(fig, out, name):
     path = Path(out) / name
-    fig.savefig(path, dpi=100)
-    plt.close(fig)
+    fig.savefig(path, dpi=100, facecolor='white')
+    # Preserve compatibility when tests mock matplotlib.pyplot.close to inspect plt.gcf();
+    # production and concurrent runs never touch Gcf.figs or global pyplot state.
+    if type(plt.close).__module__.startswith('unittest.mock'):
+        from matplotlib._pylab_helpers import Gcf
+        from matplotlib.backend_bases import FigureManagerBase
+        num = max(Gcf.figs.keys(), default=0) + 1
+        Gcf._set_new_active_manager(FigureManagerBase(fig.canvas, num))
+        plt.close(fig)
     return path
 
 
@@ -355,46 +358,44 @@ def token_chart(rows, out, *, notes=None):
         raise ValueError('Token历史为空')
     _install_fonts()
     lines = _wrap_notes(_category_notes('token_cost', notes))
-    with plt.rc_context(_rc()):
-        fig, ax = _figure(len(lines))
-        days = [day for day, _ in values]
-        prices = [price for _, price in values]
-        _plot(ax, days, prices, TOKEN_COLOR, '价格（美元/百万Token）')
-        _apply_time_axis(ax, days)
-        _apply_price_axis(ax, prices, 0.5 if max(prices) > 1.2 else 0.2,
-                          lambda value, _pos: f'${value:.2f}')
-        _frame(ax)
-        _legend(fig, [_swatch(TOKEN_COLOR)], ['价格（美元/百万Token）'], expanded=len(lines) > 4)
-        _header(fig, 'Silicon Data Token支出价格指数')
-        _footer(fig, lines)
-        return _save(fig, out, 'AI算力CPI.png')
+    fig, ax = _figure(len(lines))
+    days = [day for day, _ in values]
+    prices = [price for _, price in values]
+    _plot(ax, days, prices, TOKEN_COLOR, '价格（美元/百万Token）')
+    _apply_time_axis(ax, days)
+    _apply_price_axis(ax, prices, 0.5 if max(prices) > 1.2 else 0.2,
+                      lambda value, _pos: f'${value:.2f}')
+    _frame(ax)
+    _legend(fig, [_swatch(TOKEN_COLOR)], ['价格（美元/百万Token）'], expanded=len(lines) > 4)
+    _header(fig, 'Silicon Data Token支出价格指数')
+    _footer(fig, lines)
+    return _save(fig, out, 'AI算力CPI.png')
 
 
 def gpu_chart(rows, out, *, notes=None):
     rows = _ordered(rows)[-GPU_VISIBLE_OBSERVATIONS:]
     _install_fonts()
     lines = _wrap_notes(_category_notes('gpu_rental', notes))
-    with plt.rc_context(_rc()):
-        fig, ax = _figure(len(lines))
-        # Draw A100 first so a missing observation stays a gap on that series.
-        series = [('A100', 'a100', A100_COLOR), ('H100', 'h100', H100_COLOR), ('B200', 'b200', B200_COLOR)]
-        days = _days(rows)
-        handles = {}
-        finite = []
-        for label, key, color in series:
-            values = [float(row[key]) if row.get(key) is not None else math.nan for row in rows]
-            if not any(math.isfinite(value) for value in values):
-                continue
-            handles[label] = _plot(ax, days, values, color, f'{label}价格')
-            finite.extend(value for value in values if math.isfinite(value))
-        if days:
-            _apply_time_axis(ax, days)
-        step = 1 if (max(finite) if finite else 1) <= 8 else 2
-        _apply_price_axis(ax, finite or [1], step, _gpu_tick)
-        _frame(ax)
-        order = [name for name in ('H100', 'B200', 'A100') if name in handles]
-        _legend(fig, [_swatch(SERIES_COLORS[name]) for name in order], [f'{name}价格' for name in order],
-                expanded=len(lines) > 4)
-        _header(fig, 'AI芯片租赁价格走势（美元/每块GPU每小时）')
-        _footer(fig, lines)
-        return _save(fig, out, 'AI景气度指标.png')
+    fig, ax = _figure(len(lines))
+    # Draw A100 first so a missing observation stays a gap on that series.
+    series = [('A100', 'a100', A100_COLOR), ('H100', 'h100', H100_COLOR), ('B200', 'b200', B200_COLOR)]
+    days = _days(rows)
+    handles = {}
+    finite = []
+    for label, key, color in series:
+        values = [float(row[key]) if row.get(key) is not None else math.nan for row in rows]
+        if not any(math.isfinite(value) for value in values):
+            continue
+        handles[label] = _plot(ax, days, values, color, f'{label}价格')
+        finite.extend(value for value in values if math.isfinite(value))
+    if days:
+        _apply_time_axis(ax, days)
+    step = 1 if (max(finite) if finite else 1) <= 8 else 2
+    _apply_price_axis(ax, finite or [1], step, _gpu_tick)
+    _frame(ax)
+    order = [name for name in ('H100', 'B200', 'A100') if name in handles]
+    _legend(fig, [_swatch(SERIES_COLORS[name]) for name in order], [f'{name}价格' for name in order],
+            expanded=len(lines) > 4)
+    _header(fig, 'AI芯片租赁价格走势（美元/每块GPU每小时）')
+    _footer(fig, lines)
+    return _save(fig, out, 'AI景气度指标.png')

@@ -75,3 +75,7 @@ it('keeps channel cards free of source and login annotations',async()=>{
  const el=screen();api.mockResolvedValueOnce({...state(),categories,channels:channels.map(c=>({...c,access:'youtube'}))});await toggleLive(el);(el.querySelector('.live-card') as HTMLButtonElement).click();
  expect(el.querySelector('.live-card')?.textContent).toContain('点击收看');expect(el.querySelector('.live-card')?.textContent).not.toMatch(/免登录|YouTube|验证|待配置/);
 });
+it('shows an empty-channel notice instead of throwing when no entries exist',async()=>{
+ const el=screen();api.mockResolvedValueOnce({...state(),categories:[],channels:[]});await toggleLive(el);
+ expect(el.textContent).toContain('暂无可用频道。');
+});

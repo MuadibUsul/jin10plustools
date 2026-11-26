@@ -6,6 +6,7 @@ named values; arbitrary Python expressions or attribute access are rejected.
 """
 from __future__ import annotations
 
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 import string
 import re
 from typing import Any
@@ -29,11 +30,21 @@ def all_config(team) -> dict[str, dict]:
     return {category: _config(team, category) for category in CATEGORIES}
 
 
-def _pct2(value) -> str:
+def _dec(value) -> Decimal | None:
+    if isinstance(value, bool) or value in (None, ""):
+        return None
     try:
-        return f"{float(value):.2f}"
-    except (TypeError, ValueError):
+        parsed = Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError):
+        return None
+    return parsed if parsed.is_finite() else None
+
+
+def _pct2(value) -> str:
+    parsed = _dec(value)
+    if parsed is None:
         return ""
+    return f"{parsed.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP):.2f}"
 
 
 def _values(category: str, payload: dict) -> dict[str, Any]:
@@ -69,14 +80,12 @@ def _values(category: str, payload: dict) -> dict[str, Any]:
             "low_change_pp": facts.get("low_change_pp", ""), "high_change_pp": facts.get("high_change_pp", ""),
             "low_threshold": facts.get("low_threshold", ""), "high_threshold": facts.get("high_threshold", ""),
         })
-        try:
-            low, old_low = float(facts.get("low_ma9")), float(facts.get("previous_low_ma9"))
-            high, old_high = float(facts.get("high_ma9")), float(facts.get("previous_high_ma9"))
+        low, old_low = _dec(facts.get("low_ma9")), _dec(facts.get("previous_low_ma9"))
+        high, old_high = _dec(facts.get("high_ma9")), _dec(facts.get("previous_high_ma9"))
+        if None not in (low, old_low, high, old_high):
             values["low_direction"] = "降至" if low < old_low else "升至" if low > old_low else "维持"
             values["high_direction"] = "降至" if high < old_high else "升至" if high > old_high else "维持"
             values["threshold_side"] = "低于" if high < 17 else "高于" if high > 17 else "等于"
-        except (TypeError, ValueError):
-            pass
     elif category == "valuation":
         latest = facts.get("erp_latest") or {}
         previous = facts.get("erp_previous") or {}
@@ -107,22 +116,20 @@ def _values(category: str, payload: dict) -> dict[str, Any]:
     elif category == "oil_etf":
         funds = {fund.get("ticker"): fund for fund in facts.get("funds") or [] if isinstance(fund, dict)}
         previous = facts.get("previous_source") or {}
+        previous_funds = previous.get("funds") if isinstance(previous.get("funds"), dict) else previous
         for ticker, prefix in (("USO", "uso"), ("BNO", "bno")):
             fund = funds.get(ticker) or {}
             values[f"{prefix}_date"] = fund.get('data_date') or payload.get('data_date','')
-            try:
-                values[f"{prefix}_wan_barrels"] = f"{float(fund.get('barrels'))/10000:.2f}"
-            except (TypeError, ValueError):
-                values[f"{prefix}_wan_barrels"] = ""
-            old = (previous.get(ticker) or {}).get("barrels")
-            try:
-                values[f"previous_{prefix}_wan_barrels"] = f"{float(old)/10000:.2f}" if old is not None else ""
-            except (TypeError, ValueError):
-                values[f"previous_{prefix}_wan_barrels"] = ""
-            try:
-                values[f"{prefix}_change_wan_barrels"] = f"{float(fund.get('change_barrels'))/10000:.2f}"
-            except (TypeError, ValueError):
-                values[f"{prefix}_change_wan_barrels"] = ""
+            barrels = _dec(fund.get("barrels"))
+            values[f"{prefix}_wan_barrels"] = _pct2(barrels / 10000) if barrels is not None else ""
+            prior_entry = previous_funds.get(ticker) if isinstance(previous_funds, dict) else None
+            old_raw = fund.get("previous_futures_barrels")
+            if old_raw is None and isinstance(prior_entry, dict):
+                old_raw = prior_entry.get("barrels") if prior_entry.get("barrels") is not None else prior_entry.get("futures_barrels")
+            old = _dec(old_raw)
+            values[f"previous_{prefix}_wan_barrels"] = _pct2(old / 10000) if old is not None else ""
+            change = _dec(fund.get("change_barrels"))
+            values[f"{prefix}_change_wan_barrels"] = _pct2(change / 10000) if change is not None else ""
     return values
 
 

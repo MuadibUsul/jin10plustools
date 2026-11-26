@@ -4,7 +4,7 @@ import { nowIso } from '@/shared/time';
 import { collectAtContext } from './collector';
 import { installClickCollector } from './clickCollector';
 import { installContextTracker } from './contextTracker';
-import { isActive, takeOver } from './lifecycle';
+import { isActive, onLifecycleAbort, takeOver } from './lifecycle';
 import { scanFlashItems } from './parser/jin10Parser';
 
 takeOver();
@@ -21,9 +21,10 @@ const handle = createMessageListener({
   COLLECT_AT_CONTEXT: ({ analyze }) => collectAtContext(analyze),
 });
 
-// 被新注入的脚本接手后不再响应，避免重复采集
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) =>
-  isActive() ? handle(message, sender, sendResponse) : false,
-);
+// 被新注入的脚本接手后不再响应并移除监听，避免重复采集
+const onMessage: Parameters<typeof chrome.runtime.onMessage.addListener>[0] = (message, sender, sendResponse) =>
+  isActive() ? handle(message, sender, sendResponse) : false;
+chrome.runtime.onMessage.addListener(onMessage);
+onLifecycleAbort(() => chrome.runtime.onMessage.removeListener(onMessage));
 
 logger.info('content script ready', location.href);

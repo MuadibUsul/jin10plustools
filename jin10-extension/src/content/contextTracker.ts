@@ -1,3 +1,5 @@
+import { lifecycleSignal } from './lifecycle';
+
 /**
  * chrome.contextMenus.onClicked 拿不到被右键的 DOM，
  * 所以在捕获阶段记录最近一次右键的元素，菜单点击时再取用。
@@ -10,7 +12,7 @@ export function installContextTracker(): void {
     (event) => {
       lastTarget = event.target instanceof Element ? event.target : null;
     },
-    { capture: true, passive: true },
+    { capture: true, passive: true, signal: lifecycleSignal() },
   );
 }
 

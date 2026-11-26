@@ -1,10 +1,17 @@
 .env
+.env.*
+!.env.example
 .venv/
 __pycache__/
+*.pyc
 *.egg-info/
 .pytest_cache/
+.ruff_cache/
+.coverage
+*.db
 node_modules/
 dist/
+out/
 jin10-server/out/
 jin10-server/data/
 jin10-server/uv.lock

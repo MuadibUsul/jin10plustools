@@ -3,13 +3,12 @@ from __future__ import annotations
 
 import json
 from types import SimpleNamespace
-from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+from urllib.request import urlopen
 
 from app.config import get_settings
 from app.services.team_settings import briefs_ai
 
-from .engines.liquidity.copy_tracks import parse_answer
+from .ai_client import call_json_completion
 
 
 _CONTEXT_FIELDS = ('facts', 'required_body_tokens', 'examples', 'instructions', 'data_date')
@@ -72,32 +71,11 @@ def request_draft(team_settings: dict | None, context: dict) -> dict:
         'response_format': {'type': 'json_object'},
         'messages': [{'role': 'system', 'content': prompt}, {'role': 'user', 'content': content}],
     }
-    if ai.get('provider') == 'deepseek':
-        payload['thinking'] = {'type': 'disabled'}
-
-    try:
-        request = Request(ai['base_url'].rstrip('/') + '/chat/completions', method='POST',
-                          headers={'Content-Type': 'application/json'},
-                          data=json.dumps(payload, ensure_ascii=False).encode('utf-8'))
-        request.add_unredirected_header('Authorization', 'Bearer ' + ai['key'])
-        with urlopen(request, timeout=30) as response:
-            raw = response.read(_MAX_RESPONSE_BYTES + 1)
-        if len(raw) > _MAX_RESPONSE_BYTES:
-            return {**diagnostics, 'status': 'failed', 'reason': 'response_too_large'}
-        choice = json.loads(raw)['choices'][0]
-        if choice['finish_reason'] != 'stop':
-            return {**diagnostics, 'status': 'failed', 'reason': 'incomplete_completion'}
-        answer = choice['message']['content']
-        if not isinstance(answer, str) or not answer.strip():
-            return {**diagnostics, 'status': 'failed', 'reason': 'empty_content'}
-        draft = parse_answer(answer)
-        if (not isinstance(draft, dict) or set(draft) != {'title', 'body'}
-                or not all(isinstance(value, str) and value.strip() for value in draft.values())):
-            raise ValueError('invalid_draft_shape')
-        return {**diagnostics, 'status': 'ok', 'draft': draft}
-    except HTTPError as exc:
-        return {**diagnostics, 'status': 'failed', 'reason': 'provider_http_error', 'http_status': exc.code}
-    except (TimeoutError, URLError, OSError):
-        return {**diagnostics, 'status': 'failed', 'reason': 'network_error'}
-    except (ValueError, KeyError, IndexError, TypeError):
-        return {**diagnostics, 'status': 'failed', 'reason': 'invalid_response'}
+    reply = call_json_completion(ai, payload, opener=urlopen, timeout=30, max_bytes=_MAX_RESPONSE_BYTES)
+    if reply['status'] != 'ok':
+        return {k: v for k, v in reply.items() if k != 'parsed'}
+    draft = reply['parsed']
+    if (not isinstance(draft, dict) or set(draft) != {'title', 'body'}
+            or not all(isinstance(value, str) and value.strip() for value in draft.values())):
+        return {k: v for k, v in {**reply, 'status': 'failed', 'reason': 'invalid_response'}.items() if k != 'parsed'}
+    return {**{k: v for k, v in reply.items() if k != 'parsed'}, 'status': 'ok', 'draft': draft}

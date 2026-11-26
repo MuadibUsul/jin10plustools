@@ -26,9 +26,12 @@ class JobError(Exception):
 def write_json(path, value):
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_name(path.name + '.tmp')
-    temporary.write_text(json.dumps(value, ensure_ascii=False, indent=2, default=str), encoding='utf-8')
-    temporary.replace(path)
+    temporary = path.with_name(f'.{path.name}.{os.getpid()}.{uuid4().hex[:8]}.tmp')
+    try:
+        temporary.write_text(json.dumps(value, ensure_ascii=False, indent=2, default=str), encoding='utf-8')
+        os.replace(temporary, path)
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 @contextmanager
@@ -97,7 +100,8 @@ def revision_key(data, config, expected):
     digest = hashlib.sha256()
     digest.update(data.read_bytes())
     digest.update(json.dumps({'start': config['start'], 'expected': expected}, sort_keys=True).encode())
-    for path in [HERE/'build_turnover.py', HERE/'render_template.py', HERE/'copy_tracks.py', HERE/'delivery.py', *sorted((HERE/'assets').glob('*'))]:
+    for path in [HERE/'build_turnover.py', HERE/'render_template.py', HERE/'copy_tracks.py',
+                 HERE/'delivery.py', HERE.parents[3]/'app/briefs/delivery.py', *sorted((HERE/'assets').glob('*'))]:
         if path.is_file():
             digest.update(path.read_bytes())
     return digest.hexdigest()[:12]

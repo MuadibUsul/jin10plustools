@@ -147,7 +147,15 @@ def fetch_snapshot(output_dir,expected_date,*,timeout=25,opener=urlopen):
     result={'source':PAGE,'fetched_at':datetime.now(CHINA).isoformat(),'quotes':quote,'history':history,
             'source_requests':[quotes_meta,history_meta],'policy_rate':None,
             'history_is_separate_from_intraday_quotes':True}
-    (out/'snapshot.json').write_text(json.dumps(result,ensure_ascii=False,indent=2),encoding='utf-8')
+    snapshot_path=out/'snapshot.json'
+    import os
+    from uuid import uuid4
+    temp_path=snapshot_path.with_name(f'.snapshot.json.{os.getpid()}.{uuid4().hex[:8]}.tmp')
+    try:
+        temp_path.write_text(json.dumps(result,ensure_ascii=False,indent=2),encoding='utf-8')
+        os.replace(temp_path,snapshot_path)
+    finally:
+        temp_path.unlink(missing_ok=True)
     return result
 
 

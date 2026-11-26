@@ -70,7 +70,10 @@ def item(row: Feedback):
 def call_tool(db, team_id, name, arguments):
     if not isinstance(name, str) or name not in PARAMETERS or not isinstance(arguments, dict) or set(arguments) != set(PARAMETERS[name]):
         raise ValueError('Invalid tool or arguments')
-    now = utcnow().replace(tzinfo=None)
+    for arg_key, spec in PARAMETERS[name].items():
+        if spec.get('format') == 'uuid' and not isinstance(arguments.get(arg_key), str):
+            raise ValueError('Invalid tool or arguments')
+    now = utcnow()
     scoped = Feedback.team_id == team_id
     available = or_(Feedback.claim_until.is_(None), Feedback.claim_until <= now)
     if name == 'feedback_list_pending':
@@ -86,11 +89,12 @@ def call_tool(db, team_id, name, arguments):
                  'data': base64.b64encode(path.read_bytes()).decode('ascii')}]
     if name == 'feedback_claim':
         claim = uuid.uuid4()
+        expires = now + LEASE
         row = db.scalar(update(Feedback).where(*match, Feedback.completed_at.is_(None), available)
-                        .values(claim_id=claim, claim_until=now + LEASE).returning(Feedback))
+                        .values(claim_id=claim, claim_until=expires).returning(Feedback))
         if row is None:
             raise ValueError('Feedback is unavailable or already claimed')
-        result = {**item(row), 'claim_id': str(claim), 'claim_until': (now + LEASE).isoformat() + 'Z'}
+        result = {**item(row), 'claim_id': str(claim), 'claim_until': expires.isoformat()}
         db.commit()
         return result
 
@@ -158,7 +162,7 @@ def rpc(message: dict, request: Request, db: DbSession):
         try:
             data = call_tool(db, team_id, params.get('name'), params.get('arguments', {}))
             result = {'content': data if isinstance(data, list) else text_result(data)}
-        except (AttributeError, TypeError, ValueError, HTTPException) as exc:
+        except (ValueError, HTTPException) as exc:
             error = exc.detail if isinstance(exc, HTTPException) else str(exc)
             result = {'content': [{'type': 'text', 'text': error}], 'isError': True}
     else:

@@ -1,6 +1,6 @@
-import { $, node, api, login, download, copy, copyDate, displayTime, toast } from '/workspace.js';
+import { $, node, api, login, download, copy, copyDate, displayTime, toast, beijingToday } from '/workspace.js';
 import '/pull-cord.js';
-import { computerShell } from '/retro-computer.js';
+import { computerShell, tiltComputer } from '/retro-computer.js';
 const labels = { queued: '等待执行', running: '生成中', waiting: '等待数据更新', succeeded: '已生成', failed: '生成失败', skipped: '已跳过' };
 let me, config, items = [], dataStates = [], selected = null, current = null, dirty = false;
 let dataStatusDay = null, dataStatusAt = 0, refreshRequest = 0, actionBusy = false;
@@ -15,7 +15,7 @@ const processSteps = ['准备任务', '正在取数', '正在制图', '整理文
 const channelNames = { volume: '成交额', turnover: '换手率', valuation: '估值', liquidity: '流动性', oil_etf: '原油ETF', us_barometer: '美股晴雨表', us_structure: '美股结构', token_cost: 'AI算力CPI', gpu_rental: 'AI景气度指标' };
 const terminalSeen = new Map(), terminalPending = new Set();
 let terminalDay = null, polling = false;
-const today = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai' }).format(new Date());
+const today = () => typeof beijingToday === 'function' ? beijingToday() : new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai' }).format(new Date());
 $('#day').value = today(); $('#day').max = today();
 function message(text, error = false) { $('#message').textContent = text; $('#message').className = error ? 'error' : 'success'; }
 async function safe(action) { try { await action(); } catch (e) { message(e.message, true); toast(e.message, 'error'); } }
@@ -54,7 +54,14 @@ async function refresh() {
     const fresh = items.find((x) => x.id === selected.id);
     if (!fresh?.versions.length) hideDetail();
     else if (fresh.version !== selected.version || fresh.confirmed_version !== selected.confirmed_version) {
-      open(fresh, Number($('#version').value));
+      const prevVersion = selected.version;
+      const targetNumber = Number($('#version').value);
+      await open(fresh, targetNumber);
+      if (fresh.version !== prevVersion && current?.number !== fresh.version) {
+        const status = $('#detail-action-status');
+        status.className = 'muted';
+        status.textContent = `已生成新版本 v${fresh.version}，请切换到最新版编辑或确认`;
+      }
     }
   }
   if (!checkSources) return;
@@ -168,31 +175,36 @@ $('#brief-filters').addEventListener('click', (event) => {
   }
   renderCards();
 });
+const observedDockTargets = new WeakSet();
+let dockObserver = null;
+function syncDockHeight(panel) {
+  const lastVisible = [...($('#cards')?.children || [])].reverse().find((el) => !el.hidden);
+  const height = lastVisible ? lastVisible.getBoundingClientRect().height : 0;
+  if (height > 0) panel.style.setProperty('--dock-height', `${height}px`);
+  else panel.style.removeProperty('--dock-height');
+}
 function renderProcess() {
   let panel = $('#job-process');
   if (!panel) {
-    panel = node('aside', undefined, 'retro-panel'); panel.id = 'job-process'; panel.tabIndex = -1; panel.setAttribute('aria-label', '进程动态：所有栏目的实时处理过程');
     const shell = computerShell({ live: true });
     panel = shell.panel;
     const { computer, screen, mouse } = shell;
     mouse.onclick = () => safe(async () => { const { toggleLive } = await import('/computer-live.js'); await toggleLive(screen); });
     if (!window.__plusPullCord?.mount?.(panel)) $('#brief-workspace').append(panel);
-    panel.onpointermove = (event) => {
-      if (event.pointerType !== 'mouse' || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-      const rect = panel.getBoundingClientRect();
-      const x = Math.max(-1, Math.min(1, (event.clientX - rect.left) / rect.width * 2 - 1));
-      const y = Math.max(-1, Math.min(1, (event.clientY - rect.top) / rect.height * 2 - 1));
-      computer.style.setProperty('--tilt-x', `${(-y * 3).toFixed(2)}deg`);
-      computer.style.setProperty('--tilt-y', `${(x * 4).toFixed(2)}deg`);
-    };
-    panel.onpointerleave = () => { computer.style.setProperty('--tilt-x', '0deg'); computer.style.setProperty('--tilt-y', '0deg'); };
+    tiltComputer(panel, computer);
     if (window.ResizeObserver) {
       // The computer follows the spare row's size; it never determines card height.
-      const last = $('#cards').lastElementChild;
-      const observer = new window.ResizeObserver(() => panel.style.setProperty('--dock-height', `${last.getBoundingClientRect().height}px`));
-      observer.observe($('#cards')); observer.observe(last);
+      dockObserver = new window.ResizeObserver(() => syncDockHeight(panel));
     }
   }
+  if (dockObserver) {
+    const cards = $('#cards');
+    if (cards && !observedDockTargets.has(cards)) { dockObserver.observe(cards); observedDockTargets.add(cards); }
+    for (const child of cards?.children || []) {
+      if (!observedDockTargets.has(child)) { dockObserver.observe(child); observedDockTargets.add(child); }
+    }
+  }
+  syncDockHeight(panel);
   const feed = $('#terminal-feed');
   if (terminalDay !== $('#day').value) { terminalDay = $('#day').value; terminalSeen.clear(); terminalPending.clear(); feed.replaceChildren(); }
   const updates = [];
@@ -421,7 +433,7 @@ async function act(path, json) {
     renderCards();
     dirty = false;
     status.textContent = '';
-    open(fresh, path === 'revisions' ? fresh.version : current.number);
+    await open(fresh, path === 'revisions' ? fresh.version : current.number);
     return true;
   } catch (error) {
     status.className = 'error';

@@ -8,21 +8,57 @@ let draftPage = 0, draftHasMore = false, draftRequest = 0, draftLoading = false;
 const dialog = $('#news-dialog');
 const draftStates = { draft: '草稿', pending_review: '待审核', approved: '已通过', rejected: '已驳回', archived: '已归档' };
 let dialogBusy = false;
+let dialogSession = 0;
 let draftEditChanged = null;
+let unsavedAnnotation = false;
+
+function safeHttpUrl(raw) {
+  if (raw === null || raw === undefined) return null;
+  const text = String(raw).trim();
+  if (!text) return null;
+  try {
+    if (typeof URL === 'function') {
+      const parsed = new URL(text, location?.origin || 'https://plus.tlines.tech');
+      return parsed.protocol === 'http:' || parsed.protocol === 'https:' ? parsed.href : null;
+    }
+    const anchor = document.createElement('a');
+    anchor.href = text;
+    if (anchor.protocol === 'http:' || anchor.protocol === 'https:') return anchor.href;
+    return /^https?:\/\/[^\s]+$/i.test(text) ? text : null;
+  } catch {
+    return null;
+  }
+}
+
+function sourceParagraph(rawUrl, label = rawUrl) {
+  const href = safeHttpUrl(rawUrl);
+  if (href) {
+    const link = node('a', String(label || rawUrl));
+    link.href = href; link.target = '_blank'; link.rel = 'noopener noreferrer';
+    const paragraph = node('p'); paragraph.append(link);
+    return paragraph;
+  }
+  return node('p', String(label || rawUrl || ''), 'muted');
+}
 
 function message(text, error = false) { $('#news-status').textContent = text; $('#news-status').className = error ? 'error' : 'muted'; }
 async function safe(action) { try { await action(); } catch (e) { message(e.message, true); toast(e.message, 'error'); } }
 function openDialog(title, status = '') {
+  const session = ++dialogSession;
   draftEditChanged = null;
+  unsavedAnnotation = false;
   $('#news-dialog-title').textContent = title;
   $('#news-dialog-status').textContent = status;
   $('#news-dialog-action-status').textContent = '';
   $('#news-dialog-content').replaceChildren();
   if (!dialog.open) { if (dialog.showModal) dialog.showModal(); else dialog.setAttribute('open', ''); }
+  return session;
 }
 function closeDialog() {
   if (!dialog?.open || dialogBusy) return;
   if (draftEditChanged?.() && !window.confirm('放弃未保存的修改？')) return;
+  dialogSession++;
+  unsavedAnnotation = false;
   if (dialog.close) dialog.close(); else dialog.removeAttribute('open');
 }
 async function dialogAction(progress, success, action, onSaved) {
@@ -57,7 +93,10 @@ function textSection(host, title, values) {
 }
 
 async function load(firstPage = false) {
-  await Promise.all([loadEvents(), loadDrafts(firstPage ? 0 : draftPage)]);
+  await Promise.all([
+    target === 'annotation' ? null : loadEvents(),
+    loadDrafts(firstPage ? 0 : draftPage),
+  ]);
 }
 
 async function loadEvents() {
@@ -167,11 +206,7 @@ function showAnalysis(analysis, eventId) {
       for (const match of (research.matches || []).filter((item) => item.claim_id === check.claim_id)) {
         block.append(node('p', `${match.stance === 'contradicts' ? '相反原文' : '相符原文'}：${match.quote}`, 'news-evidence'));
         const source = sources.get(match.source_id);
-        if (source) {
-          const link = node('a', source.title || source.url);
-          link.href = source.url; link.target = '_blank'; link.rel = 'noopener noreferrer';
-          const paragraph = node('p'); paragraph.append(link); block.append(paragraph);
-        }
+        if (source) block.append(sourceParagraph(source.url, source.title || source.url));
       }
       host.append(block);
     }
@@ -182,8 +217,7 @@ function showAnalysis(analysis, eventId) {
   if (analysis.sources?.length) {
     host.append(node('h3', '来源链接'));
     for (const url of analysis.sources) {
-      const link = node('a', url); link.href = url; link.target = '_blank'; link.rel = 'noopener noreferrer';
-      const paragraph = node('p'); paragraph.append(link); host.append(paragraph);
+      if (url) host.append(sourceParagraph(url));
     }
   }
   if (canEdit && target === 'fresh') {
@@ -205,12 +239,15 @@ async function createFreshDraft(eventId, button) {
 }
 
 async function showEvent(item) {
+  const pendingSession = ++dialogSession;
   const detail = await api(`/api/news-skill-os/events/${item.id}`);
+  if (pendingSession !== dialogSession) return;
   const current = detail.event?.current_revision || detail.revisions?.at(-1)?.number;
-  openDialog(item.title, `${stamp(item.event_time)} · 修订 ${item.current_revision}`);
+  const activeSession = openDialog(item.title, `${stamp(item.event_time)} · 修订 ${item.current_revision}`);
   const host = $('#news-dialog-content');
   if (!current) { host.append(empty('事件尚无事实修订。')); return; }
   const revision = await api(`/api/news-skill-os/events/${item.id}/revisions/${current}`);
+  if (activeSession !== dialogSession || !dialog.open) return;
   const snapshot = revision.snapshot || {};
   const sources = new Map((snapshot.sources || []).map((source) => [source.id, source]));
   const evidence = new Map((snapshot.evidence || []).map((row) => [row.id, row]));
@@ -231,6 +268,7 @@ async function showEvent(item) {
 
 function showAnnotationResult(result, input) {
   openDialog(result.title, '三段注解 · 先人工核对再保存送审');
+  unsavedAnnotation = Boolean(canEdit && target === 'annotation');
   const host = $('#news-dialog-content');
   host.append(node('div', result.body, 'news-draft-body'));
   const original = node('details');
@@ -244,8 +282,7 @@ function showAnnotationResult(result, input) {
   if (result.sources?.length) {
     host.append(node('h3', '检索参考'));
     for (const url of result.sources) {
-      const link = node('a', url); link.href = url; link.target = '_blank'; link.rel = 'noopener noreferrer';
-      const paragraph = node('p'); paragraph.append(link); host.append(paragraph);
+      if (url) host.append(sourceParagraph(url));
     }
   }
   if (canEdit && target === 'annotation') {
@@ -257,13 +294,22 @@ function showAnnotationResult(result, input) {
         payload: { flash: input.text, source_url: input.source_url,
                    sources: result.sources || [], warnings: result.warnings || [],
                    quality_review: result.quality_review || null },
-      }}), () => { draftPage = 0; closeDialog(); });
+      }}), () => {
+        unsavedAnnotation = false;
+        if ($('#annotation-text')?.value.trim() === input.text) $('#annotation-text').value = '';
+        if ($('#annotation-source') && ($('#annotation-source').value.trim() || null) === input.source_url) $('#annotation-source').value = '';
+        draftPage = 0;
+        closeDialog();
+      });
     actions.append(save); host.append(actions);
   }
 }
 
 async function showDraft(item) {
-  renderDraftDetail(await api(`/api/news-skill-os/drafts/${item.id}`));
+  const pendingSession = ++dialogSession;
+  const detail = await api(`/api/news-skill-os/drafts/${item.id}`);
+  if (pendingSession !== dialogSession) return;
+  renderDraftDetail(detail);
 }
 
 function renderDraftDetail(detail) {
@@ -405,11 +451,27 @@ dialog.addEventListener('cancel', (event) => {
   if (dialogBusy || (draftEditChanged?.() && !window.confirm('放弃未保存的修改？'))) event.preventDefault();
 });
 dialog.addEventListener('close', () => {
+  dialogSession++;
   draftEditChanged = null;
+  unsavedAnnotation = false;
   $('#news-dialog-content').replaceChildren();
+});
+window.addEventListener?.('beforeunload', (event) => {
+  const pendingInput = canEdit && (target === 'annotation'
+    ? Boolean($('#annotation-text')?.value.trim())
+    : Boolean($('#news-focus')?.value.trim()));
+  if (draftEditChanged?.() || unsavedAnnotation || pendingInput) {
+    event.preventDefault();
+    event.returnValue = '';
+  }
 });
 
 try {
+  const eventsSection = $('#news-events')?.closest('section');
+  if (eventsSection) {
+    eventsSection.hidden = target === 'annotation';
+    eventsSection.parentElement?.classList.toggle('news-grid-single', target === 'annotation');
+  }
   me = await login();
   canEdit = me.user.role !== 'viewer';
   $('#news-title').textContent = targetLabel;

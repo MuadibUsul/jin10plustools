@@ -4,9 +4,10 @@ import json
 import shutil
 import uuid
 from datetime import date, datetime, timezone
+from functools import lru_cache
 from pathlib import Path
 
-from sqlalchemy import select,update
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 
 from app.config import get_settings
@@ -21,8 +22,9 @@ def root_for(team_id):
 
 
 def owned(db, team_id, issue_id, lock=False):
-    query=select(BriefIssue).where(BriefIssue.id==issue_id,BriefIssue.team_id==team_id)
-    if lock:query=query.with_for_update()
+    query = select(BriefIssue).where(BriefIssue.id == issue_id, BriefIssue.team_id == team_id)
+    if lock and db.get_bind().dialect.name == 'postgresql':
+        query = query.with_for_update()
     return db.scalars(query).first()
 
 
@@ -136,33 +138,49 @@ def prepare_chart_notes_revision(issue, previous, notes):
         raise
 
 
-def prune_versions(db,issue):
+def prune_versions(db, issue):
     """Keep the latest two revisions plus the confirmed one; never drop a confirmation."""
-    versions=list(db.scalars(select(BriefVersion).where(BriefVersion.issue_id==issue.id).order_by(BriefVersion.number.desc())))
-    keep={version.number for version in versions[:2]}
-    if issue.confirmed_version: keep.add(issue.confirmed_version)
-    retired={v.id for v in versions if v.number not in keep}
-    root=root_for(issue.team_id).resolve();delivery_root=(root/'delivery').resolve()
-    retained=list(db.scalars(select(BriefVersion).join(BriefIssue).where(
-        BriefIssue.team_id==issue.team_id,BriefVersion.id.not_in(retired)))) if retired else []
-    referenced={(root/(v.payload or {}).get('artifact_dir','')).resolve() for v in retained}
-    pending=db.info.get('derived_directory_cleanup',set())
-    for folder in referenced:pending.discard((folder,delivery_root))
+    versions = list(db.scalars(select(BriefVersion).where(BriefVersion.issue_id == issue.id).order_by(BriefVersion.number.desc())))
+    keep = {version.number for version in versions[:2]}
+    if issue.confirmed_version:
+        keep.add(issue.confirmed_version)
+    retired = {v.id for v in versions if v.number not in keep}
+    if not retired:
+        return
+    root = root_for(issue.team_id).resolve()
+    delivery_root = (root / 'delivery').resolve()
+    retained_dirs = db.scalars(
+        select(BriefVersion.payload['artifact_dir'].as_string())
+        .join(BriefIssue, BriefVersion.issue_id == BriefIssue.id)
+        .where(
+            BriefIssue.team_id == issue.team_id,
+            BriefVersion.id.not_in(retired),
+            BriefVersion.payload['artifact_dir'].as_string().is_not(None),
+        )
+    )
+    referenced = {(root / d).resolve() for d in retained_dirs if d}
+    pending = db.info.get('derived_directory_cleanup', set())
+    for folder in referenced:
+        pending.discard((folder, delivery_root))
+    from app.services.file_cleanup import after_commit_directory
     for old in versions:
-        if old.number in keep: continue
-        db.add(BriefAudit(issue_id=issue.id,action='retired_notes',version=old.number,user_id=old.created_by,
-            details={'title':old.title,'dynamic_body':old.dynamic_body,
-                **{key:(old.payload or {}).get(key) for key in ('data_date','fixed_notes','facts','editorial')},
-                'created_at':old.created_at.isoformat()}))
-        db.execute(update(BriefSourceSnapshot).where(BriefSourceSnapshot.version_id==old.id).values(version_id=None))
-        if issue.confirmed_version==old.number:
-            issue.confirmed_version=None;issue.confirmed_by=None;issue.confirmed_at=None
-        from app.services.file_cleanup import after_commit_directory
-        delivery=(root/(old.payload or {}).get('artifact_dir','')).resolve()
-        if delivery!=delivery_root and delivery.is_relative_to(delivery_root) and delivery not in referenced:
-            after_commit_directory(db,delivery,delivery_root)
-        legacy=delivery_root/str(old.id)
-        if legacy!=delivery and legacy not in referenced:after_commit_directory(db,legacy,delivery_root)
+        if old.number in keep:
+            continue
+        db.add(BriefAudit(
+            issue_id=issue.id, action='retired_notes', version=old.number, user_id=old.created_by,
+            details={
+                'title': old.title, 'dynamic_body': old.dynamic_body,
+                **{key: (old.payload or {}).get(key) for key in ('data_date', 'fixed_notes', 'facts', 'editorial')},
+                'created_at': old.created_at.isoformat(),
+            },
+        ))
+        db.execute(update(BriefSourceSnapshot).where(BriefSourceSnapshot.version_id == old.id).values(version_id=None))
+        delivery = (root / (old.payload or {}).get('artifact_dir', '')).resolve()
+        if delivery != delivery_root and delivery.is_relative_to(delivery_root) and delivery not in referenced:
+            after_commit_directory(db, delivery, delivery_root)
+        legacy = delivery_root / str(old.id)
+        if legacy != delivery and legacy not in referenced:
+            after_commit_directory(db, legacy, delivery_root)
         db.delete(old)
 
 
@@ -181,29 +199,98 @@ def version_out(issue,version):
     # including earlier editions that still stored the appended note block.
     image_notes=issue.category in IMAGE_NOTE_CATEGORIES
     body=complete_body(issue.category,copy_dates(version.dynamic_body),notes)
+    raw_warnings = [w for w in (data.get('warnings') or []) if not str(w).startswith('历史覆盖尚未完整核验')]
+    skill_meta = dict(data.get('skill') or {})
+    effective_model = skill_meta.get('response_model') or skill_meta.get('model')
     return {'number':version.number,'kind':version.kind,'title':copy_dates(version.title),
         'dynamic_body':body if image_notes else copy_dates(version.dynamic_body),'body':body,
         'fixed_notes':notes,'notes_placement':'image' if image_notes else 'body','created_at':version.created_at,
-        'data_date':data.get('data_date'),'warnings':data.get('warnings',[]),
+        'data_date':data.get('data_date'),'warnings':raw_warnings,
         'data_reliability':data.get('data_reliability'),
         'facts':data.get('facts',{}),'deepseek':ai,
         'editorial':{key:(data.get('editorial') or {}).get(key) for key in
             ('status','mode','reason','writer','selection_status','sample_count','pending_pack_version')},
         'editorial_quality':((data.get('editorial') or {}).get('candidate') or {}).get('style_quality'),
-        'skill':{key:(data.get('skill') or {}).get(key) for key in ('status','reason','provider','model','style_status')},
+        'skill':{
+            'status': skill_meta.get('status'),
+            'reason': skill_meta.get('reason'),
+            'provider': skill_meta.get('provider'),
+            'model': effective_model,
+            'style_status': skill_meta.get('style_status'),
+        },
         'images':[{'name':x,'url':f'/api/briefs/issues/{issue.id}/files/{version.number}/{x}'} for x in data.get('images',[])],
         'preview':data.get('preview',True),'valid':data.get('valid',False)}
 
 
-def issue_out(db,issue):
-    versions=db.scalars(select(BriefVersion).where(BriefVersion.issue_id==issue.id).order_by(BriefVersion.number.desc())).all()
-    jobs=db.scalars(select(BriefJob).where(BriefJob.team_id==issue.team_id,BriefJob.category==issue.category,
-        BriefJob.issue_date==issue.issue_date).order_by(BriefJob.created_at.desc())).all()
-    return {'id':str(issue.id),'category':issue.category,'label':CATEGORIES[issue.category],
-        'issue_date':issue.issue_date,'expected_date':expected_date(issue.category,issue.issue_date),
-        'version':issue.version,'confirmed_version':issue.confirmed_version,'confirmed_at':issue.confirmed_at,
-        'versions':[version_out(issue,v) for v in versions],
-        'jobs':[job_out(j) for j in jobs[:15]]}
+def _format_issue(issue, versions, jobs):
+    from .trading_calendar import CalendarUnavailable
+    try:
+        expected = expected_date(issue.category, issue.issue_date)
+    except CalendarUnavailable:
+        expected = None
+    return {
+        'id': str(issue.id), 'category': issue.category, 'label': CATEGORIES[issue.category],
+        'issue_date': issue.issue_date, 'expected_date': expected,
+        'version': issue.version, 'confirmed_version': issue.confirmed_version, 'confirmed_at': issue.confirmed_at,
+        'versions': [version_out(issue, v) for v in versions],
+        'jobs': [job_out(j) for j in jobs[:15]],
+    }
+
+
+def issue_out(db, issue):
+    versions = db.scalars(
+        select(BriefVersion).where(BriefVersion.issue_id == issue.id).order_by(BriefVersion.number.desc())
+    ).all()
+    jobs = db.scalars(
+        select(BriefJob).where(
+            BriefJob.team_id == issue.team_id,
+            BriefJob.category == issue.category,
+            BriefJob.issue_date == issue.issue_date,
+            BriefJob.action != 'reconcile',
+        ).order_by(BriefJob.created_at.desc()).limit(15)
+    ).all()
+    return _format_issue(issue, versions, jobs)
+
+
+def issues_out_batch(db, issues: list[BriefIssue]) -> list[dict]:
+    if not issues:
+        return []
+    issue_ids = [item.id for item in issues]
+    team_id = issues[0].team_id
+    issue_date = issues[0].issue_date
+    cats = [item.category for item in issues]
+
+    versions_by_issue: dict[uuid.UUID, list[BriefVersion]] = {iid: [] for iid in issue_ids}
+    for v in db.scalars(
+        select(BriefVersion).where(BriefVersion.issue_id.in_(issue_ids)).order_by(BriefVersion.number.desc())
+    ):
+        versions_by_issue[v.issue_id].append(v)
+
+    ranked_jobs = (
+        select(
+            BriefJob,
+            func.row_number().over(
+                partition_by=BriefJob.category,
+                order_by=BriefJob.created_at.desc(),
+            ).label('rn'),
+        )
+        .where(
+            BriefJob.team_id == team_id,
+            BriefJob.issue_date == issue_date,
+            BriefJob.category.in_(cats),
+            BriefJob.action != 'reconcile',
+        )
+        .subquery()
+    )
+    from sqlalchemy.orm import aliased
+    job_alias = aliased(BriefJob, ranked_jobs)
+    jobs_by_cat: dict[str, list[BriefJob]] = {c: [] for c in cats}
+    for j in db.scalars(
+        select(job_alias).where(ranked_jobs.c.rn <= 15).order_by(job_alias.created_at.desc())
+    ):
+        jobs_by_cat[j.category].append(j)
+
+    return [_format_issue(item, versions_by_issue[item.id], jobs_by_cat.get(item.category, [])) for item in issues]
 
 
 def job_out(item):
@@ -226,6 +313,11 @@ def artifact_path(issue,version,name):
     return path
 
 
+@lru_cache(maxsize=2)
+def _watermark_digest(path_str: str, mtime_ns: int, size: int) -> str:
+    return hashlib.sha256(Path(path_str).read_bytes()).hexdigest()
+
+
 def delivered_image(issue,version,name):
     from app.services.image_delivery import delivery_signature, WATERMARK, MAX_BYTES, store_image
     source=artifact_path(issue,version,name)
@@ -236,9 +328,11 @@ def delivered_image(issue,version,name):
     # Earlier us-barometer editions kept two images; notes belong only on the merged chart.
     if issue.category=='us_barometer' and name!='美股晴雨表.png':notes=''
     policy=delivery_signature() + ('-turnover-notes-1' if issue.category=='turnover' else '-us-barometer-merged-1' if issue.category=='us_barometer' else '-us-structure-black-notes-1' if issue.category=='us_structure' else '')
+    wm_stat=WATERMARK.stat()
+    wm_sha=_watermark_digest(str(WATERMARK), wm_stat.st_mtime_ns, wm_stat.st_size)
     key=hashlib.sha256(json.dumps([version.payload['image_sha256'][name],notes,issue.category,
         version.payload.get('unified_valuation',False),
-        policy,hashlib.sha256(WATERMARK.read_bytes()).hexdigest()],ensure_ascii=False).encode()).hexdigest()
+        policy,wm_sha],ensure_ascii=False).encode()).hexdigest()
     target=root_for(issue.team_id)/'delivery'/str(version.id)/key
     for suffix,media in (('.png','image/png'),('.jpg','image/jpeg')):
         cached=target.with_suffix(suffix)

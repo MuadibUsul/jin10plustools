@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.db.models import Role, User
 from app.db.session import get_db
-from app.security import decode_access_token,access_token_version
+from app.security import decode_token_claims
 
 _bearer = HTTPBearer(auto_error=False)
 
@@ -30,14 +30,14 @@ def get_current_user(
     if credentials is None:
         raise _unauthorized("未登录")
     try:
-        user_id: uuid.UUID = decode_access_token(credentials.credentials)
-        auth_version=access_token_version(credentials.credentials)
+        user_id, auth_version = decode_token_claims(credentials.credentials)
     except (jwt.PyJWTError, ValueError, KeyError):
         raise _unauthorized("登录已失效，请重新登录") from None
     user = db.get(User, user_id)
     if user is None or not user.is_active:
         raise _unauthorized("账号不存在或已停用")
-    if user.auth_version!=auth_version:raise _unauthorized('密码已重置，请重新登录')
+    if user.auth_version != auth_version:
+        raise _unauthorized("密码已重置，请重新登录")
     return user
 
 

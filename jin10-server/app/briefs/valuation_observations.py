@@ -32,12 +32,21 @@ def save_history(db: Session, team_id, job_id, path: Path) -> int:
             'bond_yield_number': Decimal(row['bond_yield_number']),
             'erp': Decimal(row['erp']),
         }
+        new_status = source.get('source_status')
         record = existing.get(day)
         if record is None:
-            record = ValuationObservation(team_id=team_id, date=day)
+            record = ValuationObservation(
+                team_id=team_id, date=day, **values,
+                source_status=new_status, source_job_id=job_id,
+            )
             db.add(record)
-        for key, value in values.items():
-            setattr(record, key, value)
-        record.source_status = source.get('source_status')
-        record.source_job_id = job_id
+            continue
+        if (any(getattr(record, key) != value for key, value in values.items())
+                or record.source_status != new_status):
+            for key, value in values.items():
+                setattr(record, key, value)
+            record.source_status = new_status
+            record.source_job_id = job_id
+        elif record.source_job_id is None:
+            record.source_job_id = job_id
     return len(seen)

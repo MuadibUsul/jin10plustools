@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { NewsMaterial } from '@/types/material';
 import type { AuthSession, SyncState } from '@/types/settings';
@@ -59,6 +60,10 @@ class Repo {
   async replace(oldId: string, m: NewsMaterial) {
     this.items.delete(oldId);
     this.items.set(m.id, m);
+  }
+  async resetAll(materials: NewsMaterial[]) {
+    this.items.clear();
+    for (const m of materials) this.items.set(m.id, m);
   }
   async acknowledge(sent: NewsMaterial, received: NewsMaterial | null) {
     const next = acknowledgedMaterial(sent, await this.get(sent.id), received);

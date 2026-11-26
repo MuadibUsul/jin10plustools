@@ -100,11 +100,12 @@ def update(body: Update, db: DbSession, user: Editor):
                 raise HTTPException(403, '仅管理员可修改 AI Key 或启用状态')
     if body.notes and any(len(value) > 2000 for value in body.notes.values()):
         raise HTTPException(422, '每个栏目注释最多2000字')
-    team = db.get(Team, user.team_id, with_for_update=True)
+    lock_team = db.get_bind().dialect.name == 'postgresql'
+    team = db.get(Team, user.team_id, with_for_update=lock_team)
     if (team.settings or {}).get('settings_revision', 0) != body.revision:
         raise HTTPException(409, '设置已由其他成员更新，请刷新后重试')
     if body.notes is not None:
-        update_notes(db, team, body.notes, user.id)
+        update_notes(db, team, body.notes, user.id, record_history=False)
     if body.schedule_enabled is not None or body.data_collection_enabled is not None:
         config = db.get(BriefConfig, team.id)
         if config is None:
@@ -210,7 +211,8 @@ def skill_detail(category: str, db: DbSession, user: CurrentUser):
 def skill_update(category: str, body: SkillUpdate, db: DbSession, user: Editor):
     if user.role != Role.ADMIN:
         raise HTTPException(403, '仅管理员可修改 Skill 规范')
-    team = db.get(Team, user.team_id, with_for_update=True)
+    lock_team = db.get_bind().dialect.name == 'postgresql'
+    team = db.get(Team, user.team_id, with_for_update=lock_team)
     try:
         skill = update_skill(db, team, user, category, revision=body.revision,
                              enabled=body.enabled, instructions=body.instructions)

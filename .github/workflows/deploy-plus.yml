@@ -65,8 +65,8 @@ jobs:
 
       - name: Deploy only the PLUS API and worker
         env:
-          SSH_HOST: 104.207.82.85
-          SSH_USER: deploy
+          SSH_HOST: ${{ vars.PLUS_DEPLOY_HOST || '104.207.82.85' }}
+          SSH_USER: ${{ vars.PLUS_DEPLOY_USER || 'deploy' }}
         run: |
           ssh_options=(-i "$HOME/.ssh/plus_deploy" -o BatchMode=yes -o IdentitiesOnly=yes \
             -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \

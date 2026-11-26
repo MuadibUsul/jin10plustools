@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
+import { sendToTabWithInject } from '@/background/injector';
 import type { ConnectionState } from '@/components/StatusDot';
 import { isJin10Url } from '@/shared/constants';
-import { sendToBackground, sendToTab } from '@/shared/messaging';
+import { sendToBackground } from '@/shared/messaging';
 
 export interface ConnectionInfo {
   background: ConnectionState;
@@ -39,7 +40,7 @@ export function useConnection(): ConnectionInfo {
         update({ content: 'inactive', contentDetail: '当前不是金十页面' });
         return;
       }
-      const res = await sendToTab(tab.id, 'PING', undefined);
+      const res = await sendToTabWithInject(tab.id, 'PING', undefined);
       update(
         res.ok
           ? { content: 'ok', contentDetail: undefined, jin10TabId: tab.id }

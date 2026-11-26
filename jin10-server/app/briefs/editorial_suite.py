@@ -6,6 +6,7 @@ models select allowed module IDs. Shadow mode never changes delivered copy.
 from __future__ import annotations
 
 from copy import deepcopy
+from functools import lru_cache
 import hashlib
 import json
 from pathlib import Path
@@ -91,11 +92,18 @@ def _checked_pack(category: str, source: dict) -> dict:
     return pack
 
 
+@lru_cache(maxsize=32)
+def _cached_pack(category: str, path_str: str, mtime_ns: int, size: int) -> dict:
+    return _checked_pack(category, json.loads(Path(path_str).read_text(encoding='utf-8')))
+
+
 def load_pack(category: str) -> dict:
     if category == 'gpu_rental':
         from .gpu_editorial import load_pack as load_gpu
         return load_gpu()
-    return _checked_pack(category, json.loads(pack_path(category).read_text(encoding='utf-8')))
+    path = pack_path(category)
+    stat = path.stat()
+    return deepcopy(_cached_pack(category, str(path), stat.st_mtime_ns, stat.st_size))
 
 
 def _context(category: str, payload: dict) -> dict:
@@ -113,10 +121,17 @@ def _context(category: str, payload: dict) -> dict:
     return context
 
 
-def _options(pack: dict, scenario: str) -> dict:
-    return {role: [row for row in pack['modules'][collection]
-                   if 'scenarios' not in row or scenario in row['scenarios']]
-            for role, collection in _ROLES.items()}
+def _options(pack: dict, scenario: str, *, context: dict | None = None) -> dict:
+    options = {role: [row for row in pack['modules'][collection]
+                      if 'scenarios' not in row or scenario in row['scenarios']]
+               for role, collection in _ROLES.items()}
+    bindings = (context or {}).get('bindings') or {}
+    if (pack.get('category') == 'oil_etf'
+            and (bindings.get('USO') or {}).get('data_date') != (bindings.get('BNO') or {}).get('data_date')):
+        filtered = [row for row in options['comparison'] if '同期' not in row.get('template', '')]
+        if filtered:
+            options['comparison'] = filtered
+    return options
 
 
 def _plan(options: dict, selection: dict | None) -> dict:
@@ -142,7 +157,7 @@ def build_candidate(category: str, payload: dict, *, pack=None, selection=None) 
         raise ValueError('unsupported_scenario')
     if set(slots) != set(pack['slot_roles']['lead'] + pack['slot_roles']['comparison']):
         raise ValueError('invalid_context')
-    options = _options(pack, scenario)
+    options = _options(pack, scenario, context=context)
     plan = _plan(options, selection)
     chosen = {role: next(row for row in rows if row['id'] == plan[role])
               for role, rows in options.items()}
@@ -210,7 +225,7 @@ def apply_editorial(payload: dict, category: str, team_settings: dict | None, *,
             context = _context(category, payload)
             result = select_plan(team_settings, {
                 'category': category, 'label': CATEGORIES[category], 'scenario': context['scenario'],
-                'options': _options(pack, context['scenario']),
+                'options': _options(pack, context['scenario'], context=context),
                 'writing_order': context.get('writing_order', ''),
                 'examples': [row for row in pack.get('examples', [])
                              if row.get('scenario') == context['scenario']][:3],

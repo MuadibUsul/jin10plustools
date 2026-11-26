@@ -44,7 +44,7 @@ class WorkerLock:
                     while not self.stop.wait(self.interval):
                         # A reconnect cannot silently become the lock owner.
                         pid=connection.execute(text('SELECT pg_backend_pid()')).scalar()
-                        held=connection.execute(text("SELECT EXISTS(SELECT 1 FROM pg_locks WHERE pid=pg_backend_pid() AND locktype='advisory' AND objid=:key AND granted)"),{'key':LOCK_ID}).scalar()
+                        held=connection.execute(text("SELECT EXISTS(SELECT 1 FROM pg_locks WHERE pid=pg_backend_pid() AND locktype='advisory' AND classid=0 AND objid=:key AND objsubid=1 AND granted)"),{'key':LOCK_ID}).scalar()
                         if pid!=self.backend_pid or not held:raise RuntimeError('worker_lock_lost')
                 finally:
                     if not connection.invalidated:

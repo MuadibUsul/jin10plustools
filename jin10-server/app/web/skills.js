@@ -1,6 +1,6 @@
 import { $, node, api, login, displayTime, toast } from '/workspace.js';
 
-let me, canAdmin = false;
+let me, canAdmin = false, skillDirty = () => false;
 function field(label, input) { const row = node('label', label, 'field'); row.append(input); return row; }
 function msg(text, error = false) {
   const target = $('#skills-status') || $('#skill-status');
@@ -16,6 +16,7 @@ function meta(item) {
 }
 
 async function renderList() {
+  skillDirty = () => false;
   const data = await api('/api/settings/skills');
   const groups = new Map();
   for (const item of data.skills) {
@@ -91,6 +92,7 @@ function renderSkill(item) {
   const controls = node('div', undefined, 'toolbar');
   const enabled = node('input'); enabled.type = 'checkbox'; enabled.checked = item.enabled;
   enabled.disabled = !canAdmin;
+  skillDirty = () => canAdmin && (area.value !== item.instructions || enabled.checked !== item.enabled);
   const enabledLabel = node('label', ' 启用此 Skill', 'check-row'); enabledLabel.prepend(enabled);
   controls.append(enabledLabel);
   const save = node('button', '保存 Skill', 'primary'); save.hidden = !canAdmin;
@@ -126,6 +128,10 @@ function renderSkill(item) {
   const scope = item.category === 'editorial_quality' ? '后续新鲜事与注解辅助的文字质量检查' : '后续固定快讯任务的 Skill 文案产出';
   msg(canAdmin ? `修改会影响${scope}。` : '团队成员可查看 Skill 规范，修改需管理员。');
 }
+
+window.addEventListener?.('beforeunload', (event) => {
+  if (skillDirty()) { event.preventDefault(); event.returnValue = ''; }
+});
 
 const path = location.pathname.replace(/\/+$/, '');
 const detail = path.match(/^\/skills\/([a-z0-9._-]+)$/);

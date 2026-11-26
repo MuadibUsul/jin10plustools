@@ -1,6 +1,6 @@
 import { logger } from '@/shared/logger';
 import { collectFlash } from './collector';
-import { isActive } from './lifecycle';
+import { isActive, lifecycleSignal, onLifecycleAbort } from './lifecycle';
 import { findFlashRoot } from './parser/jin10Parser';
 import { getCaptureShortcut } from '@/services/settingsStore';
 import { DEFAULT_CAPTURE_SHORTCUT, matchesCaptureClick, type CaptureShortcut } from '@/shared/shortcut';
@@ -18,11 +18,16 @@ export function isCollectClick(event: MouseEvent, configured = DEFAULT_CAPTURE_S
  * 只在快讯上拦截点击，其他位置保持浏览器默认行为（如 Ctrl+点击新标签页打开）。
  */
 export function installClickCollector(): void {
-  void getCaptureShortcut().then((value) => { shortcut = value; });
-  chrome.storage.onChanged.addListener((changes, area) => {
-    if (area !== 'local' || !changes['settings:captureShortcut']?.newValue) return;
-    shortcut = changes['settings:captureShortcut'].newValue as CaptureShortcut;
-  });
+  const signal = lifecycleSignal();
+  void getCaptureShortcut().then((value) => { if (!signal.aborted) shortcut = value; });
+  if (chrome.storage?.onChanged) {
+    const onChanged = (changes: Record<string, chrome.storage.StorageChange>, area: string) => {
+      if (area !== 'local' || !changes['settings:captureShortcut']?.newValue) return;
+      shortcut = changes['settings:captureShortcut'].newValue as CaptureShortcut;
+    };
+    chrome.storage.onChanged.addListener(onChanged);
+    onLifecycleAbort(() => chrome.storage.onChanged.removeListener(onChanged));
+  }
 
   const busy = new WeakSet<Element>();
   document.addEventListener(
@@ -43,6 +48,6 @@ export function installClickCollector(): void {
         .catch((err: unknown) => logger.warn('click collect failed', err))
         .finally(() => busy.delete(root));
     },
-    { capture: true },
+    { capture: true, signal },
   );
 }

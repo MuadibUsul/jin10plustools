@@ -12,7 +12,7 @@ const $ = (selector: string) => document.querySelector(selector)!;
 type Job = { id: string; status: string; created_at: string; next_attempt_at?: string; progress?: { step: number; events: { at: string; message: string }[] }; error?: string };
 const issue = (number = 1) => ({
   id: 'turnover', label: '换手率', category: 'turnover', issue_date: '2026-10-15',
-  version: number, confirmed_version: null, jobs: [] as Job[],
+  version: number, confirmed_version: null as number | null, jobs: [] as Job[],
   versions: [{ number, title: `版本${number}`, dynamic_body: '正文', fixed_notes: '',
     body: '正文', notes_placement: 'body', created_at: '2026-10-15T01:00:00Z',
     data_date: '2026-10-14', deepseek: { status: 'not_configured' }, warnings: [],
@@ -248,5 +248,50 @@ describe('fixed brief image refresh', () => {
     ready(); await changing;
     expect($('#images').children).toHaveLength(0);
     expect(revokeUrl.mock.calls.map(([url]) => url).sort()).toEqual(['blob:chart-1', 'blob:chart-2']);
+  });
+
+  it('computes --dock-height from the last visible card and guards empty card lists', async () => {
+    const observed: unknown[] = [];
+    Object.defineProperty(window, 'ResizeObserver', {
+      configurable: true,
+      value: class {
+        private cb: () => void;
+        constructor(cb: () => void) { this.cb = cb; }
+        observe(target: unknown) { observed.push(target); }
+        trigger() { this.cb(); }
+      },
+    });
+    const confirmedIssue = { ...issue(1), confirmed_version: 1 };
+    const unconfirmedIssue = { ...issue(1), id: 'valuation', category: 'valuation', label: '估值', confirmed_version: null };
+    rows = [];
+    api.mockImplementationOnce(async () => ({ categories: [] }));
+    await page();
+    expect(observed.every((el) => el !== null && el !== undefined)).toBe(true);
+    expect(($('#job-process') as HTMLElement).style.getPropertyValue('--dock-height')).toBe('');
+
+    document.body.innerHTML = html.match(/<body>([\s\S]*)<\/body>/)![1]!;
+    rows = [confirmedIssue, unconfirmedIssue];
+    api.mockImplementationOnce(async () => ({ categories: [{ id: 'turnover', label: '换手率' }, { id: 'valuation', label: '估值' }] }));
+    await page();
+    const firstCard = $('#card-turnover') as HTMLElement;
+    const secondCard = $('#card-valuation') as HTMLElement;
+    vi.spyOn(firstCard, 'getBoundingClientRect').mockReturnValue({ height: 220 } as DOMRect);
+    vi.spyOn(secondCard, 'getBoundingClientRect').mockReturnValue({ height: 310 } as DOMRect);
+    // Filter to 'confirmed': second card becomes hidden, so dock height uses first (visible) card!
+    ($('[data-brief-filter="confirmed"]') as HTMLButtonElement).click();
+    expect(secondCard.hidden).toBe(true);
+    expect(firstCard.hidden).toBe(false);
+    expect(($('#job-process') as HTMLElement).style.getPropertyValue('--dock-height')).toBe('220px');
+    delete (window as { ResizeObserver?: unknown }).ResizeObserver;
+  });
+
+  it('notifies in #detail-action-status when a newer version arrives during background refresh', async () => {
+    const ui = await page();
+    await ui.open(rows[0]!);
+    const v1 = rows[0]!.versions[0]!;
+    const v2 = { ...structuredClone(v1), number: 2, title: '版本2' };
+    rows = [{ ...rows[0]!, version: 2, versions: [v2, v1] }];
+    await ui.refresh();
+    expect($('#detail-action-status').textContent).toContain('已生成新版本 v2，请切换到最新版编辑或确认');
   });
 });

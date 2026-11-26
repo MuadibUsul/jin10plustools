@@ -3,10 +3,25 @@ from __future__ import annotations
 
 from datetime import date
 from decimal import Decimal
+from functools import lru_cache
+import json
+from pathlib import Path
 
 from sqlalchemy import select
 
 from app.db.models import AIComputeObservation, AIComputeRevision, utcnow
+
+
+def _for_update(stmt, db):
+    bind = getattr(db, 'bind', None)
+    if bind is not None and bind.dialect.name == 'postgresql':
+        return stmt.with_for_update()
+    return stmt
+
+
+@lru_cache(maxsize=1)
+def _seed_compute_history() -> dict:
+    return json.loads((Path(__file__).parent / 'seed/ai-compute-history.json').read_text(encoding='utf-8'))
 
 
 def preserve_revision(db,record):
@@ -37,11 +52,17 @@ def store_visible_history(db,team_id,capture):
             if day in by_metric[metric]:raise ValueError('GPU历史日期重复')
             if day.isoformat()<capture['data_date'] or not capture.get('readings') and day.isoformat()==capture['data_date']:
                 by_metric[metric][day]=value
-    days=set.union(*(set(by_metric[metric]) for metric in metrics))
-    for day in sorted(days):
+    days=sorted(set.union(*(set(by_metric[metric]) for metric in metrics)))
+    existing_by_day=(
+        {row.date:row for row in db.scalars(_for_update(select(AIComputeObservation).where(
+            AIComputeObservation.team_id==team_id,
+            AIComputeObservation.kind==kind,
+            AIComputeObservation.date.in_(days)), db))}
+        if days else {}
+    )
+    for day in days:
         values={'token_price' if metric=='token' else metric:by_metric[metric][day] for metric in by_metric if day in by_metric[metric]}
-        record=db.scalar(select(AIComputeObservation).where(AIComputeObservation.team_id==team_id,
-            AIComputeObservation.kind==kind,AIComputeObservation.date==day).with_for_update())
+        record=existing_by_day.get(day)
         if record and any(getattr(record,key)!=value for key,value in values.items()):
             conflict=any(getattr(record,key) is not None and getattr(record,key)!=value for key,value in values.items())
             if record.source_status=='manual_entry' or conflict and record.source_status!='public_visible_history':
@@ -51,7 +72,7 @@ def store_visible_history(db,team_id,capture):
         else:
             record=AIComputeObservation(team_id=team_id,kind=kind,date=day,revision=1,
                 source='Silicon Data visible historical table',source_status='public_visible_history')
-            db.add(record);inserted+=1
+            db.add(record);existing_by_day[day]=record;inserted+=1
         for key,value in values.items():setattr(record,key,value)
         record.updated_at=utcnow()
     db.flush()
@@ -60,9 +81,7 @@ def store_visible_history(db,team_id,capture):
 
 def restore_workbook_history(db,team_id,*,before=None):
     """Fill real absent dates from authorized workbooks/captures; never replace a row."""
-    import json
-    from pathlib import Path
-    asset=json.loads((Path(__file__).parent/'seed/ai-compute-history.json').read_text(encoding='utf-8'))
+    asset=_seed_compute_history()
     inserted=0
     for kind,rows in asset['rows'].items():
         existing=set(db.scalars(select(AIComputeObservation.date).where(
@@ -97,10 +116,10 @@ def store_visible(db, team_id, capture: dict,*,allow_historical=False) -> dict:
     if any(row['date'] != stamp for row in readings):
         raise ValueError('公开页面数据日不一致')
     source_day = date.fromisoformat(stamp)
-    existing = db.scalar(select(AIComputeObservation).where(
+    existing = db.scalar(_for_update(select(AIComputeObservation).where(
         AIComputeObservation.team_id == team_id,
         AIComputeObservation.kind == kind,
-        AIComputeObservation.date == source_day).with_for_update())
+        AIComputeObservation.date == source_day), db))
     latest = db.scalar(select(AIComputeObservation).where(
         AIComputeObservation.team_id == team_id,
         AIComputeObservation.kind == kind,

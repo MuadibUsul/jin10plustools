@@ -63,14 +63,20 @@ class JevClient:
                 error = JevError(f"无法连接 JEV：{err}", retryable=True)
             else:
                 if res.status_code == 200:
-                    answers = res.json().get("answers")
-                    if not isinstance(answers, dict):
-                        raise JevError("JEV 返回格式异常：缺少 answers", retryable=False)
-                    return answers
-                error = JevError(
-                    f"JEV 返回 HTTP {res.status_code}",
-                    retryable=res.status_code in _RETRY_STATUS,
-                )
+                    try:
+                        payload = res.json()
+                    except ValueError as err:
+                        error = JevError(f"JEV 返回非 JSON 内容：{err}", retryable=True)
+                    else:
+                        answers = payload.get("answers") if isinstance(payload, dict) else None
+                        if not isinstance(answers, dict):
+                            raise JevError("JEV 返回格式异常：缺少 answers", retryable=False)
+                        return answers
+                else:
+                    error = JevError(
+                        f"JEV 返回 HTTP {res.status_code}",
+                        retryable=res.status_code in _RETRY_STATUS,
+                    )
             if not error.retryable or attempt == self.max_retries:
                 raise error
             time.sleep(min(2**attempt, 8))

@@ -200,24 +200,36 @@ def _liquidity(payload, actual, facts):
     scenario = 'no_policy'
     bindings = {**close_bindings, 'close_time': quotes['updated_at']}
     if bank is not None:
-        if (not isinstance(bank, dict) or bank.get('date') != actual.isoformat()
-                or type(bank.get('term_days')) is not int or bank['term_days'] not in (1,7)):
+        if not isinstance(bank, dict) or bank.get('date') != actual.isoformat():
             raise ValueError('inconsistent_policy_date_or_term')
-        policy = _number(bank.get('rate_percent'), positive=True)
-        bid, award = (_number(bank.get(key)) for key in ('bid_yi', 'awarded_yi'))
-        if min(bid, award) < 0 or award > bid:
-            raise ValueError('inconsistent_policy_amount')
-        product='DR001' if bank['term_days']==1 else 'DR007'
-        term='隔夜' if bank['term_days']==1 else '7天期'
-        spread = (_number(chosen[product]['weighted_rate'],positive=True) - policy) * 100
-        scenario = 'below_policy' if spread < 0 else 'above_policy' if spread > 0 else 'at_policy'
-        comparison = f'{product}较当日{term}逆回购操作利率{bank["rate_percent"]}%'
-        comparison += f'{"低" if spread < 0 else "高"}{_two(abs(spread))}个基点。' if spread else '持平。'
-        comparison += (f'央行当日开展{bank["awarded_yi"]}亿元{term}逆回购，'
-                       f'投标量{bank["bid_yi"]}亿元，中标量{bank["awarded_yi"]}亿元。')
-        bindings['policy'] = {'rate': str(policy), 'spread_bp': str(spread),
-                              'bid_yi': str(bid), 'awarded_yi': str(award),
-                              'term_days':bank['term_days'],'comparison_product':product}
+        ops = bank.get('operations')
+        operations = ops if isinstance(ops, list) and ops else [bank]
+        seen_terms = set()
+        op_parts = []
+        op_bindings = []
+        for op in operations:
+            if not isinstance(op, dict) or type(op.get('term_days')) is not int or op['term_days'] not in (1, 7) or op['term_days'] in seen_terms:
+                raise ValueError('inconsistent_policy_date_or_term')
+            seen_terms.add(op['term_days'])
+            policy = _number(op.get('rate_percent'), positive=True)
+            bid, award = (_number(op.get(key)) for key in ('bid_yi', 'awarded_yi'))
+            if min(bid, award) < 0 or award > bid:
+                raise ValueError('inconsistent_policy_amount')
+            product = 'DR001' if op['term_days'] == 1 else 'DR007'
+            term = '隔夜' if op['term_days'] == 1 else '7天期'
+            spread = (_number(chosen[product]['weighted_rate'], positive=True) - policy) * 100
+            part = f'{product}较当日{term}逆回购操作利率{op["rate_percent"]}%'
+            part += f'{"低" if spread < 0 else "高"}{_two(abs(spread))}个基点。' if spread else '持平。'
+            part += (f'央行当日开展{op["awarded_yi"]}亿元{term}逆回购，'
+                     f'投标量{op["bid_yi"]}亿元，中标量{op["awarded_yi"]}亿元。')
+            op_parts.append(part)
+            op_bindings.append({'rate': str(policy), 'spread_bp': str(spread),
+                                'bid_yi': str(bid), 'awarded_yi': str(award),
+                                'term_days': op['term_days'], 'comparison_product': product})
+        primary_spread = Decimal(op_bindings[0]['spread_bp'])
+        scenario = 'below_policy' if primary_spread < 0 else 'above_policy' if primary_spread > 0 else 'at_policy'
+        comparison = ''.join(op_parts)
+        bindings['policy'] = op_bindings[0] if len(op_bindings) == 1 else {**op_bindings[0], 'operations': op_bindings}
     return scenario, main, comparison, bindings
 
 
@@ -226,6 +238,7 @@ def _oil(payload, actual, facts):
     if not isinstance(funds, list):
         raise ValueError('incomplete_facts')
     fragments, changes, bindings = [], [], {}
+    mixed = len({f.get('data_date') or actual.isoformat() for f in funds if isinstance(f, dict)}) > 1
     for ticker, label in (('USO', 'WTI'), ('BNO', 'Brent')):
         matched = [fund for fund in funds if isinstance(fund, dict) and fund.get('ticker') == ticker]
         if len(matched) != 1:
@@ -255,8 +268,9 @@ def _oil(payload, actual, facts):
         if ticker == 'BNO' and barrels != futures:
             raise ValueError('inconsistent_oil_metric')
         text = f'{label}（{ticker}）{name}约{_two(barrels / 10000)}万桶'
-        if len({f.get('data_date') or actual.isoformat() for f in funds})>1:
-            text=f'{fund_day.isoformat()}，'+text
+        # For mixed dates, slots['date'] carries USO's date, while BNO carries its own date prefix.
+        if mixed and ticker == 'BNO':
+            text = f'{fund_day.isoformat()}，' + text
         if ticker == 'USO':
             text += f'，其中期货持仓{_two(futures / 10000)}万桶'
         if change is not None:
@@ -286,7 +300,12 @@ def build_context(category: str, payload: dict) -> dict:
     builder = {'volume': _volume, 'turnover': _turnover, 'valuation': _valuation,
                'liquidity': _liquidity, 'oil_etf': _oil}[category]
     scenario, main, comparison, bindings = builder(payload, actual, facts)
-    printed_day = facts['quotes']['updated_at'] if category == 'liquidity' else actual.isoformat()
+    if category == 'liquidity':
+        printed_day = facts['quotes']['updated_at']
+    elif category == 'oil_etf':
+        printed_day = bindings['USO']['data_date']
+    else:
+        printed_day = actual.isoformat()
     slots = {'date': printed_day, 'main_fact': main, 'comparison_fact': comparison}
     _check_coverage(payload, slots)
     return {'scenario': scenario, 'slots': slots, 'bindings': bindings,

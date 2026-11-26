@@ -5,6 +5,8 @@ import re
 import shutil
 import subprocess
 import sys
+import time
+import uuid
 from datetime import date, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
@@ -22,7 +24,13 @@ HERE=Path(__file__).parent
 
 def save(path,value):
     path=Path(path);path.parent.mkdir(parents=True,exist_ok=True)
-    temp=path.with_name(path.name+'.tmp');temp.write_text(json.dumps(value,ensure_ascii=False,default=str),encoding='utf-8');temp.replace(path)
+    temp=path.with_name(f'.{path.name}.{os.getpid()}.{uuid.uuid4().hex[:8]}.tmp')
+    try:
+        temp.write_text(json.dumps(value,ensure_ascii=False,default=str),encoding='utf-8')
+        temp.replace(path)
+    except BaseException:
+        temp.unlink(missing_ok=True)
+        raise
 
 
 def read(path):return json.loads(Path(path).read_text(encoding='utf-8-sig'))
@@ -92,7 +100,10 @@ def volume(day,out,state,refresh=False):
     # Always refresh an overlapping year, and page back to the requested day on
     # historical runs. A shorter source response never replaces accumulated data.
     start=(date.fromisoformat(day)-timedelta(days=366)).isoformat()
+    deadline=float(os.getenv('SOURCE_DEADLINE_MONOTONIC') or 0)
     for page in range(1,51):
+        if deadline and time.monotonic()>deadline-5:
+            page_error='成交额抓取接近任务时限，已保存已取得分页';break
         url='https://mp-api.jin10.com/api/dynamic-data/child?'+urlencode({'page':page,'limit':100,'tb_name':'_vir_64','order':'date,desc'})
         request=Request(url,headers={'x-app-id':'fiXF2nOnDycGutVA','x-version':'1.0','Referer':'https://www.jin10.com/','User-Agent':'Mozilla/5.0'})
         try:
@@ -118,6 +129,8 @@ def volume(day,out,state,refresh=False):
     if not any(row['date']==day for row in fresh):
         if any(item.get('date')==day for item in rejected):
             raise ValueError('成交额原始行情最后更新早于当日15:00，不是已核验的收盘值；已保留原始响应')
+        if page_error and not fresh:
+            raise ValueError('成交额来源请求或解析未完成：'+page_error[:160])
         raise ValueError('成交额目标日期尚未更新；已补存可取得的真实历史')
     require_window(rows,'xshg',day,21,label='成交额20日均线及前日比较')
     result=render_volume(rows,out)
@@ -297,7 +310,10 @@ def oil_etf(day,out,state,refresh=False):
             warnings.append(f'{prior_day}持仓归档未通过校验，仅报告最新持仓：{exc}')
     funds=[]
     for fund in snapshot['funds']:
-        futures=Decimal(fund['futures_barrels']);price=Decimal(fund['futures_contracts'][0]['reference_price_usd_per_barrel'])
+        contracts=fund.get('futures_contracts') or []
+        if not contracts:raise ValueError(f"{fund.get('ticker','ETF')}缺少期货合约明细，无法核验参考价格")
+        dominant=max(contracts,key=lambda c:abs(Decimal(str(c.get('quantity_contracts') or 0))))
+        futures=Decimal(fund['futures_barrels']);price=Decimal(dominant['reference_price_usd_per_barrel'])
         if price<=0:raise ValueError('期货参考价格无效')
         swap=Decimal(fund['swap_market_value_usd'])/price if fund['swaps'] else Decimal(0)
         total=futures+swap
@@ -307,6 +323,7 @@ def oil_etf(day,out,state,refresh=False):
         delta=futures-Decimal(prior_futures) if prior_futures is not None else None
         funds.append({'ticker':ticker,'data_date':dates[ticker],'previous_date':prior_day,
                       'barrels':str(total),'futures_barrels':str(futures),
+                      'previous_futures_barrels':str(prior_futures) if prior_futures is not None else None,
                       'swap_barrels_estimate':str(swap),'reference_price':str(price),'change_barrels':str(delta) if delta is not None else None,
                       'change_basis':'futures_contracts_1000' if delta is not None else None,
                       'method':'nearest_future_swap_notional_v1'})
@@ -325,11 +342,19 @@ def oil_etf(day,out,state,refresh=False):
         return part
     title='【原油ETF】美布两油ETF持仓数据更新'
     body=('' if mixed else f'{day}，')+'；'.join(phrase(f) for f in funds)+'。'
+    if not mixed:
+        resolved_previous_source=previous_sources.get(previous) or (history.get(previous,{}) if previous else {})
+    else:
+        resolved_previous_source={
+            ticker:(previous_sources.get(pday,{}).get('funds',{}).get(ticker) or history.get(pday,{}).get(ticker))
+            for ticker,pday in previous_dates.items()
+            if (previous_sources.get(pday,{}).get('funds',{}).get(ticker) or history.get(pday,{}).get(ticker))
+        }
     return {'title':title,'dynamic_body':body,'images':[],'data_date':day,
             'data_date_policy':'latest_available','requested_data_date':requested_day,
             'fund_data_dates':dates,
             'facts':{'funds':funds,'official_source':snapshot,'previous_date':previous,
-                     'previous_source':previous_sources.get(previous) or (history.get(previous,{}) if previous else {}),
+                     'previous_source':resolved_previous_source,
                      'previous_dates':previous_dates},'warnings':warnings}
 
 
@@ -393,9 +418,8 @@ def valuation(day,out,state,refresh=False):
             'raw_evidence_sha256s':[item['sha256'] for item in cap['raw_evidence']]}
     raw_history=[raw_inputs[stamp] for stamp in sorted(raw_inputs)]
     save(raw_path,raw_history);save(out/'all-a-history.json',raw_history)
-    originals=read(HERE/'seed/buffett-history.json')
     history_path=state/'buffett-history.json'
-    history=read(history_path) if history_path.exists() else originals
+    history=read(history_path) if history_path.exists() else read(HERE/'seed/buffett-history.json')
     gdp_table=read(HERE/'seed/gdp.json')
     gdp=gdp_table.get(str(date.fromisoformat(day).year-1))
     if not gdp:raise ValueError('上年度GDP尚未配置，不能沿用过期分母')

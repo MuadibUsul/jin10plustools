@@ -280,9 +280,20 @@ def ensure_skill_version(db: Session, *, team_id: uuid.UUID, user, skill_id: str
     row = NewsSkillVersion(team_id=team_id, skill_id=skill_id, version=version,
                            digest=skill.digest, manifest=skill.manifest, source="bundled",
                            created_by=getattr(user, "id", None), created_at=now_utc())
-    db.add(row)
-    db.flush()
-    return row
+    try:
+        with db.begin_nested():
+            db.add(row)
+            db.flush()
+        return row
+    except IntegrityError as exc:
+        existing = db.scalar(select(NewsSkillVersion).where(
+            NewsSkillVersion.team_id == team_id, NewsSkillVersion.skill_id == skill_id,
+            NewsSkillVersion.version == version))
+        if existing is None:
+            raise
+        if existing.digest != skill.digest:
+            raise StoreConflict("同一 Skill 版本的内容发生变化") from exc
+        return existing
 
 
 def _event_revision_id(db: Session, team_id: uuid.UUID, event_id: uuid.UUID,
@@ -420,8 +431,16 @@ def submit_draft(db: Session, *, draft: NewsDraft, user) -> NewsDraft:
         raise StoreConflict("草稿已通过审核")
     if draft.status == "archived":
         raise StoreConflict("已归档草稿不能送审")
-    draft.status = "pending_review"
-    draft.updated_at = now_utc()
+    stamp = now_utc()
+    changed = db.execute(update(NewsDraft).where(
+        NewsDraft.id == draft.id,
+        NewsDraft.team_id == draft.team_id,
+        NewsDraft.current_revision == draft.current_revision,
+        NewsDraft.status.notin_(["approved", "archived"]),
+    ).values(status="pending_review", updated_at=stamp).execution_options(synchronize_session=False))
+    if changed.rowcount != 1:
+        raise StoreConflict("草稿已更新或审核，请刷新后重试")
+    db.refresh(draft)
     audit(db, team_id=draft.team_id, user=user, entity_type="draft", entity_id=draft.id,
           action="draft.submit", revision=draft.current_revision,
           details={"publication_allowed": False})

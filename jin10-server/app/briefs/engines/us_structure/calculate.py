@@ -20,7 +20,7 @@ def change(rows, day):
     index = day_index(rows, day)
     if index is None or index == 0:
         raise ValueError('目标日期的指数数据缺失')
-    if rows[index-1]['date'] != previous_session('xnys',day).isoformat():
+    if rows[index - 1]['date'] != previous_session('xnys', day).isoformat():
         raise ValueError('指数缺少前一交易日，不能将跨日变化当作单日涨跌')
     return (Decimal(str(rows[index]['close'])) / Decimal(str(rows[index - 1]['close'])) - 1) * 100
 
@@ -51,9 +51,13 @@ def structure(day, data):
         raise ValueError('等权指数目标日期尚未更新或历史不足')
     year = target - timedelta(days=365)
     window = [row for row in gap if row['date'] >= year.isoformat()]
+    if not window:
+        raise ValueError('等权指数近一年区间为空')
     from app.briefs.trading_calendar import sessions
-    missing=set(sessions('xnys',window[0]['date'],day))-{row['date'] for row in window}
-    if missing: raise ValueError('市场宽度区间缺少交易日：'+','.join(sorted(missing)))
+    check_start = year.isoformat() if gap[0]['date'] < year.isoformat() else window[0]['date']
+    missing = set(sessions('xnys', check_start, day)) - {row['date'] for row in window}
+    if missing:
+        raise ValueError('市场宽度区间缺少交易日：' + ','.join(sorted(missing)))
     low = min(window, key=lambda row: row['value'])
     high = max(window, key=lambda row: row['value'])
     current = gap[index]
@@ -74,8 +78,7 @@ def structure(day, data):
     three = (f"前一个交易日纳斯达克指数{change_text(changes['ndx'])}、"
              f"标普500指数{change_text(changes['spx'])}、"
              f"道琼斯指数{change_text(changes['dji'])}")
-    low_month = int(low['date'][5:7])
-    if low_month == target.month and gap_up:
+    if low['date'][:7] == day[:7] and gap_up:
         rebound = '从本月刷新的近一年低点反弹'
     elif gap_up:
         rebound = '从近一年低位回升'
@@ -86,21 +89,50 @@ def structure(day, data):
 
     rut = data['rut']
     rut_index = day_index(rut, day)
-    if rut_index is None:
+    if rut_index is None or rut_index == 0:
         raise ValueError('罗素2000目标日期尚未更新')
     today = rut[rut_index]
     # Durable observations preserve numeric text; a new fetch supplies floats.
     # Compare the values, never their JSON representation or lexical order.
     today_low = Decimal(str(today['low']))
+    yesterday_low = Decimal(str(rut[rut_index - 1]['low']))
     prior_lows = [Decimal(str(row['low'])) for row in rut[:rut_index]]
+    min_prior_low = min(prior_lows)
     lower = [row for row in rut[:rut_index] if Decimal(str(row['low'])) < today_low]
-    low_clause = (f'，一度刷新{int(lower[-1]["date"][5:7])}月以来新低' if lower
-                  else '，一度创下本期历史数据新低' if today_low < min(prior_lows)
-                  else '，一度触及本期历史数据低点')
+    if today_low < min_prior_low:
+        low_clause = '，一度创下本期历史数据新低'
+        rut_low_since_date = ''
+        rut_low_since_month = None
+    elif today_low == min_prior_low:
+        low_clause = '，一度触及本期历史数据低点'
+        rut_low_since_date = ''
+        rut_low_since_month = None
+    elif today_low < yesterday_low and lower:
+        since_date = lower[-1]['date']
+        since_month = int(since_date[5:7])
+        since_label = (f"{int(since_date[:4])}年{since_month}月"
+                       if since_date[:4] != day[:4] else f"{since_month}月")
+        low_clause = f'，一度刷新{since_label}以来新低'
+        rut_low_since_date = since_date
+        rut_low_since_month = since_month
+    else:
+        low_clause = ''
+        rut_low_since_date = ''
+        rut_low_since_month = None
+
     peak = max(Decimal(str(row['close'])) for row in rut[:rut_index + 1])
     drawdown = (Decimal(str(today['close'])) / Decimal(str(peak)) - 1) * 100
-    drawdown_clause = (f'，从历史高点已经回调了{abs(drawdown):.0f}%' if drawdown < 0
-                       else '，仍处于历史高点附近')
+    abs_drawdown = abs(drawdown)
+    if drawdown >= 0 or q2(abs_drawdown) == Decimal('0.00'):
+        drawdown_clause = '，仍处于历史高点附近'
+        drawdown_rounded_pct = '0'
+    elif abs_drawdown < Decimal('0.5'):
+        drawdown_rounded_pct = f'{q2(abs_drawdown):.2f}'
+        drawdown_clause = f'，从历史高点已经回调了{drawdown_rounded_pct}%'
+    else:
+        drawdown_rounded_pct = f'{abs_drawdown:.0f}'
+        drawdown_clause = f'，从历史高点已经回调了{drawdown_rounded_pct}%'
+
     three_min = min(changes['spx'], changes['ndx'], changes['dji'])
     three_max = max(changes['spx'], changes['ndx'], changes['dji'])
     if changes['rut'] < three_min:
@@ -125,12 +157,10 @@ def structure(day, data):
             'gap': str(current['value']), 'gap_percentile': f'{percentile:.3f}',
             'gap_low': str(low['value']), 'gap_low_date': low['date'],
             'rut_drawdown': str(q2(drawdown)), 'verdict': verdict,
-            # Additive editorial provenance; the existing calculations and copy
-            # above remain unchanged. New copy need not infer paths from prose.
             'gap_previous': str(previous['value']), 'gap_change': str(q2(gap_change)),
-            'rut_low_since_date': lower[-1]['date'] if lower else '',
-            'rut_low_since_month': int(lower[-1]['date'][5:7]) if lower else None,
+            'rut_low_since_date': rut_low_since_date,
+            'rut_low_since_month': rut_low_since_month,
             'rut_peak_close': str(peak),
-            'rut_drawdown_rounded_pct': f'{abs(drawdown):.0f}',
+            'rut_drawdown_rounded_pct': drawdown_rounded_pct,
         },
     }

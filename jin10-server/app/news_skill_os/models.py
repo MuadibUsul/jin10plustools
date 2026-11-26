@@ -163,8 +163,17 @@ def validate_revision(revision: ArtifactRevision) -> None:
             raise ValueError(f"claim {claim.id}: corroborated requires two independent source roots")
         if claim.status == ClaimStatus.DISPUTED and not contradictions:
             raise ValueError(f"claim {claim.id}: disputed requires contradictory evidence")
-        if claim.status == ClaimStatus.SUPERSEDED and claim.superseded_by not in claims:
-            raise ValueError(f"claim {claim.id}: superseded requires replacement claim")
+        if claim.status == ClaimStatus.SUPERSEDED:
+            if claim.superseded_by not in claims or claim.superseded_by == claim.id:
+                raise ValueError(f"claim {claim.id}: superseded requires replacement claim")
+            visited = {claim.id}
+            cursor = claim.superseded_by
+            while cursor is not None:
+                if cursor in visited:
+                    raise ValueError(f"claim {claim.id}: cyclic supersession chain")
+                visited.add(cursor)
+                target_claim = claims.get(cursor)
+                cursor = target_claim.superseded_by if target_claim and target_claim.status == ClaimStatus.SUPERSEDED else None
     # Two verified versions of the same measured quantity cannot silently coexist.
     measured: dict[tuple, NumericFact] = {}
     for claim in revision.claims:

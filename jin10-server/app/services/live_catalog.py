@@ -1,6 +1,8 @@
 """Curated public single-player URLs; never embed a multi-player directory page."""
+import copy
 import json
 from datetime import datetime
+from functools import lru_cache
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -14,19 +16,37 @@ def now():
     return datetime.now(CHINA)
 
 
+@lru_cache(maxsize=1)
+def _base_catalog() -> dict:
+    return json.loads((Path(__file__).parents[1] / 'assets/live-catalog.json').read_text(encoding='utf-8'))
+
+
+def _channel_access(raw_url: str) -> str:
+    url = urlsplit(raw_url)
+    if url.hostname in ('www.youtube.com', 'youtube.com', 'youtu.be', 'www.youtube-nocookie.com'):
+        return 'youtube'
+    if url.path.lower().endswith('.m3u8'):
+        return 'direct'
+    return 'embedded'
+
+
 def catalog(team):
-    data=json.loads((Path(__file__).parents[1]/'assets/live-catalog.json').read_text(encoding='utf-8'))
-    saved=team.settings or {}
+    data = copy.deepcopy(_base_catalog())
+    saved = (team.settings or {}) if team else {}
     for channel in data['channels']:
-        if channel['id'] in saved.get('live_urls',{}):
-            channel['url']=saved['live_urls'][channel['id']]
-            channel['note']='团队自定义播放器' if channel['url'] else '已停用'
-            channel.pop('select_variant',None)
-        channel['available']=bool(channel['url'])
-        url=urlsplit(channel['url'])
-        channel['access']='youtube' if url.hostname in ('www.youtube.com','youtube.com','youtu.be','www.youtube-nocookie.com') else 'direct' if url.path.lower().endswith('.m3u8') else 'embedded'
+        if channel['id'] in saved.get('live_urls', {}):
+            channel['url'] = saved['live_urls'][channel['id']]
+            channel['note'] = '团队自定义播放器' if channel['url'] else '已停用'
+            channel.pop('select_variant', None)
+        channel['available'] = bool(channel['url'])
+        channel['access'] = _channel_access(channel['url'])
     if saved.get('live_url'):
-        data['channels'].append(dict(id='custom',category='markets',name='自定义直播',url=saved['live_url'],source_url=saved['live_url'],note='团队自定义播放器',available=True))
+        custom_url = saved['live_url']
+        data['channels'].append(dict(
+            id='custom', category='markets', name='自定义直播', url=custom_url,
+            source_url=custom_url, note='团队自定义播放器', available=True,
+            access=_channel_access(custom_url),
+        ))
     return data
 
 

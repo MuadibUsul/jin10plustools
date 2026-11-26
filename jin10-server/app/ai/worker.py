@@ -78,25 +78,38 @@ def analyze_one(factory: sessionmaker[Session], client: JevClient | None, materi
         error: JevError | None = None
     except JevError as err:
         answers, error = None, err
+    except Exception as err:
+        answers, error = None, JevError(f"JEV 调用异常：{err}", retryable=True)
     finally:
         if owned_client:
             owned_client.close()
 
     with factory() as db:
-        m = db.scalar(select(Material).where(Material.id==material_id).with_for_update())
+        stmt = select(Material).where(Material.id == material_id)
+        if db.get_bind().dialect.name == "postgresql":
+            stmt = stmt.with_for_update()
+        m = db.scalar(stmt)
         if m is None or m.deleted_at is not None:
             return "skipped"
-        if m.ai_status!='analyzing' or m.updated_at!=started_at or build_state(m)!=state:
+        if m.ai_status != "analyzing" or m.updated_at != started_at or build_state(m) != state:
             # A newer request or input owns the row now. Never consume its retry.
-            if m.ai_status=='analyzing':
-                m.ai_status='pending';db.commit()
-            return 'stale'
+            if m.ai_status == "analyzing":
+                m.ai_status = "pending"
+                db.commit()
+            return "stale"
         now = utcnow()
         m.ai_attempts += 1
         if answers is not None:
             team = db.get(Team, m.team_id)
-            apply_answers(m, answers, ScoringConfig.from_team_settings(team.settings if team else None), now)
-            m.ai_status, m.ai_error, m.analyzed_at = "done", None, now
+            try:
+                apply_answers(m, answers, ScoringConfig.from_team_settings(team.settings if team else None), now)
+            except (KeyError, TypeError, ValueError, ZeroDivisionError) as err:
+                retry = m.ai_attempts < max_attempts
+                m.ai_status = "pending" if retry else "failed"
+                m.ai_error = f"JEV 返回结构无效：{err}"
+                log.warning("analyze %s answer parse failed (attempt %s): %s", material_id, m.ai_attempts, err)
+            else:
+                m.ai_status, m.ai_error, m.analyzed_at = "done", None, now
         else:
             assert error is not None
             retry = error.retryable and m.ai_attempts < max_attempts
@@ -108,11 +121,20 @@ def analyze_one(factory: sessionmaker[Session], client: JevClient | None, materi
         return m.ai_status
 
 
+def _team_jev_eligible(team: Team, default_client: JevClient | None) -> bool:
+    try:
+        if provider(team, "jev")["key"]:
+            return True
+    except Exception:
+        log.warning("Failed to read JEV provider config for team %s", team.id, exc_info=True)
+        return False
+    return default_client is not None and not (team.settings or {}).get("ai", {}).get("jev")
+
+
 def run_once(factory: sessionmaker[Session], client: JevClient | None) -> int:
     settings = get_settings()
     with factory() as db:
-        eligible = [team.id for team in db.scalars(select(Team))
-                    if provider(team, 'jev')['key'] or (client is not None and not (team.settings or {}).get('ai', {}).get('jev'))]
+        eligible = [team.id for team in db.scalars(select(Team)) if _team_jev_eligible(team, client)]
         ids = claim_batch(db, settings.ai_worker_batch, eligible)
     for mid in ids:
         analyze_one(factory, client, mid, settings.ai_max_attempts)

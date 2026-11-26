@@ -25,7 +25,9 @@ jobs:
         with:
           python-version: '3.12'
       - name: Install application dependencies
-        run: pip install -e './jin10-server[dev]'
+        run: |
+          pip install -r jin10-server/requirements.lock 'pytest==9.1.1'
+          pip install --no-deps -e ./jin10-server
       - name: Verify LibreOffice PDF title weight
         working-directory: jin10-server
         run: pytest -q tests/test_libreoffice_render.py

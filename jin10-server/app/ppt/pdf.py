@@ -11,6 +11,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from functools import lru_cache
 from pathlib import Path
 from threading import BoundedSemaphore
 from app.services.processes import run_tree
@@ -31,6 +32,7 @@ _UNO_PYTHON = "/usr/bin/python3"
 _UNO_SCRIPT = Path(__file__).with_name("lo_convert.py")
 
 
+@lru_cache(maxsize=1)
 def _uno_available() -> bool:
     if not Path(_UNO_PYTHON).is_file():
         return False
@@ -71,13 +73,25 @@ def _convert_libreoffice(binary: str, pptx: Path, out_dir: Path) -> Path:
 def _convert_powerpoint(pptx: Path, out_dir: Path) -> Path:
     pdf = out_dir / f"{pptx.stem}.pdf"
     script = (
-        "$pp = New-Object -ComObject PowerPoint.Application; "
-        f"$p = $pp.Presentations.Open('{pptx.resolve()}', $true, $false, $false); "
-        f"$p.SaveAs('{pdf.resolve()}', 32); $p.Close(); $pp.Quit()"
+        "$ErrorActionPreference = 'Stop'; "
+        "$pp = $null; $p = $null; "
+        "try { "
+        "  $pp = New-Object -ComObject PowerPoint.Application; "
+        "  $p = $pp.Presentations.Open($env:PLUS_PPTX_SRC, $true, $false, $false); "
+        "  $p.SaveAs($env:PLUS_PDF_DST, 32) "
+        "} finally { "
+        "  if ($p -ne $null) { try { $p.Close() } catch {} }; "
+        "  if ($pp -ne $null) { try { $pp.Quit() } catch {} } "
+        "}"
     )
+    env = {**os.environ, "PLUS_PPTX_SRC": str(pptx.resolve()), "PLUS_PDF_DST": str(pdf.resolve())}
     try:
         subprocess.run(
-            ["powershell", "-NoProfile", "-Command", script], check=True, capture_output=True, timeout=TIMEOUT_SECONDS
+            ["powershell", "-NoProfile", "-Command", script],
+            check=True,
+            capture_output=True,
+            timeout=TIMEOUT_SECONDS,
+            env=env,
         )
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as err:
         raise PdfConversionError(f"PowerPoint 转换失败：{err}") from err

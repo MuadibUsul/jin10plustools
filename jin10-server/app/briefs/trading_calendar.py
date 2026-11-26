@@ -15,6 +15,16 @@ def calendars():
     return json.loads((Path(__file__).parent / 'calendars/sessions.json').read_text(encoding='utf-8'))
 
 
+@lru_cache(maxsize=4)
+def _compiled_sets(cache_token: int):
+    raw = calendars()
+    return {
+        'xshg_closed': frozenset(raw['xshg']['closed']),
+        'xnys_adhoc_closed': frozenset(raw['xnys']['adhoc_closed']),
+        'cfets_open_weekends': frozenset(raw['cfets']['open_weekends']),
+    }
+
+
 def market_for(category):
     if category in ('volume', 'turnover', 'valuation'):
         return 'xshg'
@@ -44,30 +54,44 @@ def _easter(year):
     return date(year,value//31,value%31+1)
 
 
+@lru_cache(maxsize=64)
 def _us_holidays(year):
     # Saturday New Year's Day has no Friday observance at NYSE.
-    new_year=date(year,1,1)
-    days={new_year + timedelta(days=1 if new_year.weekday()==6 else 0),
-          _nth(year,1,0,3), _nth(year,2,0,3), _easter(year)-timedelta(days=2),
-          _nth(year,9,0,1), _nth(year,11,3,4), _observed(date(year,7,4)),
-          _observed(date(year,12,25))}
-    last=date(year,5,31)
-    days.add(last-timedelta(days=last.weekday()))
-    if year>=2022: days.add(_observed(date(year,6,19)))
-    return days
+    new_year = date(year, 1, 1)
+    days = {
+        new_year + timedelta(days=1 if new_year.weekday() == 6 else 0),
+        _nth(year, 1, 0, 3),
+        _nth(year, 2, 0, 3),
+        _easter(year) - timedelta(days=2),
+        _nth(year, 9, 0, 1),
+        _nth(year, 11, 3, 4),
+        _observed(date(year, 7, 4)),
+        _observed(date(year, 12, 25)),
+    }
+    last = date(year, 5, 31)
+    days.add(last - timedelta(days=last.weekday()))
+    if year >= 2022:
+        days.add(_observed(date(year, 6, 19)))
+    return frozenset(days)
 
 
 def is_session(market, day):
-    day=date.fromisoformat(day) if isinstance(day,str) else day
-    if market=='daily': return True
-    spec=calendars()[market]
-    if not spec['start'] <= day.isoformat() <= spec['end']:
+    day = date.fromisoformat(day) if isinstance(day, str) else day
+    if market == 'daily':
+        return True
+    all_specs = calendars()
+    spec = all_specs[market]
+    iso = day.isoformat()
+    if not spec['start'] <= iso <= spec['end']:
         raise CalendarUnavailable(f'{market}未核验{day.year}年交易日历；停止推测目标日期')
-    if market=='xshg': return day.weekday()<5 and day.isoformat() not in spec['closed']
-    if market=='xnys':
-        return day.weekday()<5 and day not in _us_holidays(day.year) and day.isoformat() not in spec['adhoc_closed']
-    return (day.isoformat() in spec['open_weekends'] or day.weekday()<5) and not any(
-        start<=day.isoformat()<=end for start,end in spec['closed_ranges'])
+    compiled = _compiled_sets(id(all_specs))
+    if market == 'xshg':
+        return day.weekday() < 5 and iso not in compiled['xshg_closed']
+    if market == 'xnys':
+        return day.weekday() < 5 and day not in _us_holidays(day.year) and iso not in compiled['xnys_adhoc_closed']
+    return (iso in compiled['cfets_open_weekends'] or day.weekday() < 5) and not any(
+        start <= iso <= end for start, end in spec['closed_ranges']
+    )
 
 
 def previous_session(market, day):
@@ -84,11 +108,16 @@ def completed_session(market,now=None):
     The close-time buffer also waits past early closes; a dated source must still
     publish the observation. It never authorizes a fabricated daily value.
     """
-    now=now or datetime.now(timezone.utc)
-    if now.tzinfo is None:raise ValueError('采集时间必须带时区')
-    zone,cutoff={'xshg':('Asia/Shanghai',time(16)),
-                 'cfets':('Asia/Shanghai',time(17,15)),
-                 'xnys':('America/New_York',time(16,15))}[market]
+    now = now or datetime.now(timezone.utc)
+    if now.tzinfo is None:
+        raise ValueError('采集时间必须带时区')
+    if market == 'daily':
+        return now.astimezone(ZoneInfo('Asia/Shanghai')).date() - timedelta(days=1)
+    zone, cutoff = {
+        'xshg': ('Asia/Shanghai', time(16)),
+        'cfets': ('Asia/Shanghai', time(17, 15)),
+        'xnys': ('America/New_York', time(16, 15)),
+    }[market]
     local=now.astimezone(ZoneInfo(zone))
     if local.time().replace(tzinfo=None)>=cutoff and is_session(market,local.date()):return local.date()
     return previous_session(market,local.date())

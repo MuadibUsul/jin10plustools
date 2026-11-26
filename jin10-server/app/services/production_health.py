@@ -1,7 +1,7 @@
 """Team-scoped production health, independent from API process liveness."""
 import json
 from datetime import datetime,timedelta,date
-from sqlalchemy import select
+from sqlalchemy import select, tuple_
 from app.config import get_settings
 from app.db.models import BriefIssue,BriefVersion,BriefJob,BriefConfig,BriefDataCheck,utcnow
 from app.briefs.policy import AUTO_CATEGORIES,CATEGORIES,CHINA,expected_date
@@ -34,10 +34,27 @@ def production_status(db,team_id,now=None):
     scheduled=bool(config and config.enabled)
     collecting=bool(config and config.data_enabled)
     def aware(value):return value.replace(tzinfo=now.tzinfo) if value.tzinfo is None else value
+    latest_issues: dict[str, BriefIssue] = {}
+    for row in db.scalars(select(BriefIssue).where(
+            BriefIssue.team_id==team_id,
+            BriefIssue.category.in_(AUTO_CATEGORIES),
+            BriefIssue.version>0).order_by(BriefIssue.issue_date.desc())):
+        latest_issues.setdefault(row.category, row)
+    version_pairs = [(issue.id, issue.version) for issue in latest_issues.values()]
+    versions_by_issue = (
+        {v.issue_id: v for v in db.scalars(select(BriefVersion).where(
+            tuple_(BriefVersion.issue_id, BriefVersion.number).in_(version_pairs)))}
+        if version_pairs else {}
+    )
+    pending_by_cat: dict[str, BriefJob] = {}
+    for job in db.scalars(select(BriefJob).where(
+            BriefJob.team_id==team_id,
+            BriefJob.category.in_(AUTO_CATEGORIES),
+            BriefJob.status.in_(['queued','waiting','running'])).order_by(BriefJob.created_at)):
+        pending_by_cat.setdefault(job.category, job)
     for category in AUTO_CATEGORIES:
-        issue=db.scalar(select(BriefIssue).where(BriefIssue.team_id==team_id,BriefIssue.category==category,
-            BriefIssue.version>0).order_by(BriefIssue.issue_date.desc()).limit(1))
-        version=db.scalar(select(BriefVersion).where(BriefVersion.issue_id==issue.id,BriefVersion.number==issue.version)) if issue else None
+        issue=latest_issues.get(category)
+        version=versions_by_issue.get(issue.id) if issue else None
         actual=(version.payload or {}).get('data_date') if version else None
         try:target=expected_date(category,local.date()).isoformat()
         except CalendarUnavailable as exc:
@@ -60,8 +77,7 @@ def production_status(db,team_id,now=None):
                 alerts.append({'code':'source_check_failed','category':category,'message':'原油发行方最新核查失败，已保留最近可用数据；请检查取数任务'})
         if scheduled and local.hour>=10 and item['status']=='awaiting_source':
             alerts.append({'code':'missing_daily_product','category':category,'message':CATEGORIES[category]+'尚无目标数据日的完整成稿'})
-        pending=db.scalar(select(BriefJob).where(BriefJob.team_id==team_id,BriefJob.category==category,
-            BriefJob.status.in_(['queued','waiting','running'])).order_by(BriefJob.created_at).limit(1))
+        pending=pending_by_cat.get(category)
         if pending:
             pending_time=pending.updated_at if pending.status=='running' else pending.next_attempt_at
             if pending_time.tzinfo is None:pending_time=pending_time.replace(tzinfo=now.tzinfo)

@@ -50,3 +50,17 @@ it('keeps failures visible and does not claim an unfinished result is complete',
  expect(document.querySelector('dialog')!.textContent).toContain('本次尚未保存完整结果');
  expect(document.querySelector('dialog')!.textContent).not.toContain('规则标题：本期标题');
 });
+
+it('filters historical-coverage warnings while keeping actionable warnings and job.error', async () => {
+  const data = response();
+  (data.job as { error?: string }).error = '当前来源返回空数据';
+  (data.details.result.warnings as string[]) = [
+    '历史覆盖尚未完整核验：缺少 2024-02-01',
+    '最新交易日较日历延后一天，请核对休市安排',
+  ];
+  await show({ title: '成交额', load: async () => data });
+  const text = document.querySelector('dialog')!.textContent!;
+  expect(text).not.toContain('历史覆盖尚未完整核验');
+  expect(text).toContain('最新交易日较日历延后一天，请核对休市安排');
+  expect(text).toContain('当前来源返回空数据');
+});

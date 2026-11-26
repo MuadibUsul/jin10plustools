@@ -24,9 +24,11 @@ COPY jin10-server/alembic ./alembic
 COPY jin10-server/templates ./templates
 COPY skills ./skills
 
-RUN useradd --uid 1000 --create-home plus && mkdir -p /data/storage \
+RUN pip install --no-deps --no-build-isolation -e . && python -m pip check \
+    && useradd --uid 1000 --create-home plus && mkdir -p /data/storage \
     && chmod -R a+rX /srv /opt/playwright && chown -R plus /data
 USER plus
+RUN python -m app.services.runtime_lock /srv/requirements.lock
 
 EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \

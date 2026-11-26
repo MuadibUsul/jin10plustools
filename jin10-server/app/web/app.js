@@ -1,6 +1,6 @@
 // PLUS 日报选稿页：待选素材按栏目分组、按综合分排序；勾选后生成 PDF。
 // 同源调用 /api，登录令牌只保存在本浏览器。
-import { account, copyDate, displayTime } from '/workspace.js';
+import { account, beijingToday, copyDate, displayTime, toast } from '/workspace.js';
 import { createDailyEditor } from '/daily-editor.js';
 import '/pull-cord.js';
 
@@ -60,15 +60,14 @@ async function api(path, { method = 'GET', json, raw = false, headers: extraHead
       const body = await res.json();
       if (typeof body.detail === 'string') detail = body.detail;
     } catch { /* 非 JSON */ }
-    throw new Error(detail);
+    const err = new Error(detail);
+    err.status = res.status;
+    throw err;
   }
   if (raw) return res;
   return res.status === 204 ? null : res.json();
 }
 
-function beijingToday() {
-  return new Date(Date.now() + 8 * 3600_000).toISOString().slice(0, 10);
-}
 function fmtTime(iso) {
   if (!iso) return '';
   // 不带时区的时间按 UTC 解析（SQLite 开发环境）
@@ -278,13 +277,23 @@ async function dropMaterial(id, targetSection, index) {
   if (!m || targetSection === UNSORTED.id) return;
   const ids = sectionItems(targetSection).map((x) => x.id).filter((x) => x !== id);
   ids.splice(Math.min(index, ids.length), 0, id);
-  state.order[targetSection] = ids;
   const from = sectionOf(m);
   if (from !== targetSection) {
+    const prevFromOrder = state.order[from];
+    const prevTargetOrder = state.order[targetSection];
     state.order[from] = (state.order[from] ?? []).filter((x) => x !== id);
+    state.order[targetSection] = ids;
+    try {
+      await moveTo(m, targetSection);
+    } catch (err) {
+      state.order[from] = prevFromOrder;
+      state.order[targetSection] = prevTargetOrder;
+      render();
+      throw err;
+    }
     boardOps({ order: { [targetSection]: ids, [from]: state.order[from] } });
-    await moveTo(m, targetSection);
   } else {
+    state.order[targetSection] = ids;
     boardOps({ order: { [targetSection]: ids } });
     render();
   }
@@ -312,6 +321,24 @@ async function login(email, password) {
 function logout() {
   state.token = null;
   store(TOKEN_KEY, null);
+  dailyEditor?.close?.(true);
+  const previewView = $('#preview-view');
+  if (previewView && !previewView.hidden) {
+    previewView.hidden = true;
+    document.body.style.overflow = '';
+  }
+  const recycle = $('#recycle');
+  if (recycle?.open) recycle.close?.();
+  if (state.bulk) {
+    state.bulk = null;
+    document.body.classList.remove('bulk-mode');
+    if ($('#bulk-delete')) $('#bulk-delete').textContent = '批量删除';
+    $('#bulk-bar')?.replaceChildren();
+  }
+  state.editing = state.editingTitle = state.dragId = null;
+  document.body.classList.remove('is-dragging');
+  clearDropMarks();
+  clearThumbCache();
   $('#app-view').hidden = true;
   $('#login-view').hidden = false;
   $('#account').replaceChildren();
@@ -363,11 +390,13 @@ async function refresh() {
 
 const HISTORY_PAGE = 5;
 let historyPage = 0;
+let historyRequest = 0;
 
-async function loadHistory(page = historyPage) {
+async function loadHistory(page = historyPage, reqId = ++historyRequest) {
   // 多取一条判断是否还有下一页
   const rows = await api(`/api/issues?limit=${HISTORY_PAGE + 1}&offset=${page * HISTORY_PAGE}`);
-  if (!rows.length && page > 0) return loadHistory(page - 1);
+  if (reqId !== historyRequest || !state.token) return;
+  if (!rows.length && page > 0) return loadHistory(page - 1, reqId);
   historyPage = page;
   const issues = rows.slice(0, HISTORY_PAGE);
   const hasNext = rows.length > HISTORY_PAGE;
@@ -487,16 +516,47 @@ const eff = {
   images: (m) => m.edits?.images ?? originalImages(m),
 };
 
+async function refreshMaterialConflict(m) {
+  const latest = await api(`/api/materials/${m.id}`).catch(() => null);
+  if (latest) Object.assign(m, latest);
+}
+
 async function saveEdits(m, changes) {
-  const updated = await api(`/api/materials/${m.id}/edits`, { method: 'PUT', headers: {'If-Match':m.updated_at}, json: { ...(m.edits ?? {}), ...changes } });
-  Object.assign(m, updated);
-  render();
+  try {
+    const updated = await api(`/api/materials/${m.id}/edits`, { method: 'PUT', headers: { 'If-Match': m.updated_at }, json: { ...(m.edits ?? {}), ...changes } });
+    Object.assign(m, updated);
+    render();
+  } catch (err) {
+    if (err?.status === 409) {
+      await refreshMaterialConflict(m);
+      const msg = '该素材在服务端已有新版本，已同步最新状态；您的编辑内容已保留，请再次点击「保存」提交。';
+      showPoolStatus(msg, true);
+      toast(msg, 'error');
+      const conflict = new Error(msg);
+      conflict.status = 409;
+      conflict.handled = true;
+      throw conflict;
+    }
+    throw err;
+  }
 }
 
 async function clearEdits(m) {
   if (!confirm('恢复采集原文？当前的文字与配图修改会被清除。')) return;
-  Object.assign(m, await api(`/api/materials/${m.id}/edits`, { method: 'DELETE', headers: {'If-Match':m.updated_at} }));
-  render();
+  try {
+    Object.assign(m, await api(`/api/materials/${m.id}/edits`, { method: 'DELETE', headers: { 'If-Match': m.updated_at } }));
+    render();
+  } catch (err) {
+    if (err?.status === 409) {
+      await refreshMaterialConflict(m);
+      render();
+      const msg = '该素材在服务端已有新版本，已刷新最新内容，请核对后重试。';
+      showPoolStatus(msg, true);
+      toast(msg, 'error');
+      return;
+    }
+    throw err;
+  }
 }
 
 /** 上传图片：ID = sha256(来源地址)[:32]，本地上传用 upload://随机ID 作为来源 */
@@ -510,6 +570,10 @@ async function uploadImage(file) {
     headers: { Authorization: `Bearer ${state.token}`, 'Content-Type': file.type, 'X-Source-Url': encodeURIComponent(source) },
     body: file,
   });
+  if (res.status === 401) {
+    logout();
+    throw new Error('登录已失效，请重新登录');
+  }
   if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || `上传失败（HTTP ${res.status}）`);
   return id;
 }
@@ -536,14 +600,43 @@ async function removeImage(m, index) {
   await saveEdits(m, { images });
 }
 
+const THUMB_CACHE_LIMIT = 300;
 const thumbCache = new Map();
+function clearThumbCache() {
+  for (const entry of thumbCache.values()) {
+    Promise.resolve(entry).then((url) => { if (url) URL.revokeObjectURL(url); }).catch(() => {});
+  }
+  thumbCache.clear();
+}
 function thumb(assetId) {
   const img = el('img', { alt: '配图' });
-  if (!thumbCache.has(assetId)) {
-    thumbCache.set(assetId, api(`/api/assets/${assetId}`, { raw: true }).then((r) => r.blob()).then((b) => URL.createObjectURL(b)));
+  let pending = thumbCache.get(assetId);
+  if (!pending) {
+    if (thumbCache.size >= THUMB_CACHE_LIMIT) {
+      const oldestKey = thumbCache.keys().next().value;
+      const oldest = thumbCache.get(oldestKey);
+      thumbCache.delete(oldestKey);
+      Promise.resolve(oldest).then((url) => { if (url) URL.revokeObjectURL(url); }).catch(() => {});
+    }
+    pending = api(`/api/assets/${assetId}`, { raw: true })
+      .then((r) => r.blob())
+      .then((b) => URL.createObjectURL(b))
+      .catch((err) => {
+        if (thumbCache.get(assetId) === pending) thumbCache.delete(assetId);
+        throw err;
+      });
+    thumbCache.set(assetId, pending);
+  } else {
+    thumbCache.delete(assetId);
+    thumbCache.set(assetId, pending);
   }
-  thumbCache.get(assetId).then((url) => { img.src = url; }).catch(() => { img.alt = '图片加载失败'; });
+  pending.then((url) => { img.src = url; }).catch(() => { img.alt = '图片加载失败'; });
   return img;
+}
+
+function reportEditError(err) {
+  if (err?.handled) return;
+  alert(err?.message ?? err);
 }
 
 function renderImages(m) {
@@ -552,30 +645,47 @@ function renderImages(m) {
     ids.map((id, i) => el('figure', {},
       thumb(id),
       el('figcaption', {},
-        canEdit() ? el('button', { class: 'link', onclick: () => replaceImage(m, i).catch(alert) }, '替换') : null,
-        canEdit() ? el('button', { class: 'link danger', onclick: () => removeImage(m, i).catch(alert) }, '移除') : null))),
-    canEdit() ? el('button', { class: 'add-image', onclick: () => replaceImage(m, ids.length).catch(alert) }, '+ 上传图片') : null);
+        canEdit() ? el('button', { class: 'link', onclick: () => replaceImage(m, i).catch(reportEditError) }, '替换') : null,
+        canEdit() ? el('button', { class: 'link danger', onclick: () => removeImage(m, i).catch(reportEditError) }, '移除') : null))),
+    canEdit() ? el('button', { class: 'add-image', onclick: () => replaceImage(m, ids.length).catch(reportEditError) }, '+ 上传图片') : null);
 }
 
 function renderEditor(m) {
   const title = el('input', { value: eff.title(m) });
   const news = el('textarea', { rows: 5 }, eff.news(m));
   const interp = el('textarea', { rows: 6, placeholder: '每段之间空一行' }, eff.paragraphs(m).join('\n\n'));
+  const notice = el('p', { class: 'error', role: 'status', hidden: true });
+  let saving = false;
   const save = async () => {
-    await saveEdits(m, {
-      title: title.value.trim() || m.title,
-      news: news.value.trim(),
-      interpretation: interp.value.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean),
-    });
-    state.editing = null;
-    render();
+    if (saving) return;
+    saving = true;
+    saveBtn.disabled = true;
+    notice.hidden = true;
+    try {
+      await saveEdits(m, {
+        title: title.value.trim() || m.title,
+        news: news.value.trim(),
+        interpretation: interp.value.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean),
+      });
+      state.editing = null;
+      render();
+    } catch (err) {
+      notice.textContent = err?.message ?? String(err);
+      notice.hidden = false;
+      if (!err?.handled) reportEditError(err);
+    } finally {
+      saving = false;
+      saveBtn.disabled = false;
+    }
   };
+  const saveBtn = el('button', { class: 'primary', onclick: () => save() }, '保存');
   return el('div', { class: 'editor' },
     el('label', {}, '标题', title),
     el('label', {}, '【新闻】', news),
     el('label', {}, '【解读】（每段之间空一行）', interp),
+    notice,
     el('div', { class: 'editor-actions' },
-      el('button', { class: 'primary', onclick: () => save().catch(alert) }, '保存'),
+      saveBtn,
       el('button', { onclick: () => { state.editing = null; render(); } }, '取消')));
 }
 
@@ -587,20 +697,32 @@ function renderTitleEditor(m) {
   const finish = async (commit) => {
     if (done) return;
     done = true;
-    state.editingTitle = null;
     const value = input.value.trim();
-    if (commit && value && value !== eff.title(m)) await saveEdits(m, { title: value === m.title ? null : value });
-    else render();
+    if (!commit || !value || value === eff.title(m)) {
+      state.editingTitle = null;
+      render();
+      return;
+    }
+    try {
+      await saveEdits(m, { title: value === m.title ? null : value });
+      state.editingTitle = null;
+      render();
+    } catch (err) {
+      done = false;
+      state.editingTitle = m.id;
+      if (!err?.handled) toast(err?.message ?? String(err), 'error');
+      if (input.isConnected && document.activeElement === document.body) input.focus();
+    }
   };
   const input = el('input', {
     class: 'title-input',
     value: eff.title(m),
     'aria-label': '标题',
     onkeydown: (e) => {
-      if (e.key === 'Enter') finish(true).catch(alert);
-      else if (e.key === 'Escape') finish(false).catch(alert);
+      if (e.key === 'Enter') { e.preventDefault(); void finish(true); }
+      else if (e.key === 'Escape') { e.preventDefault(); void finish(false); }
     },
-    onblur: () => finish(true).catch(alert),
+    onblur: () => { void finish(true); },
   });
   setTimeout(() => { input.focus(); input.select(); });
   return input;
@@ -888,10 +1010,16 @@ async function clearPool() {
 }
 
 async function resetAiLayout() {
+  if (!canEdit() || !poolReady) return;
   if (!confirm('恢复 AI 排版？手动调整的排序与栏目会被撤销（文字与配图的编辑保留）。')) return;
+  const scope = currentScope();
+  const day = $('#day').value;
+  const days = $('#days').value;
   state.order = {};
   boardOps({ order_reset: true });
-  state.materials = await api(`/api/pool/reset-ai?day=${$('#day').value}&days=${$('#days').value}`, { method: 'POST' });
+  const materials = await api(`/api/pool/reset-ai?day=${day}&days=${days}`, { method: 'POST' });
+  if (scope !== currentScope() || !state.token) return;
+  state.materials = materials;
   render();
 }
 

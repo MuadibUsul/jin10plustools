@@ -270,7 +270,7 @@ def _structure(payload: dict, actual: date, facts: dict) -> dict:
         if rounded < 0 or abs(rounded - abs(drawdown)) > Decimal('0.51'):
             raise ValueError('invalid_drawdown')
         drawdown_text = str(facts['rut_drawdown_rounded_pct'])
-        approximate = '约'
+        approximate = '约' if rounded or drawdown else ''
     small_caps = (f'罗素2000指数{_move(facts["rut_change"], close=True)}，{comparison}；'
                   f'较本期已收录收盘高点回撤{approximate}{drawdown_text}%{low_clause}。')
     return {'scenario': labels[verdict],
